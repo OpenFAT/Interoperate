@@ -1758,7 +1758,7 @@ impl<H: Host> Interp<H> {
                         return Err(Flow::Err("outfile: (outfile path [mode])".into()));
                     }
                     let path = text(&a[0])?;
-                    if !path.starts_with('/') {
+                    if !absolute(&path) {
                         return Err(Flow::Err(format!(
                             "outfile: {path} is relative (SKILL path lookup); pass an absolute path"
                         )));
@@ -1779,7 +1779,7 @@ impl<H: Host> Interp<H> {
                 "infile" => {
                     need(1)?;
                     let path = text(&a[0])?;
-                    if !path.starts_with('/') {
+                    if !absolute(&path) {
                         return Err(Flow::Err(format!(
                             "infile: {path} is relative (SKILL path lookup); pass an absolute path"
                         )));
@@ -2268,4 +2268,10 @@ pub fn called_names(forms: &[V]) -> Vec<String> {
         walk(f, &mut out, false);
     }
     out
+}
+
+/// Whether the mock treats `path` as absolute: `/…` (Virtuoso's hosts), or a drive path
+/// (`D:/…`) when the tests run on Windows and hand the mock their temp directories.
+fn absolute(path: &str) -> bool {
+    path.starts_with('/') || std::path::Path::new(path).is_absolute()
 }
