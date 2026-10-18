@@ -4,9 +4,9 @@
 # tests/guest.rs drives it through the real host). Fails when the module reaches 1500 KB
 # (the format, doc, expr crates and every converter are linked in).
 #
-# Needs the wasm32-unknown-unknown std (rust-toolchain.toml; the NixOS rustc ships it). The
-# nix-built rustc has no rust-lld, so without one on the toolchain the script re-runs itself
-# under `nix shell nixpkgs#lld` and links with wasm-ld.
+# Needs the wasm32-unknown-unknown std (rust-toolchain.toml; `nix develop` has Rust 1.95.0 with
+# it and rust-lld). A toolchain without rust-lld (nixpkgs' rustc) links with wasm-ld instead,
+# re-running the script under `nix shell nixpkgs#lld` when none is on PATH.
 #
 # Reproducible: CI rebuilds the module and fails when the committed one differs. The bytes
 # depend only on the sources, Cargo.lock and the toolchain: build in `nix develop` (the

@@ -2,13 +2,21 @@
   description = "Schemify interop plugin: xschem and Virtuoso import/export, as a wasm guest and the native CLI schemify-interop";
 
   inputs = {
-    # Locked to the nixpkgs revision Schemify's flake.lock pins: the same rustc builds the guest
-    # byte for byte (build.sh).
+    # Locked to the nixpkgs and rust-overlay revisions Schemify's flake.lock pins: Rust 1.95.0
+    # with rust-lld builds the guest byte for byte (build.sh).
     nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay = {
+      url = "github:oxalica/rust-overlay";
+      inputs.nixpkgs.follows = "nixpkgs";
+    };
   };
 
   outputs =
-    { self, nixpkgs }:
+    {
+      self,
+      nixpkgs,
+      rust-overlay,
+    }:
     let
       systems = [
         "x86_64-linux"
@@ -16,28 +24,42 @@
         "x86_64-darwin"
         "aarch64-darwin"
       ];
-      forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
+      forAll =
+        f:
+        nixpkgs.lib.genAttrs systems (
+          system:
+          f (
+            import nixpkgs {
+              inherit system;
+              overlays = [ rust-overlay.overlays.default ];
+            }
+          )
+        );
 
-      # The Schemify commit Cargo.toml pins (the `rev` of `schemify-abi`), for `devices/`:
-      # schemify-doc embeds `../../../devices/*.shprim` from outside its crate directory, which
-      # vendoring (one directory per crate) leaves behind.
-      schemifyRev =
-        let
-          line =
-            nixpkgs.lib.findFirst (nixpkgs.lib.hasPrefix "schemify-abi = ")
-              (throw "no schemify-abi in Cargo.toml")
-              (nixpkgs.lib.splitString "\n" (builtins.readFile ./Cargo.toml));
-        in
-        builtins.head (builtins.match ''.*rev = "([0-9a-f]+)".*'' line);
-      schemifySrc = builtins.fetchGit {
-        url = "https://github.com/OmarSiwy/Schemify";
-        rev = schemifyRev;
-      };
+      # Rust 1.95.0 (the rust-version) with the guest and WASI targets and rust-lld.
+      toolchain =
+        pkgs:
+        pkgs.rust-bin.stable."1.95.0".default.override {
+          extensions = [
+            "rust-src"
+            "rust-analyzer"
+          ];
+          targets = [
+            "wasm32-unknown-unknown"
+            "wasm32-wasip1"
+          ];
+        };
+      rustPlatform =
+        pkgs:
+        pkgs.makeRustPlatform {
+          cargo = toolchain pkgs;
+          rustc = toolchain pkgs;
+        };
 
       # The native CLI (`schemify-interop xschem-import …`).
       interop =
         pkgs:
-        pkgs.rustPlatform.buildRustPackage {
+        (rustPlatform pkgs).buildRustPackage {
           pname = "schemify-interop";
           version = "0.1.0";
           src = self;
@@ -54,10 +76,6 @@
           ];
           # The suite needs the fetched corpus and xschem; run `cargo test --features cli` in
           # the dev shell (CI does).
-          # The vendored crates sit in $NIX_BUILD_TOP/cargo-vendor-dir, so `devices/` goes beside it.
-          preBuild = ''
-            cp -r ${schemifySrc}/devices "$NIX_BUILD_TOP/devices"
-          '';
           doCheck = false;
           meta = {
             description = "Schemify interop plugin, native CLI (xschem import)";
@@ -84,14 +102,7 @@
       devShells = forAll (pkgs: {
         default = pkgs.mkShell {
           packages = with pkgs; [
-            # Rust (nixpkgs' rustc ships the wasm32-unknown-unknown std); wasm-ld, since the
-            # nix rustc has no rust-lld (build.sh).
-            rustc
-            cargo
-            clippy
-            rustfmt
-            rust-analyzer
-            lld
+            (toolchain pkgs)
             # tests/xschem_export.rs netlists the export with a real xschem; the corpus
             # (corpus/golden.sh) makes goldens with it, tclsh for the PDK generators.
             xschem

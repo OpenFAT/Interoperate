@@ -256,7 +256,7 @@ No Cadence tool runs here, so:
 
 ## Development
 
-`nix develop` has the pinned rustc, wasm-ld, xschem, ngspice and wasmtime. The Schemify crates
+`nix develop` has the pinned Rust 1.95.0 (rust-overlay, with rust-lld), xschem, ngspice and wasmtime. The Schemify crates
 are git dependencies pinned to one core commit in `Cargo.toml`; tests read copies of the core
 fixtures in `tests/fixtures/schemify/`.
 
