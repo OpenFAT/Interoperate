@@ -32,19 +32,19 @@ From your Virtuoso project directory (the one with `cds.lib`):
 writes what to send back into `sfylive/summary.txt`:
 
 ```sh
-/path/to/Schemify/plugins/interop/live/test.sh --lib sample
+/path/to/Schemify-Interop/live/test.sh --lib sample
 ```
 
 `run.sh` alone does the same without the cleanup and the summary:
 
 ```sh
-/path/to/Schemify/plugins/interop/live/run.sh
+/path/to/Schemify-Interop/live/run.sh
 ```
 
 That runs the fixtures only, with no PDK. To cover everything, add your own cells and a PDK:
 
 ```sh
-/path/to/Schemify/plugins/interop/live/run.sh \
+/path/to/Schemify-Interop/live/run.sh \
     --lib myLib --project ~/designs/my_schemify_project \
     --cell myLib/amp --cell myLib/amp_tb \
     --pdk myPdk/nfet --callbacks

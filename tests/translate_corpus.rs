@@ -1,4 +1,4 @@
-//! Real-corpus translation oracles, gated on `SCHEMIFY_CACHE` (the `tests/corpus/.cache`
+//! Real-corpus translation oracles, gated on `SCHEMIFY_CACHE` (the `corpus/.cache`
 //! directory: `src/` from `fetch.sh`, `golden/` from `golden.sh`). Without it every
 //! test prints a skip note and passes.
 //!
@@ -502,7 +502,7 @@ const ORIENTS: [Orient; 8] = [
 fn orientation_table_reproduces_golden_connectivity() {
     let Some(c) = cache() else { return };
     let benches = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/benches.txt"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
     )
     .expect("benches.txt");
     let groups: HashMap<&str, Vec<PathBuf>> = groups(&c)

@@ -1,4 +1,4 @@
-;; sfy_live.il: the Virtuoso side of the live test kit (plugins/interop/live/README.md).
+;; sfy_live.il: the Virtuoso side of the live test kit (live/README.md).
 ;; Loaded after schemify.il by the generated session files (session1.il, session2.il), which
 ;; call these procedures with concrete paths. Every check writes one line to the results
 ;; file, flushed at once, so a session that dies on a dialog still leaves every check before

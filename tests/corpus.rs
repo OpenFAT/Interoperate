@@ -1,5 +1,5 @@
 //! Real-corpus oracles, gated on `SCHEMIFY_CORPUS` (a directory holding the PDK and
-//! xschem example libraries; see `tests/corpus/fetch.sh`). Without it every test here
+//! xschem example libraries; see `corpus/fetch.sh`). Without it every test here
 //! prints a skip note and passes.
 //!
 //! - Every `.sym`/`.sch` reads with zero dropped records.

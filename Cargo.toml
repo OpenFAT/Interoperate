@@ -1,11 +1,12 @@
 [package]
 name = "interop"
 description = "Interop plugin (D24 as amended 2026-10-12): xschem import today; Virtuoso import/export and xschem export to come. Never linked into the core."
-version.workspace = true
-edition.workspace = true
-license.workspace = true
-rust-version.workspace = true
+version = "0.1.0"
+edition = "2024"
+license = "MIT"
+rust-version = "0.1.0"
 publish = false
+repository = "https://github.com/OmarSiwy/Schemify-Interop"
 
 # cdylib: the wasm32 guest. rlib: the same importer as a plain library, for the native CLI
 # (`schemify-interop`) and the oracle tests (tests/).
@@ -24,18 +25,47 @@ required-features = ["cli"]
 
 [dependencies]
 schemify-abi.workspace = true
-schemify-format = { path = "../../crates/format" }
-schemify-doc = { path = "../../crates/doc" }
-schemify-expr = { path = "../../crates/expr" }
+schemify-format.workspace = true
+schemify-doc.workspace = true
+schemify-expr.workspace = true
 
 [dev-dependencies]
 # The xschem differential (tests/xschem_differential.rs): import → elaborate → netlist →
 # compare with xschem's golden netlist through spicecmp, and ngspice results through wave.
-schemify-elab = { path = "../../crates/elab" }
-schemify-netlist = { path = "../../crates/netlist" }
-schemify-spicecmp = { path = "../../tools/spicecmp" }
-schemify-wave = { path = "../../crates/wave" }
+schemify-elab.workspace = true
+schemify-netlist.workspace = true
+schemify-spicecmp.workspace = true
+schemify-wave.workspace = true
 # The built guest through the real host (tests/guest.rs).
-schemify-plugin = { path = "../../crates/plugin" }
+schemify-plugin.workspace = true
 # `std` only: no fork/timeout runners (rusty-fork, tempfile) or bit-set strategies used.
 proptest = { version = "1", default-features = false, features = ["std"] }
+
+# The plugin is its own workspace; the fuzz crate (`fuzz/`) has its own (cargo-fuzz needs
+# nightly flags this one must not see).
+[workspace]
+resolver = "3"
+exclude = ["fuzz"]
+
+# Schemify's crates, pinned to one core revision. `nightly.yml` builds against `main` too, so
+# core drift shows up within a day; bump the rev here and in every entry together.
+[workspace.dependencies]
+schemify-abi = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012", features = ["guest"] }
+schemify-format = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-doc = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-expr = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-elab = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-netlist = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-wave = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-plugin = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+schemify-spicecmp = { git = "https://github.com/OmarSiwy/Schemify", rev = "df18b211f18d7263e59d579e13df96d265ea4012" }
+
+# Small module: size over speed, no unwinding (a panic is a trap the host reports).
+[profile.release]
+opt-level = "z"
+lto = true
+codegen-units = 1
+panic = "abort"
+strip = true
+debug = false
+

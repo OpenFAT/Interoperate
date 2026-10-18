@@ -1,4 +1,4 @@
-//! The built guest (`plugins/interop/interop.wasm`, refreshed by `plugins/build.sh`) end to
+//! The built guest (`interop.wasm`, refreshed by `build.sh`) end to
 //! end through the real host (`schemify_plugin`, wasmi, default fuel): the File menu and
 //! commands compose without faults; a command without arguments opens the path panel; the
 //! Virtuoso export, xschem export and SKILL install read through inverted I/O and write
@@ -139,7 +139,7 @@ fn fixture(rel: &str) -> BTreeMap<String, Vec<u8>> {
         }
     }
     let dir = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("../..")
+        .join("tests/fixtures/schemify")
         .join(rel);
     let mut out = BTreeMap::new();
     walk(&dir, &dir, &mut out);
@@ -166,7 +166,7 @@ fn native(cmd: Command, files: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, V
 #[test]
 fn contributes_the_file_menu_and_opens_the_path_panel() {
     let Some(mut w) = World::new() else {
-        eprintln!("interop.wasm not built (plugins/build.sh); skipped");
+        eprintln!("interop.wasm not built (./build.sh); skipped");
         return;
     };
     let c = w.plugins.composed();
@@ -207,7 +207,7 @@ fn contributes_the_file_menu_and_opens_the_path_panel() {
 #[test]
 fn guest_conversions_equal_the_native_job_byte_for_byte() {
     let Some(mut w) = World::new() else {
-        eprintln!("interop.wasm not built (plugins/build.sh); skipped");
+        eprintln!("interop.wasm not built (./build.sh); skipped");
         return;
     };
     let files = fixture("crates/app/tests/fixtures/inv");

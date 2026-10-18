@@ -1,12 +1,12 @@
 //! The xschem differential oracle (docs/dev/testing.md, netlist row; it lives with the importer it
 //! needs, which the core never links), gated on `SCHEMIFY_CORPUS`
-//! (the `tests/corpus/.cache` directory: `src/` from `fetch.sh`, `golden/` from
+//! (the `corpus/.cache` directory: `src/` from `fetch.sh`, `golden/` from
 //! `golden.sh`). Without it the test prints a skip note and passes.
 //!
-//! For every bench of `tests/corpus/benches.txt`: import its library group with
+//! For every bench of `corpus/benches.txt`: import its library group with
 //! `interop` (the groups and search paths of `import_all.sh`), elaborate the
 //! bench's cell (see `bench_cell`), emit ngspice and cdl, and compare each with xschem's golden under
-//! `schemify_spicecmp::compare`. Prints the ratchet table (`tests/corpus/RATCHET.md`)
+//! `schemify_spicecmp::compare`. Prints the ratchet table (`corpus/RATCHET.md`)
 //! and writes the imported files, our netlists and the diffs to
 //! `$SCHEMIFY_CORPUS/netlist-out/`.
 //!
@@ -331,11 +331,11 @@ fn ngspice_results_agree() {
     };
     let cache = std::fs::canonicalize(&cache).unwrap();
     let list = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/benches.txt"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
     )
     .unwrap();
     // gf180 benches name the models `*.ngspice`; the repository ships `*.spice`
-    // (open_pdks renames them, tests/corpus/README.md).
+    // (open_pdks renames them, corpus/README.md).
     let models = cache.join("src/gf180mcu_fd_pr/models/ngspice");
     for stem in ["design", "sm141064"] {
         let to = models.join(format!("{stem}.ngspice"));
@@ -372,10 +372,10 @@ fn ngspice_results_agree() {
             let golden =
                 std::fs::read_to_string(cache.join(format!("golden/{name}.spice"))).unwrap();
             // The golden's absolute cache paths point into the checkout that made it.
-            let golden = match golden.find("/tests/corpus/.cache") {
+            let golden = match golden.find("/corpus/.cache") {
                 Some(i) => {
                     let from = golden[..i].rfind(' ').map_or(0, |s| s + 1);
-                    let theirs = format!("{}/tests/corpus/.cache", &golden[from..i]);
+                    let theirs = format!("{}/corpus/.cache", &golden[from..i]);
                     golden.replace(&theirs, &ours_root)
                 }
                 None => golden,
@@ -456,7 +456,7 @@ fn xschem_differential() {
     let cache = std::fs::canonicalize(&cache).expect("corpus cache exists");
     let filter = std::env::var("SCHEMIFY_CORPUS_FILTER").unwrap_or_default();
     let list = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("../../tests/corpus/benches.txt"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
     )
     .unwrap();
     let benches: Vec<(&str, &str, &str)> = list
@@ -529,9 +529,9 @@ fn xschem_differential() {
                 let golden = std::fs::read_to_string(&golden_path).unwrap_or_default();
                 // Goldens embed the absolute cache path of the checkout that made them.
                 let theirs = golden
-                    .find("/tests/corpus/.cache")
+                    .find("/corpus/.cache")
                     .and_then(|i| golden[..i].rfind(' ').map(|s| &golden[s + 1..i]))
-                    .map(|p| format!("{p}/tests/corpus/.cache"));
+                    .map(|p| format!("{p}/corpus/.cache"));
                 let mut aliases = vec![(ours.clone(), "$CORPUS".to_owned())];
                 aliases.extend(theirs.map(|p| (p, "$CORPUS".to_owned())));
                 let opts = CmpOptions {

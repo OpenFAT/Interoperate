@@ -70,7 +70,7 @@ fn read_project(root: &Path) -> Files {
 }
 
 fn fixtures() -> Vec<Fixture> {
-    let repo = crate_dir().join("../..");
+    let repo = crate_dir().join("tests/fixtures/schemify");
     let mut v: Vec<Fixture> = [
         ("app-rc", "crates/app/tests/fixtures/rc", "tb.shbench"),
         ("app-inv", "crates/app/tests/fixtures/inv", "top.shcomp"),

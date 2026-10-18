@@ -11,9 +11,10 @@ use interop::map::Mapping;
 use interop::sfyx;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 
-/// The repository root.
+/// The copies of Schemify's fixture projects, at their Schemify paths
+/// (`tests/fixtures/schemify/README.md` names the core revision they come from).
 pub fn root() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/schemify")
 }
 
 /// Every file under `dir`, keyed by its `/`-separated path relative to `dir`. A directory

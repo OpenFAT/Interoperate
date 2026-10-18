@@ -2,7 +2,7 @@
 # Live Virtuoso test kit for the interop plugin: one command on a machine with Cadence
 # Virtuoso and this repository's Rust toolchain. See README.md next to this file.
 #
-#   plugins/interop/live/run.sh [--env FILE] [--cdslib FILE] [--work DIR] [--cell LIB/CELL]...
+#   live/run.sh [--env FILE] [--cdslib FILE] [--work DIR] [--cell LIB/CELL]...
 #       [--lib LIB]... [--project DIR]... [--pdk LIB[/CELL[,CELL...]]] [--callbacks]
 #       [--step STEP]
 #
@@ -21,7 +21,7 @@
 set -uo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-repo="$(cd "$here/../../.." && pwd)"
+repo="$(cd "$here/.." && pwd)"
 work="$PWD/sfylive"
 cdslib="$PWD/cds.lib"
 step=all
@@ -77,7 +77,7 @@ host() {
   SCHEMIFY_LIVE_DIR="$work" SCHEMIFY_LIVE_STEP="$1" \
   SCHEMIFY_LIVE_CELLS="${cells[*]-}" SCHEMIFY_LIVE_PROJECTS="${projects[*]-}" SCHEMIFY_LIVE_PDK="$pdk" \
   SCHEMIFY_LIVE_CALLBACKS="$callbacks" \
-    cargo test --quiet --manifest-path "$repo/plugins/Cargo.toml" -p interop \
+    cargo test --quiet --manifest-path "$repo/Cargo.toml" \
       --test virtuoso_live live_step -- --ignored --exact --nocapture
 }
 

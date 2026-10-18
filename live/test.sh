@@ -3,7 +3,7 @@
 # collects everything worth sending back into <work>/summary.txt (also printed at the end).
 #
 #   cd <your Virtuoso project directory>        # the one with cds.lib
-#   /path/to/Schemify/plugins/interop/live/test.sh [run.sh flags, e.g. --lib sample]
+#   /path/to/Schemify-Interop/live/test.sh [run.sh flags, e.g. --lib sample]
 #
 # It deletes the previous work directory (default ./sfylive) and this user's /tmp/sfy_* files.
 set -u

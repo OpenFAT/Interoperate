@@ -1,7 +1,7 @@
 //! Merge-tier replay of the checked-in fuzz corpus (docs/dev/testing.md tiers): every input of
 //! `fuzz/corpus/xschem_read/` through the fuzz target's own oracle.
 
-include!("../../../tests/fuzz/replay.rs");
+include!("common/replay.rs");
 include!("../fuzz/oracles/xschem_read.rs");
 
 #[test]

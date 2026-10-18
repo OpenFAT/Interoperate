@@ -649,7 +649,7 @@ const ALIB_CONTROLLED: &[(&str, [i32; 2])] = &[
 
 /// Where an analogLib symbol has its pins: (terminal, centre of its pin figure in the
 /// symbol's frame, milli-units, y down), for the cells of [`DEVICES`] and the global
-/// symbols. Measured on ICADVM20.1's analogLib by the live kit (`plugins/interop/live`,
+/// symbols. Measured on ICADVM20.1's analogLib by the live kit (`live`,
 /// rows `analoglib.pins.*`, 2026-10-15), which compares this table with the analogLib it
 /// runs against every time. [`crate::align::fit`] places re-mastered instances by it;
 /// `None` for a cell it does not hold (connections then go through stubs).
