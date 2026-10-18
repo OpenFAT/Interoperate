@@ -4,7 +4,7 @@ description = "Interop plugin (D24 as amended 2026-10-12): xschem import today; 
 version = "0.1.0"
 edition = "2024"
 license = "MIT"
-rust-version = "0.1.0"
+rust-version = "1.95"
 publish = false
 repository = "https://github.com/OmarSiwy/Schemify-Interop"
 

@@ -330,10 +330,9 @@ fn ngspice_results_agree() {
         return;
     };
     let cache = std::fs::canonicalize(&cache).unwrap();
-    let list = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
-    )
-    .unwrap();
+    let list =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"))
+            .unwrap();
     // gf180 benches name the models `*.ngspice`; the repository ships `*.spice`
     // (open_pdks renames them, corpus/README.md).
     let models = cache.join("src/gf180mcu_fd_pr/models/ngspice");
@@ -455,10 +454,9 @@ fn xschem_differential() {
     };
     let cache = std::fs::canonicalize(&cache).expect("corpus cache exists");
     let filter = std::env::var("SCHEMIFY_CORPUS_FILTER").unwrap_or_default();
-    let list = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
-    )
-    .unwrap();
+    let list =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"))
+            .unwrap();
     let benches: Vec<(&str, &str, &str)> = list
         .lines()
         .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))

@@ -501,10 +501,9 @@ const ORIENTS: [Orient; 8] = [
 #[test]
 fn orientation_table_reproduces_golden_connectivity() {
     let Some(c) = cache() else { return };
-    let benches = std::fs::read_to_string(
-        Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"),
-    )
-    .expect("benches.txt");
+    let benches =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"))
+            .expect("benches.txt");
     let groups: HashMap<&str, Vec<PathBuf>> = groups(&c)
         .into_iter()
         .map(|g| (g.name, g.path.into_iter().map(|(d, _)| d).collect()))
