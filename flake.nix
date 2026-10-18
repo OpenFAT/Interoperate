@@ -18,6 +18,22 @@
       ];
       forAll = f: nixpkgs.lib.genAttrs systems (system: f nixpkgs.legacyPackages.${system});
 
+      # The Schemify commit Cargo.toml pins (the `rev` of `schemify-abi`), for `devices/`:
+      # schemify-doc embeds `../../../devices/*.shprim` from outside its crate directory, which
+      # vendoring (one directory per crate) leaves behind.
+      schemifyRev =
+        let
+          line =
+            nixpkgs.lib.findFirst (nixpkgs.lib.hasPrefix "schemify-abi = ")
+              (throw "no schemify-abi in Cargo.toml")
+              (nixpkgs.lib.splitString "\n" (builtins.readFile ./Cargo.toml));
+        in
+        builtins.head (builtins.match ''.*rev = "([0-9a-f]+)".*'' line);
+      schemifySrc = builtins.fetchGit {
+        url = "https://github.com/OmarSiwy/Schemify";
+        rev = schemifyRev;
+      };
+
       # The native CLI (`schemify-interop xschem-import …`).
       interop =
         pkgs:
@@ -38,6 +54,10 @@
           ];
           # The suite needs the fetched corpus and xschem; run `cargo test --features cli` in
           # the dev shell (CI does).
+          # The vendored crates sit in $NIX_BUILD_TOP/cargo-vendor-dir, so `devices/` goes beside it.
+          preBuild = ''
+            cp -r ${schemifySrc}/devices "$NIX_BUILD_TOP/devices"
+          '';
           doCheck = false;
           meta = {
             description = "Schemify interop plugin, native CLI (xschem import)";

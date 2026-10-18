@@ -13,6 +13,9 @@ use interop::virtuoso::ExportOptions;
 use schemify_plugin::abi::{Code, Event, FUEL_DEFAULT, Kind};
 use schemify_plugin::{IoOp, PluginEvents, PluginId, Plugins, RequestQueues, Snapshots, deliver};
 
+/// The capabilities the guest runs with here, and what `schemify.project` requests.
+const GRANTS: [&str; 2] = ["read_project", "write_project"];
+
 struct World {
     plugins: Plugins,
     events: PluginEvents,
@@ -27,12 +30,7 @@ impl World {
             std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("interop.wasm")).ok()?;
         let mut plugins = Plugins::new();
         let id = plugins
-            .load(
-                "interop",
-                &wasm,
-                &["read_project", "write_project"],
-                FUEL_DEFAULT,
-            )
+            .load("interop", &wasm, &GRANTS, FUEL_DEFAULT)
             .expect("loads");
         let mut w = World {
             plugins,
@@ -269,4 +267,23 @@ fn want_sfyx(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         files,
     )["out/inv.sfyx"]
         .clone()
+}
+
+/// The package manifest (`schemify.project`, read by `schemify pack`) is canonical, names the
+/// committed module, requests exactly the grants these tests run the guest with, and suggests
+/// the fuel ceiling (README: a real conversion needs it).
+#[test]
+fn package_manifest_requests_the_tested_grants() {
+    let text = include_str!("../schemify.project");
+    let doc = schemify_format::parse(text.as_bytes()).expect("parses");
+    assert_eq!(schemify_format::write(&doc), text, "canonical");
+    let mut lines = text.lines().skip(2);
+    assert_eq!(lines.next(), Some("plugin interop path interop.wasm"));
+    let rest: Vec<&str> = lines.collect();
+    let grants: Vec<&str> = rest
+        .iter()
+        .filter_map(|l| l.strip_prefix("  grant "))
+        .collect();
+    assert_eq!(grants, GRANTS);
+    assert!(rest.contains(&"  fuel 100000000000"), "{rest:?}");
 }

@@ -48,6 +48,18 @@ jobs:
       - name: goldens report
         if: always()
         run: cat corpus/.cache/golden/REPORT.txt
+      # Schemify's comparator self-checks on these real goldens (its corpus moved here):
+      # spicecmp's ignored metamorphic tests read the goldens through SCHEMIFY_GOLDEN.
+      - uses: actions/checkout@v5
+        with:
+          repository: OmarSiwy/Schemify
+          ref: main
+          path: .schemify
+      - name: comparator self-checks on real goldens (Schemify main)
+        working-directory: .schemify
+        run: >-
+          SCHEMIFY_GOLDEN=$CACHE/golden
+          cargo test --release -p schemify-spicecmp -- --include-ignored
       - name: differential vs xschem
         run: >-
           SCHEMIFY_CORPUS=$CACHE
