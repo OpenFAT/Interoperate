@@ -1,9 +1,12 @@
 # interop: Schemify ⇄ Cadence Virtuoso and xschem
 
 Use Schemify as your schematic editor while your team stays in Cadence Virtuoso, and move
-designs to and from xschem. One plugin, never part of the core (D24 as amended, D41). Normative
-spec: [docs/spec/interop.md](../../docs/spec/interop.md); xschem import:
-[docs/spec/import.md](../../docs/spec/import.md).
+designs to and from xschem. A [Schemify](https://github.com/OmarSiwy/Schemify) plugin, never
+part of the core (D24 as amended, D41). Normative spec: [interop.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/interop.md); xschem
+import: [import.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/import.md).
+
+Two interfaces: the **plugin** (`interop.wasm`, loaded by the editor) and, secondary, the
+**native CLI** `schemify-interop` for the same conversions without the editor.
 
 | Direction | What crosses |
 |---|---|
@@ -18,10 +21,21 @@ Rust code. The SKILL side only moves data, and its data is never evaluated (`lin
 
 ## Install
 
-Add the plugin to the project manifest:
+For yourself, in every project: add it to your Schemify config (`init.lua`) and run
+`schemify pack sync`:
+
+```lua
+schemify.pack.add {
+  { src = "https://github.com/OmarSiwy/Schemify-Interop", name = "interop",
+    grant = { "read_project", "write_project" }, fuel = 100000000000 },
+}
+```
+
+Pin a release with `version = "v0.1.0"`. For one project (so everyone who opens it gets the
+plugin): copy `interop.wasm` into the project and add it to the project manifest:
 
 ```
-plugin interop path plugins/interop
+plugin interop path plugins/interop.wasm
   grant read_project
   grant write_project
   fuel 100000000000
@@ -38,7 +52,7 @@ In the editor the File menu gains **Export to Virtuoso (.sfyx)…**, **Import fr
 the editor, the same conversions run from the command line:
 
 ```
-cargo run --manifest-path plugins/Cargo.toml -p interop --features cli --bin schemify-interop -- <command>
+cargo install --git https://github.com/OmarSiwy/Schemify-Interop --features cli   # or a release binary, or `nix run github:OmarSiwy/Schemify-Interop --`
 
 schemify-interop virtuoso-export <project> <cell-file>... -o <file.sfyx> [--lib L=V]... [--core-cells]
 schemify-interop virtuoso-import <project> <file.sfyx> [--lib L=V]... [--analoglib]
@@ -239,3 +253,27 @@ No Cadence tool runs here, so:
 | `src/job.rs` | one conversion as pure steps, driven by `src/plugin.rs` (editor) and `src/cli.rs` |
 | `skill/*.il` | the parts of `schemify.il` |
 | `tests/` | `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, and the xschem import suites |
+
+## Development
+
+`nix develop` has the pinned rustc, wasm-ld, xschem, ngspice and wasmtime. The Schemify crates
+are git dependencies pinned to one core commit in `Cargo.toml`; tests read copies of the core
+fixtures in `tests/fixtures/schemify/`.
+
+| Command | Does |
+|---|---|
+| `cargo test --features cli` | every native test; the corpus ones skip without `SCHEMIFY_CORPUS` |
+| `./build.sh` | rebuilds `interop.wasm` (reproducible; commit it with the change) |
+| `SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli --test guest --test xschem_export` | the built guest through Schemify's host, the export netlisted by real xschem |
+| `corpus/fetch.sh && corpus/golden.sh` then `SCHEMIFY_CORPUS=corpus/.cache cargo test --release --test xschem_differential -- --nocapture` | the xschem differential ([corpus/README.md](corpus/README.md)) |
+| `determinism/run.sh <schemify-interop command> <out>` | the import every platform must write byte for byte |
+| `cd fuzz && cargo +nightly fuzz run xschem_read` | the fuzzers (`fuzz/seeds.sh` seeds them) |
+
+CI (`.github/workflows/`): `ci.yml` runs the suite on Linux, macOS and Windows, compares the
+import across them and WASI, rebuilds the guest and fails when the committed module differs;
+`nightly.yml` runs the corpus ratchet, the fuzzers, and the suite against Schemify `main`;
+`release.yml` builds the CLI for every platform into a draft release on a `v*` tag.
+
+To move to a newer Schemify: set every `rev` in `Cargo.toml` to the new commit,
+`cargo update -p schemify-abi` (and the other Schemify crates), `./build.sh`, test, and commit
+`Cargo.toml`, `Cargo.lock` and `interop.wasm` together.

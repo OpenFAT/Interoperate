@@ -1,0 +1,137 @@
+# Merge tier: every push to main or ci/*, and every PR. Linux, macOS, Windows and WASI are all
+# tier 1 (Schemify D32): the importer's output must be byte-identical on each.
+name: ci
+
+on:
+  push:
+    branches: [main, "ci/**"]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  # = rust-version in Cargo.toml and Schemify's CI: clippy cannot turn main red overnight.
+  RUST_TOOLCHAIN: "1.95.0"
+
+jobs:
+  test:
+    name: test (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --features cli -- -D warnings
+      - run: cargo test --features cli --no-fail-fast
+      # Determinism: the import every platform must write byte for byte; the `determinism`
+      # job compares them. Runs even when a test failed, so the comparison sees every platform.
+      - if: ${{ !cancelled() }}
+        run: cargo build --features cli --bin schemify-interop
+      - if: ${{ !cancelled() }}
+        run: bash determinism/run.sh "$PWD/target/debug/schemify-interop" determinism-out
+      - if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: determinism-${{ matrix.os }}
+          path: determinism-out
+          if-no-files-found: error
+
+  # The CLI builds for WASI too (the guest glue is wasm32-unknown-unknown only), so the
+  # import joins the comparison under wasmtime.
+  wasi:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+          targets: wasm32-wasip1
+      - uses: Swatinem/rust-cache@v2
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: wasmtime
+      - run: cargo build --target wasm32-wasip1 --features cli --bin schemify-interop
+      - run: >-
+          bash determinism/run.sh
+          "wasmtime run --dir=.::/ target/wasm32-wasip1/debug/schemify-interop.wasm"
+          determinism-out
+      - uses: actions/upload-artifact@v4
+        with:
+          name: determinism-wasi
+          path: determinism-out
+          if-no-files-found: error
+
+  determinism:
+    needs: [test, wasi]
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: determinism-*
+      - name: compare against ubuntu
+        run: |
+          ls -d determinism-*
+          status=0
+          for d in determinism-*; do
+            [ "$d" = determinism-ubuntu-latest ] && continue
+            echo "== ubuntu-latest vs ${d#determinism-}"
+            diff -r -x '*.log' determinism-ubuntu-latest "$d" || status=1
+          done
+          [ -d determinism-ubuntu-latest ] && [ "$(ls -d determinism-* | wc -l)" -eq 4 ] || {
+            echo "::error::missing platform outputs"; status=1; }
+          exit $status
+
+  # The guest (Nix: the flake.lock rustc and wasm-ld). build.sh is byte-reproducible and fails
+  # at the 1500 KB limit; the last step fails when the committed interop.wasm differs from the
+  # rebuild: commit the `interop-wasm` artifact of the run.
+  guest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - uses: Swatinem/rust-cache@v2
+      - run: nix develop -c ./build.sh
+      - uses: actions/upload-artifact@v4
+        with:
+          name: interop-wasm
+          path: interop.wasm
+          if-no-files-found: error
+      # The guest through Schemify's real host (byte-identical to the native job), and the
+      # xschem export netlisted by a real xschem (the Nix shell has it: a missing one fails).
+      - name: guest and real-xschem export
+        run: >-
+          nix develop -c env SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli
+          --test guest --test xschem_export --no-fail-fast
+      - name: committed module equals the rebuild (reproducible guest)
+        if: ${{ !cancelled() }}
+        run: |
+          changed="$(git status --porcelain -- '*.wasm')"
+          [ -z "$changed" ] && exit 0
+          echo "$changed"
+          echo "::error::the committed interop.wasm differs from build.sh output: commit the interop-wasm artifact of this run"
+          exit 1
+
+  flake:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - run: nix flake check -L
+      - run: nix build -L .#default

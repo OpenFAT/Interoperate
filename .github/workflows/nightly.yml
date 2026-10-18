@@ -1,0 +1,189 @@
+# Nightly tier: the xschem differential ratchet on the full corpus with the ngspice second
+# oracle, fuzzing, and the suite against Schemify `main` (core drift shows up within a day).
+name: nightly
+
+on:
+  schedule:
+    - cron: "37 3 * * *"
+  workflow_dispatch:
+    inputs:
+      fuzz_minutes:
+        description: minutes per fuzz target
+        default: "60"
+      only:
+        description: >-
+          run one job only (corpus, fuzz, schemify-main, or the manual fuzz-corpus);
+          empty runs the nightly set
+        default: ""
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_TOOLCHAIN: "1.95.0" # = ci.yml
+
+jobs:
+  # Goldens from a pinned xschem (nix), our netlists of every bench, spicecmp comparison;
+  # fails when the agree counts drop below corpus/RATCHET.md. Then the second oracle:
+  # ngspice results of our netlists and xschem's agree (sky130 models from volare).
+  corpus:
+    if: ${{ !inputs.only || inputs.only == 'corpus' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 180
+    env:
+      CACHE: ${{ github.workspace }}/corpus/.cache
+      # open_pdks build that volare serves (release sky130-<commit>, 2025-08); its
+      # libs.tech/combined is what xschem_sky130's SKYWATER_MODELS points at.
+      SKY130_OPEN_PDKS: c6d73a35f524070e85faff4a6a9eef49553ebc2b
+      VOLARE_VERSION: "0.20.6"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - uses: dtolnay/rust-toolchain@master
+        with:
+          toolchain: ${{ env.RUST_TOOLCHAIN }}
+      - uses: Swatinem/rust-cache@v2
+      - name: fetch corpus (pinned, sparse)
+        run: corpus/fetch.sh
+      - name: golden netlists from pinned xschem (nix)
+        run: corpus/golden.sh
+      - name: goldens report
+        if: always()
+        run: cat corpus/.cache/golden/REPORT.txt
+      - name: differential vs xschem
+        run: >-
+          SCHEMIFY_CORPUS=$CACHE
+          cargo test --release --test xschem_differential -- --nocapture
+      - name: ratchet (RATCHET.md)
+        run: corpus/ratchet.sh corpus/.cache/netlist-out/TABLE.md
+      # golden.sh points PDK_ROOT at $CACHE/pdk with only the xschem libraries; the model
+      # files open_pdks generates come from volare's prebuilt release, linked in beside them.
+      - name: sky130 models (volare)
+        if: ${{ !cancelled() }}
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          pipx install "volare==$VOLARE_VERSION"
+          volare enable --pdk sky130 --pdk-root "$CACHE/volare" \
+            -l sky130_fd_pr -l sky130_fd_sc_hd "$SKY130_OPEN_PDKS"
+          for d in libs.tech/combined libs.tech/ngspice libs.ref; do
+            ln -sfn "$CACHE/volare/sky130A/$d" "$CACHE/pdk/sky130A/$d"
+          done
+          ls "$CACHE/pdk/sky130A/libs.tech/combined/sky130.lib.spice"
+      - name: second oracle (ngspice results of ours vs xschem's netlists)
+        if: ${{ !cancelled() }}
+        run: |
+          ngspice="$(nix build --no-link --print-out-paths \
+            "github:NixOS/nixpkgs/$(jq -r .nodes.nixpkgs.locked.rev flake.lock)#ngspice")"
+          PATH="$ngspice/bin:$PATH" SCHEMIFY_CORPUS=$CACHE \
+            cargo test --release --test xschem_differential -- --ignored ngspice_results_agree --nocapture
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: corpus-results
+          path: |
+            corpus/.cache/golden/REPORT.txt
+            corpus/.cache/netlist-out/TABLE.md
+            corpus/.cache/netlist-out/RESULTS.txt
+          if-no-files-found: ignore
+
+  # cargo-fuzz on both harnesses, starting from the checked-in corpus. The corpus carries over
+  # between nights through the actions cache and is uploaded with any crash inputs; a crash
+  # fails the job and its input becomes a checked-in regression test (tests/fuzz_corpus.rs).
+  fuzz:
+    if: ${{ !inputs.only || inputs.only == 'fuzz' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [xschem_read, sfyx_import]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      MINUTES: ${{ inputs.fuzz_minutes || '60' }}
+      CORPUS: fuzz/corpus/${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - uses: actions/cache@v4
+        with:
+          path: ${{ env.CORPUS }}
+          key: fuzz-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-${{ matrix.target }}-
+      # xschem_read also gets the fetched PDK files (seeded with real PDK files).
+      - name: seeds
+        run: fuzz/seeds.sh ${{ matrix.target }} "$CORPUS" --fetched
+      - name: fuzz ${{ matrix.target }} for ${{ env.MINUTES }} min
+        working-directory: fuzz
+        run: >-
+          cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} --
+          -max_total_time=$((MINUTES * 60)) -rss_limit_mb=4096 -timeout=30 -print_final_stats=1
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: fuzz-${{ matrix.target }}
+          path: |
+            ${{ env.CORPUS }}
+            fuzz/artifacts
+          if-no-files-found: ignore
+
+  # Manual only (`gh workflow run nightly.yml -f only=fuzz-corpus`): the minimized corpora to
+  # check in for the merge-tier replay (tests/fuzz_corpus.rs). Commits nothing: download the
+  # `fuzz-corpus-<target>` artifacts and commit them as fuzz/corpus/<target>/. Seeds are the
+  # checked-in corpus and this repository's own files only (no fetched xschem or PDK files), so
+  # every committed input derives from nothing third-party.
+  fuzz-corpus:
+    if: ${{ inputs.only == 'fuzz-corpus' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        target: [xschem_read, sfyx_import]
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      MINUTES: ${{ inputs.fuzz_minutes || '60' }}
+      CORPUS: fuzz/corpus/${{ matrix.target }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dtolnay/rust-toolchain@nightly
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-fuzz
+      - name: seeds (this repository only)
+        run: fuzz/seeds.sh ${{ matrix.target }} "$CORPUS"
+      # Inputs up to 4 KiB: a corpus of small inputs replays fast in debug builds.
+      - name: fuzz ${{ matrix.target }} for ${{ env.MINUTES }} min
+        working-directory: fuzz
+        run: >-
+          cargo fuzz run --target x86_64-unknown-linux-gnu ${{ matrix.target }} --
+          -max_total_time=$((MINUTES * 60)) -max_len=4096 -rss_limit_mb=4096 -timeout=30
+          -print_final_stats=1
+      - name: minimize (cargo fuzz cmin)
+        working-directory: fuzz
+        run: |
+          cargo fuzz cmin --target x86_64-unknown-linux-gnu ${{ matrix.target }}
+          echo "$(ls "corpus/${{ matrix.target }}" | wc -l) inputs, $(du -sh "corpus/${{ matrix.target }}" | cut -f1)"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: fuzz-corpus-${{ matrix.target }}
+          path: ${{ env.CORPUS }}
+          if-no-files-found: error
+
+  # The suite and the guest against Schemify `main` instead of the pinned rev: a red run means
+  # the core moved under the plugin; bump the rev in Cargo.toml once it is fixed.
+  schemify-main:
+    if: ${{ !inputs.only || inputs.only == 'schemify-main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: cachix/install-nix-action@v31
+      - name: point the Schemify crates at main
+        run: |
+          sed -i 's|rev = "[0-9a-f]*"|branch = "main"|' Cargo.toml
+          nix develop -c cargo update $(grep -o '^schemify-[a-z]*' Cargo.toml | sed 's/^/-p /')
+          git diff --stat
+      # First, so tests/guest.rs drives the guest built against main.
+      - name: guest builds within its limit
+        run: nix develop -c ./build.sh
+      - run: nix develop -c cargo clippy --all-targets --features cli -- -D warnings
+      - run: nix develop -c env SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli --no-fail-fast

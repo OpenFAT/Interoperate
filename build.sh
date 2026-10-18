@@ -16,11 +16,6 @@ set -euo pipefail
 
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 host="$(rustc -vV | sed -n 's/^host: //p')"
-pinned="$(sed -n 's/^rust-version = "\(.*\)"/\1/p' "$here/Cargo.toml")"
-if ! rustc -V | grep -q "^rustc $pinned\(\.0\)\? "; then
-  echo "warning: $(rustc -V) is not the pinned rustc $pinned (nix develop): the module will" \
-    "not match the committed one byte for byte" >&2
-fi
 # Unit separator between flags: paths may contain spaces.
 export CARGO_ENCODED_RUSTFLAGS="--remap-path-prefix=$here=/schemify-interop"$'\x1f'"--remap-path-prefix=${CARGO_HOME:-$HOME/.cargo}=/cargo"
 
