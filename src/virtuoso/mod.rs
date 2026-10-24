@@ -25,9 +25,10 @@ pub struct ExportOptions {
     pub lib_map: std::collections::BTreeMap<String, String>,
     /// Re-master `core:*` instances onto analogLib (§6.4) instead of exporting `schemify_core`.
     pub analoglib: bool,
-    /// The producer string of the header.
-    pub producer: String,
 }
+
+/// The producer string of every `.sfyx` header this plugin writes.
+pub const PRODUCER: &str = concat!("schemify-interop ", env!("CARGO_PKG_VERSION"));
 
 /// An export's result.
 #[derive(Clone, Debug, Default)]

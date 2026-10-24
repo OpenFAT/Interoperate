@@ -50,6 +50,86 @@ pub enum Command {
     XschemImport(Box<XschemImport>),
 }
 
+/// The command grammar both drivers share (the CLI after its project argument and host-only
+/// flags, the editor panel as typed). Paths are project-relative.
+pub const USAGE: &str = "\
+virtuoso-export <cell-file>... -o <file.sfyx> [--core-cells] [--lib L=V]...
+virtuoso-import <file.sfyx> [--analoglib] [--lib L=V]...
+xschem-export   <cell-file>... -o <out-dir>
+xschem-import   <lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--no-core] -o <out-dir>
+install-skill   [<dir>]";
+
+/// Parses `words` as command `cmd` of [`USAGE`]; `None` when they do not fit it (an unknown
+/// command, a flag the command does not take, a missing operand).
+pub fn parse(cmd: &str, words: &[String]) -> Option<Command> {
+    let allowed: &[&str] = match cmd {
+        "virtuoso-export" => &["-o", "--lib", "--core-cells"],
+        "virtuoso-import" => &["--lib", "--analoglib"],
+        "xschem-export" => &["-o"],
+        "xschem-import" => &["-o", "--root", "--xschemrc", "--no-core"],
+        "install-skill" => &[],
+        _ => return None,
+    };
+    let mut paths: Vec<String> = Vec::new();
+    let mut out = None;
+    let mut lib_map = std::collections::BTreeMap::new();
+    let mut x = XschemImport {
+        map_core: true,
+        ..XschemImport::default()
+    };
+    let (mut core_cells, mut analoglib) = (false, false);
+    let mut it = words.iter();
+    while let Some(w) = it.next() {
+        match w.as_str() {
+            f if f.starts_with('-') && !allowed.contains(&f) => return None,
+            "-o" => out = Some(it.next()?.replace('\\', "/")),
+            "--lib" => {
+                let (l, v) = it.next()?.split_once('=')?;
+                lib_map.insert(l.to_owned(), v.to_owned());
+            }
+            "--root" => x.roots.push(it.next()?.replace('\\', "/")),
+            "--xschemrc" => x.rcs.push(it.next()?.replace('\\', "/")),
+            "--core-cells" => core_cells = true,
+            "--analoglib" => analoglib = true,
+            "--no-core" => x.map_core = false,
+            p => paths.push(p.replace('\\', "/")),
+        }
+    }
+    Some(match cmd {
+        "virtuoso-export" if !paths.is_empty() => Command::VirtuosoExport {
+            tops: paths,
+            out: out?,
+            // analogLib masters unless `--core-cells` (§6.5).
+            opts: ExportOptions {
+                lib_map,
+                analoglib: !core_cells,
+            },
+        },
+        "virtuoso-import" if paths.len() == 1 => Command::VirtuosoImport {
+            sfyx: paths.remove(0),
+            // `--lib L=V` names Schemify library L for Virtuoso library V, both ways.
+            opts: ImportOptions {
+                lib_map: lib_map.into_iter().map(|(l, v)| (v, l)).collect(),
+                analoglib,
+                ..ImportOptions::default()
+            },
+        },
+        "xschem-export" if !paths.is_empty() => Command::XschemExport {
+            tops: paths,
+            out_dir: out?,
+        },
+        "xschem-import" if !paths.is_empty() => {
+            x.convert = paths;
+            x.out_dir = out?;
+            Command::XschemImport(Box::new(x))
+        }
+        "install-skill" if paths.len() <= 1 => Command::InstallSkill {
+            dir: paths.pop().unwrap_or_else(|| "interop".to_owned()),
+        },
+        _ => return None,
+    })
+}
+
 /// The settings of [`Command::XschemImport`]. Paths are whatever the driver reads: host
 /// paths on the command line, project or `${VAR}/…` paths in the plugin.
 #[derive(Clone, Debug, Default)]
@@ -224,11 +304,9 @@ impl Job {
                     Ok(m) => m,
                     Err(s) => return s,
                 };
-                let refs: Vec<&str> = tops.iter().map(String::as_str).collect();
-                let d = match load(&self.files, &self.absent, &refs) {
+                let d = match self.design(&tops) {
                     Ok(d) => d,
-                    Err(LoadError::Missing(p)) => return self.ask(p),
-                    Err(LoadError::Invalid(p)) => return Step::Failed(p),
+                    Err(s) => return s,
                 };
                 let top_ix: Vec<usize> = (0..tops.len()).collect();
                 match virtuoso::export(&d, &top_ix, &map, &opts) {
@@ -272,11 +350,9 @@ impl Job {
                 }
             }
             Command::XschemExport { tops, out_dir } => {
-                let refs: Vec<&str> = tops.iter().map(String::as_str).collect();
-                let d = match load(&self.files, &self.absent, &refs) {
+                let d = match self.design(&tops) {
                     Ok(d) => d,
-                    Err(LoadError::Missing(p)) => return self.ask(p),
-                    Err(LoadError::Invalid(p)) => return Step::Failed(p),
+                    Err(s) => return s,
                 };
                 let top_ix: Vec<usize> = (0..tops.len()).collect();
                 match crate::xschem_out::export(&d, &top_ix) {
@@ -387,6 +463,16 @@ impl Job {
         Step::Done { writes, summary }
     }
 
+    /// The Design of `tops` (an export's input), or the step that reads what it still needs.
+    fn design(&mut self, tops: &[String]) -> Result<crate::design::Design, Step> {
+        let refs: Vec<&str> = tops.iter().map(String::as_str).collect();
+        match load(&self.files, &self.absent, &refs) {
+            Ok(d) => Ok(d),
+            Err(LoadError::Missing(p)) => Err(self.ask(p)),
+            Err(LoadError::Invalid(p)) => Err(Step::Failed(p)),
+        }
+    }
+
     fn known(&self, p: &str) -> bool {
         self.files.contains_key(p) || self.absent.contains(p)
     }
@@ -479,5 +565,48 @@ mod tests {
             j.supply(&x, None);
         }
         assert!(matches!(j.step(), Step::Failed(_)));
+    }
+
+    #[test]
+    fn one_grammar_for_both_drivers() {
+        let w = |s: &str| s.split_whitespace().map(str::to_owned).collect::<Vec<_>>();
+        match parse(
+            "virtuoso-export",
+            &w("a.shcomp b.shbench -o x.sfyx --lib =top"),
+        ) {
+            Some(Command::VirtuosoExport { tops, out, opts }) => {
+                assert_eq!((tops.len(), out.as_str()), (2, "x.sfyx"));
+                assert!(opts.analoglib);
+                assert_eq!(opts.lib_map[""], "top");
+            }
+            c => panic!("{c:?}"),
+        }
+        match parse("virtuoso-import", &w("x.sfyx --lib =top")) {
+            Some(Command::VirtuosoImport { opts, .. }) => assert_eq!(opts.lib_map["top"], ""),
+            c => panic!("{c:?}"),
+        }
+        match parse(
+            "xschem-import",
+            &w("lib --root r --xschemrc rc --no-core -o out"),
+        ) {
+            Some(Command::XschemImport(x)) => {
+                assert_eq!((x.convert, x.roots, x.rcs), (w("lib"), w("r"), w("rc")));
+                assert!(!x.map_core && x.out_dir == "out");
+            }
+            c => panic!("{c:?}"),
+        }
+        assert!(
+            matches!(parse("install-skill", &[]), Some(Command::InstallSkill { dir }) if dir == "interop")
+        );
+        // Refused: no output, a flag of another command, an unknown command, a dangling flag.
+        for (cmd, words) in [
+            ("virtuoso-export", "a.shcomp"),
+            ("xschem-export", "a.shcomp -o d --root r"),
+            ("virtuoso-import", "x.sfyx -o y"),
+            ("nope", "a"),
+            ("xschem-import", "lib -o"),
+        ] {
+            assert!(parse(cmd, &w(words)).is_none(), "{cmd} {words}");
+        }
     }
 }

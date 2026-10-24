@@ -227,15 +227,16 @@ fn guest_conversions_equal_the_native_job_byte_for_byte() {
         return;
     };
     let files = fixture("crates/app/tests/fixtures/inv");
-    let got = w.run("interop.virtuoso_export", "top.shcomp out/inv.sfyx", &files);
+    let got = w.run(
+        "interop.virtuoso_export",
+        "top.shcomp -o out/inv.sfyx",
+        &files,
+    );
     let want = native(
         Command::VirtuosoExport {
             tops: vec!["top.shcomp".into()],
             out: "out/inv.sfyx".into(),
-            opts: ExportOptions {
-                producer: "schemify interop plugin".into(),
-                ..ExportOptions::default()
-            },
+            opts: ExportOptions::default(),
         },
         &files,
     );
@@ -244,7 +245,7 @@ fn guest_conversions_equal_the_native_job_byte_for_byte() {
         want.keys().collect::<Vec<_>>()
     );
     assert_eq!(got, want, "Virtuoso export: wasm ≠ native");
-    let got = w.run("interop.xschem_export", "top.shcomp xs", &files);
+    let got = w.run("interop.xschem_export", "top.shcomp -o xs", &files);
     let want = native(
         Command::XschemExport {
             tops: vec!["top.shcomp".into()],
@@ -277,10 +278,7 @@ fn want_sfyx(files: &BTreeMap<String, Vec<u8>>) -> Vec<u8> {
         Command::VirtuosoExport {
             tops: vec!["top.shcomp".into()],
             out: "out/inv.sfyx".into(),
-            opts: ExportOptions {
-                producer: "schemify interop plugin".into(),
-                ..ExportOptions::default()
-            },
+            opts: ExportOptions::default(),
         },
         files,
     )["out/inv.sfyx"]

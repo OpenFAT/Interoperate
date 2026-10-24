@@ -446,10 +446,7 @@ fn a_derived_value_goes_stale_in_schemify_and_comes_back_fresh() {
     files.insert("top.shcomp".into(), design("2.5").into_bytes());
     let mut io = ImportOptions::default();
     io.lib_map.insert("work".into(), String::new());
-    let mut eo = ExportOptions {
-        producer: "t".into(),
-        ..ExportOptions::default()
-    };
+    let mut eo = ExportOptions::default();
     eo.lib_map.insert(String::new(), "work".into());
     let mut trip = |files: &mut Files, overwrite: bool| -> (String, String) {
         let d = common::load_tops(files, &["top.shcomp"]);

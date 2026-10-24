@@ -24,7 +24,7 @@ fn design(files: &Files) -> Design {
 /// Exports every cell of `files`, the root library as `top`.
 fn export_all(files: &Files) -> (String, Design) {
     let d = design(files);
-    (export_cells(&d, "test"), d)
+    (export_cells(&d), d)
 }
 
 fn fixture_projects() -> Vec<PathBuf> {

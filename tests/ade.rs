@@ -41,10 +41,7 @@ fn design(files: &Files) -> Design {
 fn export(files: &Files) -> (String, Notes) {
     let d = design(files);
     let tb = d.find("tb.shbench").expect("loaded");
-    let opts = ExportOptions {
-        producer: "test".into(),
-        ..ExportOptions::default()
-    };
+    let opts = ExportOptions::default();
     let e =
         virtuoso::export(&d, &[tb], &Mapping::default(), &opts).unwrap_or_else(|e| panic!("{e:?}"));
     (e.sfyx, e.notes)

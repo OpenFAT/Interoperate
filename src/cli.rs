@@ -1,88 +1,38 @@
 //! The plugin's native command line (feature `cli`, binary `schemify-interop`): the
 //! converters over the file system, for scripts, CI and corpus runs.
 //!
-//! `xschem-import` converts xschem libraries — a PDK's device library or whole design
-//! trees — into Schemify libraries, with device limits from model cards, `drc=` procs
-//! and tech files (D14), then checks every output with the import oracle.
-//!
 //! ```text
-//! schemify-interop xschem-import <lib-dir>... [--root <dir>]... [--models <file>[:<section>]]...
-//!     [--spiceinit <file>] [--tech <file>] [--cdf <dump>] [--xschemrc <file>]...
-//!     [--no-core] -o <out-dir>
+//! schemify-interop virtuoso-export <project-dir> <cell-file>... -o <file.sfyx> [--core-cells] [--lib L=V]...
+//! schemify-interop virtuoso-import <project-dir> <file.sfyx> [--analoglib] [--lib L=V]...
+//! schemify-interop xschem-export   <project-dir> <cell-file>... -o <out-dir>
+//! schemify-interop xschem-import   <lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--no-core]
+//!     [--models <file>[:<section>]]... [--spiceinit <file>] [--tech <file>] [--cdf <dump>] -o <out-dir>
+//! schemify-interop install-skill   [<dir>]
+//! schemify-interop pdk-rules       <project-dir> <char.sfyx>
 //! ```
 //!
-//! Each `<lib-dir>` is one element of the xschem library search path, in the order
-//! given, and every `.sym`/`.sch` under it is converted. `--root` adds a search-path
-//! element that is not converted wholesale: only what the inputs reference from it,
-//! transitively (`pull_referenced`), so `--root <xschem_library> --root <pdk xschem dir>`
-//! converts the devices a design places and no demo benches. `--xschemrc` (repeatable: pass
-//! `xschem-drc` too) supplies PDK path variables and `drc` procs. `--spiceinit` reads an
-//! ngspice `.spiceinit`: its `sourcepath` (`$VAR`s from the environment) is where model
-//! includes are looked up. A Magic `--tech` file's `include`s are read beside it. Writes the outputs
-//! (`<lib>/<cell>.<ext>`, `schemify.project`, `interop.report.{md,txt}`) and prints a
-//! summary. Exit status: 0 ok, 1 an output failed its check, 2 usage or I/O error.
+//! The grammar is the editor's ([`crate::job::parse`]); the command line adds the project
+//! directory the paths are relative to, and for `xschem-import` the D14 side inputs it reads
+//! from the host before the job runs. `xschem-import` paths are host paths: each `<lib-dir>`
+//! is one element of the xschem library search path, in order, converted wholesale; `--root`
+//! adds an element that contributes only what the inputs reference from it, transitively, so
+//! `--root <xschem_library> --root <pdk xschem dir>` converts the devices a design places and
+//! no demo benches. `--xschemrc` (repeatable: pass `xschem-drc` too) supplies PDK path
+//! variables and `drc` procs. `--spiceinit` reads an ngspice `.spiceinit`: its `sourcepath`
+//! (`$VAR`s from the environment) is where model includes are looked up. A Magic `--tech`
+//! file's `include`s are read beside it. Exit status: 0 ok, 1 refused or an output failed its
+//! check, 2 usage or I/O error.
 
 use std::path::{Path, PathBuf};
 
+use crate::job::{Command, USAGE, parse};
 use crate::{spice, tech};
-
-struct Args {
-    /// Search path in order: (dir, convert its files).
-    dirs: Vec<(PathBuf, bool)>,
-    models: Vec<(PathBuf, Option<String>)>,
-    tech: Option<PathBuf>,
-    spiceinit: Option<PathBuf>,
-    cdf: Option<PathBuf>,
-    rcs: Vec<PathBuf>,
-    core: bool,
-    out: PathBuf,
-}
 
 fn usage() -> u8 {
     eprintln!(
-        "usage: schemify-interop xschem-import <lib-dir>... [--root <dir>]... [--models <file>[:<section>]]... \
-         [--spiceinit <file>] [--tech <file>] [--cdf <dump>] [--xschemrc <file>]... \
-         [--no-core] -o <out-dir>"
+        "usage: schemify-interop <command> ...\n{USAGE}\n(after the command, virtuoso-*/xschem-export take <project-dir>; xschem-import also takes --models <file>[:<section>] --spiceinit <file> --tech <file> --cdf <dump>; pdk-rules <project-dir> <char.sfyx>)"
     );
     2
-}
-
-fn parse_args(args: &[String]) -> Option<Args> {
-    let mut a = Args {
-        dirs: Vec::new(),
-        models: Vec::new(),
-        tech: None,
-        spiceinit: None,
-        cdf: None,
-        rcs: Vec::new(),
-        core: true,
-        out: PathBuf::new(),
-    };
-    let mut it = args.iter().cloned();
-    while let Some(arg) = it.next() {
-        match arg.as_str() {
-            "--models" => {
-                let v = it.next()?;
-                let (path, section) = match v.rsplit_once(':') {
-                    Some((p, s)) if !s.contains('/') && !s.is_empty() => {
-                        (p.to_owned(), Some(s.to_owned()))
-                    }
-                    _ => (v, None),
-                };
-                a.models.push((PathBuf::from(path), section));
-            }
-            "--root" => a.dirs.push((PathBuf::from(it.next()?), false)),
-            "--tech" => a.tech = Some(PathBuf::from(it.next()?)),
-            "--spiceinit" => a.spiceinit = Some(PathBuf::from(it.next()?)),
-            "--cdf" => a.cdf = Some(PathBuf::from(it.next()?)),
-            "--xschemrc" => a.rcs.push(PathBuf::from(it.next()?)),
-            "--no-core" => a.core = false,
-            "-o" => a.out = PathBuf::from(it.next()?),
-            s if s.starts_with('-') => return None,
-            _ => a.dirs.push((PathBuf::from(arg), true)),
-        }
-    }
-    (a.dirs.iter().any(|d| d.1) && !a.out.as_os_str().is_empty()).then_some(a)
 }
 
 /// Every `.sym`/`.sch` under `dir`, recursively, sorted, with the `.cir` files netlist
@@ -137,104 +87,32 @@ fn slash(p: &Path) -> String {
 }
 
 /// Runs the subcommand `args[0]` on the rest of `args` (the command line without the
-/// program name) and returns the exit status: 0 ok, 1 an output failed its check, 2 an
-/// unknown subcommand, a usage error or an I/O error.
+/// program name) and returns the exit status: 0 ok, 1 refused or an output failed its
+/// check, 2 an unknown subcommand, a usage error or an I/O error.
 pub fn run(args: &[String]) -> u8 {
-    match args.split_first() {
-        Some((cmd, rest)) if cmd == "xschem-import" => xschem_import(rest),
-        Some((cmd, rest)) if cmd == "pdk-rules" => pdk_rules(rest),
-        Some((cmd, rest))
-            if cmd == "virtuoso-export"
-                || cmd == "virtuoso-import"
-                || cmd == "xschem-export"
-                || cmd == "install-skill" =>
-        {
-            match job_command(cmd, rest) {
-                Some((project, c)) => drive(&project, c),
-                None => {
-                    eprintln!("{JOB_USAGE}");
-                    2
-                }
-            }
-        }
-        _ => {
-            eprintln!("usage: schemify-interop xschem-import <args>...\n{JOB_USAGE}");
-            2
-        }
-    }
-}
-
-const JOB_USAGE: &str = "\
-usage: schemify-interop virtuoso-export <project-dir> <cell-file>... -o <file.sfyx> [--core-cells] [--lib L=V]...
-       schemify-interop virtuoso-import <project-dir> <file.sfyx> [--analoglib] [--lib L=V]...
-       schemify-interop xschem-export <project-dir> <cell-file>... -o <out-dir>
-       schemify-interop install-skill <dir>
-       schemify-interop pdk-rules <project-dir> <char.sfyx>
-(cell files, .sfyx paths and output paths are relative to <project-dir>)";
-
-/// Parses the arguments of a job subcommand into (project directory, command).
-fn job_command(cmd: &str, args: &[String]) -> Option<(PathBuf, crate::job::Command)> {
-    use crate::job::Command;
-    use crate::virtuoso::{ExportOptions, ImportOptions};
-    if cmd == "install-skill" {
-        let [dir] = args else { return None };
-        return Some((
-            PathBuf::from(dir),
-            Command::InstallSkill { dir: String::new() },
-        ));
-    }
-    let (project, rest) = args.split_first()?;
-    let mut paths = Vec::new();
-    let mut out = None;
-    let mut iopts = ImportOptions::default();
-    // Export defaults to analogLib masters (§6.5): what ADE users place; `--core-cells`
-    // keeps the `schemify_core` mirror cells.
-    let mut opts = ExportOptions {
-        producer: format!("schemify-interop {}", env!("CARGO_PKG_VERSION")),
-        analoglib: true,
-        ..ExportOptions::default()
+    let Some((cmd, rest)) = args.split_first() else {
+        return usage();
     };
-    let mut it = rest.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "-o" => out = Some(it.next()?.clone()),
-            "--analoglib" => {
-                opts.analoglib = true;
-                iopts.analoglib = true;
-            }
-            "--core-cells" => opts.analoglib = false,
-            "--lib" => {
-                // Export: Schemify library L → Virtuoso library V. Import: Virtuoso V → Schemify L.
-                let (l, v) = it.next()?.split_once('=')?;
-                opts.lib_map.insert(l.to_owned(), v.to_owned());
-                iopts.lib_map.insert(v.to_owned(), l.to_owned());
-            }
-            f if f.starts_with("--") => return None,
-            p => paths.push(p.replace('\\', "/")),
-        }
+    match cmd.as_str() {
+        "pdk-rules" => pdk_rules(rest),
+        "xschem-import" => xschem_import(rest),
+        "install-skill" => match parse(cmd, rest) {
+            Some(c) => drive(Path::new(""), c),
+            None => usage(),
+        },
+        _ => match rest.split_first() {
+            Some((project, rest)) => match parse(cmd, rest) {
+                Some(c) => drive(Path::new(project), c),
+                None => usage(),
+            },
+            None => usage(),
+        },
     }
-    let c = match cmd {
-        "virtuoso-export" if !paths.is_empty() => Command::VirtuosoExport {
-            tops: paths,
-            out: out?,
-            opts,
-        },
-        "virtuoso-import" if paths.len() == 1 && out.is_none() => Command::VirtuosoImport {
-            sfyx: paths.remove(0),
-            opts: iopts,
-        },
-        "xschem-export" if !paths.is_empty() => Command::XschemExport {
-            tops: paths,
-            out_dir: out?,
-        },
-        _ => return None,
-    };
-    Some((PathBuf::from(project), c))
 }
 
 /// Runs a job against the file system under `project`: 0 written, 1 refused (problems
 /// printed), 2 an I/O error.
-fn drive(project: &Path, command: crate::job::Command) -> u8 {
+fn drive(project: &Path, command: Command) -> u8 {
     use crate::job::{Job, Step};
     let mut job = Job::new(command);
     loop {
@@ -404,34 +282,47 @@ fn walk_designs(dir: &Path, out: &mut Vec<PathBuf>) {
 
 /// `xschem-import` (module docs): `args` are the subcommand's arguments.
 fn xschem_import(args: &[String]) -> u8 {
-    let Some(args) = parse_args(args) else {
+    // The host-only side inputs; the rest is the shared grammar.
+    let mut models: Vec<(PathBuf, Option<String>)> = Vec::new();
+    let (mut tech, mut spiceinit, mut cdf) = (None, None, None);
+    let mut words = Vec::new();
+    let mut it = args.iter();
+    while let Some(a) = it.next() {
+        let mut value = || it.next().map(PathBuf::from);
+        match a.as_str() {
+            "--models" => {
+                let Some(v) = value() else { return usage() };
+                let v = v.to_string_lossy().into_owned();
+                models.push(match v.rsplit_once(':') {
+                    Some((p, s)) if !s.contains('/') && !s.is_empty() => {
+                        (PathBuf::from(p), Some(s.to_owned()))
+                    }
+                    _ => (PathBuf::from(v), None),
+                });
+            }
+            "--tech" => tech = value(),
+            "--spiceinit" => spiceinit = value(),
+            "--cdf" => cdf = value(),
+            _ => words.push(a.clone()),
+        }
+    }
+    let Some(Command::XschemImport(mut x)) = parse("xschem-import", &words) else {
         return usage();
     };
-    let mut x = crate::job::XschemImport {
-        out_dir: slash(&args.out),
-        map_core: args.core,
-        rcs: args.rcs.iter().map(|p| slash(p)).collect(),
-        ..crate::job::XschemImport::default()
-    };
-    for (d, convert) in &args.dirs {
-        let Ok(d) = std::fs::canonicalize(d) else {
-            eprintln!("import: cannot open {}", d.display());
+    for d in x.convert.iter_mut().chain(x.roots.iter_mut()) {
+        let Ok(c) = std::fs::canonicalize(&*d) else {
+            eprintln!("import: cannot open {d}");
             return 2;
         };
-        if *convert {
-            x.convert.push(slash(&d));
-        } else {
-            x.roots.push(slash(&d));
-        }
+        *d = slash(&c);
     }
-    for rc in &args.rcs {
-        if !rc.is_file() {
-            eprintln!("import: cannot read {}", rc.display());
+    for rc in &x.rcs {
+        if !Path::new(rc).is_file() {
+            eprintln!("import: cannot read {rc}");
             return 2;
         }
     }
-    let search_dirs: Vec<PathBuf> = args
-        .spiceinit
+    let search_dirs: Vec<PathBuf> = spiceinit
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| spice::spiceinit_sourcepath(&t))
@@ -445,8 +336,7 @@ fn xschem_import(args: &[String]) -> u8 {
             }
         })
         .collect();
-    let scans: Vec<spice::ModelScan> = args
-        .models
+    let scans: Vec<spice::ModelScan> = models
         .iter()
         .map(|(p, section)| {
             let opts = spice::ScanOptions {
@@ -466,7 +356,7 @@ fn xschem_import(args: &[String]) -> u8 {
             s
         })
         .collect();
-    let grid_pm = args.tech.as_ref().and_then(|t| {
+    let grid_pm = tech.as_ref().and_then(|t| {
         let text = std::fs::read_to_string(t).ok()?;
         if t.extension().is_some_and(|x| x == "lyt") {
             tech::read_lyt(&text).ok()?.default_grid_pm
@@ -485,8 +375,7 @@ fn xschem_import(args: &[String]) -> u8 {
             magic.manufacturing_grid_pm()
         }
     });
-    let cdf = args
-        .cdf
+    let cdf = cdf
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| crate::cdf::read(&t));
@@ -494,8 +383,5 @@ fn xschem_import(args: &[String]) -> u8 {
     x.grid_pm = grid_pm;
     x.cdf = cdf;
     // The same job the plugin runs (`interop.xschem_import`), over host paths.
-    drive(
-        Path::new(""),
-        crate::job::Command::XschemImport(Box::new(x)),
-    )
+    drive(Path::new(""), Command::XschemImport(x))
 }

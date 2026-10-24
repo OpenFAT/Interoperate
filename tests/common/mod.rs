@@ -185,20 +185,17 @@ pub fn record_of(line: &str) -> Option<sfyx::Record> {
         .nth(1)
 }
 
-/// The `.sfyx` export of every non-core cell of `d` with producer `producer`, the project
-/// root as Virtuoso library `top` (what [`import_opts`] maps back).
+/// The `.sfyx` export of every non-core cell of `d`, the project root as Virtuoso library
+/// `top` (what [`import_opts`] maps back).
 ///
 /// # Panics
 ///
 /// With the export's problems when it refuses.
-pub fn export_cells(d: &Design, producer: &str) -> String {
+pub fn export_cells(d: &Design) -> String {
     let tops: Vec<usize> = (0..d.cells.len())
         .filter(|&k| d.cells[k].lib != "core")
         .collect();
-    let mut opts = ExportOptions {
-        producer: producer.into(),
-        ..ExportOptions::default()
-    };
+    let mut opts = ExportOptions::default();
     opts.lib_map.insert(String::new(), "top".into());
     virtuoso::export(d, &tops, &Mapping::default(), &opts)
         .unwrap_or_else(|e| panic!("{e:?}"))

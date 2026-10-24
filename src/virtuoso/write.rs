@@ -73,7 +73,7 @@ pub fn export(
     let plan = plan::resolve(d, tops, m, opts.analoglib, &opts.lib_map)?;
     let mut notes = Notes::default();
     let mut dump = Dump {
-        producer: opts.producer.clone(),
+        producer: super::PRODUCER.to_owned(),
         ..Dump::default()
     };
     let mut ocean: Vec<ade::BenchExport> = Vec::new();

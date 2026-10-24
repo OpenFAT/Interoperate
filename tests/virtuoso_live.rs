@@ -330,7 +330,6 @@ fn export_project(
     libs: &BTreeMap<String, String>,
 ) -> Result<(String, Files), Vec<String>> {
     let opts = ExportOptions {
-        producer: "sfylive".into(),
         analoglib: mode == Mode::Alib,
         lib_map: libs.clone(),
     };
@@ -1036,7 +1035,6 @@ fn mid(work: &Path, o: &Opts) {
                     to.trim()
                 ));
                 let opts = ExportOptions {
-                    producer: "sfylive".into(),
                     lib_map: map.clone(),
                     ..ExportOptions::default()
                 };
@@ -1137,7 +1135,6 @@ fn mid(work: &Path, o: &Opts) {
             .collect();
         let copy = ulib('u', l, c);
         let opts = ExportOptions {
-            producer: "sfylive".into(),
             lib_map: [(l.clone(), copy.clone())].into(),
             ..ExportOptions::default()
         };

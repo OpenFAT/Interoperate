@@ -17,7 +17,6 @@ use schemify_abi::guest::{self, Host};
 use schemify_abi::{Event, Kind, Level, Out, text};
 
 use crate::job::{Command, Job, Step};
-use crate::virtuoso::{ExportOptions, ImportOptions};
 
 guest::export!(on_event);
 
@@ -86,16 +85,16 @@ fn contribute(out: &mut Out, panel: Option<&str>) {
 fn prompt(cmd: &str) -> &'static str {
     match cmd {
         "interop.virtuoso_export" => {
-            "Cell file(s) to export, then the .sfyx path (e.g. lib/amp.shcomp out/amp.sfyx); flag --core-cells. Enter to run:"
+            "<cell-file>... -o <file.sfyx> [--core-cells] [--lib L=V]... (e.g. lib/amp.shcomp -o out/amp.sfyx). Enter to run:"
         }
-        "interop.virtuoso_import" => "The .sfyx dump to import (project-relative). Enter to run:",
+        "interop.virtuoso_import" => {
+            "<file.sfyx> [--analoglib] [--lib L=V]... (project-relative). Enter to run:"
+        }
         "interop.xschem_import" => {
-            "xschem library dirs, then -o and the output dir (e.g. xschem --root ${PDK_ROOT}/sky130A/libs.tech/xschem -o lib). Enter to run:"
+            "<lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--no-core] -o <out-dir> (e.g. xschem --root ${PDK_ROOT}/sky130A/libs.tech/xschem -o lib). Enter to run:"
         }
-        "interop.xschem_export" => {
-            "Cell file(s) to export, then the output directory. Enter to run:"
-        }
-        _ => "Output directory for schemify.il (Enter for interop/):",
+        "interop.xschem_export" => "<cell-file>... -o <out-dir>. Enter to run:",
+        _ => "[<dir>] for schemify.il (Enter for interop/):",
     }
 }
 
@@ -184,75 +183,10 @@ fn on_event(ev: Event<'_>, host: &Host, out: &mut Out) {
     }
 }
 
-/// Parses command arguments; `None` shows the path panel.
+/// Parses command arguments with the command line's grammar (`interop.virtuoso_export` is
+/// `virtuoso-export`); `None` shows the path panel.
 fn command(name: &str, w: &[String]) -> Option<Command> {
-    let flags: Vec<&str> = w
-        .iter()
-        .filter(|x| x.starts_with("--"))
-        .map(String::as_str)
-        .collect();
-    let paths: Vec<String> = w.iter().filter(|x| !x.starts_with("--")).cloned().collect();
-    match name {
-        "interop.virtuoso_export" if !paths.is_empty() => {
-            let (tops, out) = match paths.last() {
-                Some(l) if l.ends_with(".sfyx") && paths.len() > 1 => {
-                    (paths[..paths.len() - 1].to_vec(), l.clone())
-                }
-                _ => {
-                    let stem = paths[0]
-                        .rsplit_once('.')
-                        .map_or(paths[0].as_str(), |(s, _)| s);
-                    (paths.clone(), format!("{stem}.sfyx"))
-                }
-            };
-            let opts = ExportOptions {
-                // analogLib masters unless `--core-cells` (§6.5), as the command line.
-                analoglib: !flags.contains(&"--core-cells"),
-                producer: "schemify interop plugin".into(),
-                ..ExportOptions::default()
-            };
-            Some(Command::VirtuosoExport { tops, out, opts })
-        }
-        "interop.virtuoso_import" if paths.len() == 1 => Some(Command::VirtuosoImport {
-            sfyx: paths[0].clone(),
-            opts: ImportOptions::default(),
-        }),
-        "interop.xschem_export" if !paths.is_empty() => {
-            let (tops, out_dir) = if paths.len() > 1 && !paths.last()?.contains(".sh") {
-                (paths[..paths.len() - 1].to_vec(), paths.last()?.clone())
-            } else {
-                (paths.clone(), "xschem_export".to_owned())
-            };
-            Some(Command::XschemExport { tops, out_dir })
-        }
-        "interop.xschem_import" => xschem_import(w),
-        "interop.install_skill" => Some(Command::InstallSkill {
-            dir: paths.first().cloned().unwrap_or_else(|| "interop".into()),
-        }),
-        _ => None,
-    }
-}
-
-/// `interop.xschem_import <lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--no-core]
-/// -o <out-dir>`, the command line's `xschem-import` with plugin paths: project-relative, or
-/// `${VAR}/…` under a variable the user granted (`read:<VAR>`). `None` when malformed.
-fn xschem_import(w: &[String]) -> Option<Command> {
-    let mut x = crate::job::XschemImport {
-        map_core: true,
-        ..crate::job::XschemImport::default()
-    };
-    let mut it = w.iter();
-    while let Some(a) = it.next() {
-        match a.as_str() {
-            "-o" => x.out_dir = it.next()?.clone(),
-            "--root" => x.roots.push(it.next()?.clone()),
-            "--xschemrc" => x.rcs.push(it.next()?.clone()),
-            "--no-core" => x.map_core = false,
-            s if s.starts_with('-') => return None,
-            _ => x.convert.push(a.clone()),
-        }
-    }
-    (!x.convert.is_empty() && !x.out_dir.is_empty()).then(|| Command::XschemImport(Box::new(x)))
+    crate::job::parse(&name.strip_prefix("interop.")?.replace('_', "-"), w)
 }
 
 /// Reads and listings in flight or queued.

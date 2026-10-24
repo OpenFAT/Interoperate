@@ -24,10 +24,7 @@ const BENCHES: [&str; 4] = [
 /// Runs the export job over the fixture project (the CLI's driver, reading the disk) and
 /// returns every written file by path.
 fn export() -> BTreeMap<String, String> {
-    let opts = ExportOptions {
-        producer: "test".into(),
-        ..ExportOptions::default()
-    };
+    let opts = ExportOptions::default();
     let mut job = Job::new(Command::VirtuosoExport {
         tops: BENCHES.map(String::from).to_vec(),
         out: "cadence/exercise1.sfyx".into(),

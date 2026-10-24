@@ -37,7 +37,7 @@ fn with_stdlib(libs: &[&str]) -> Interp<MockDb> {
 /// import and returns (original cells, round-tripped cells, SKILL logs).
 fn round_trip(dir: &Path) -> (BTreeMap<String, String>, BTreeMap<String, String>, String) {
     let files = project(dir);
-    let exported = export_cells(&load_all(&files), "e2e");
+    let exported = export_cells(&load_all(&files));
     let recs = sfyx::read(&exported).unwrap();
 
     // The SKILL side: every library the dump names exists in cds.lib, plus analogLib/basic.
@@ -139,7 +139,7 @@ fn debug_dump_cell() {
     let dir = PathBuf::from(std::env::var("SFY_DUMP_DIR").unwrap());
     let cell = std::env::var("SFY_DUMP_CELL").unwrap();
     let files = read_tree(&dir);
-    let text = export_cells(&load_all(&files), "e2e");
+    let text = export_cells(&load_all(&files));
     let section = |t: &str| -> String {
         let mut on = false;
         let mut out = String::new();
@@ -227,10 +227,7 @@ fn skill_dump_rust_import_rust_export_skill_import_skill_dump_is_exact() {
         let refs: Vec<&str> = tops.iter().map(String::as_str).collect();
         let d = load_tops(&files, &refs);
         let top_ix: Vec<usize> = (0..tops.len()).collect();
-        let eo = ExportOptions {
-            producer: "e2e".into(),
-            ..ExportOptions::default()
-        };
+        let eo = ExportOptions::default();
         let second = virtuoso::export(&d, &top_ix, &Mapping::default(), &eo)
             .unwrap_or_else(|e| panic!("{name}: {e:?}"))
             .sfyx;
@@ -343,10 +340,7 @@ fn an_edit_in_schemify_reaches_virtuoso_and_untouched_views_stay() {
     );
     files.insert(path.clone(), edited.into_bytes());
     let d = load_tops(&files, &[path.as_str()]);
-    let eo = ExportOptions {
-        producer: "e2e".into(),
-        ..ExportOptions::default()
-    };
+    let eo = ExportOptions::default();
     let second = virtuoso::export(&d, &[0], &Mapping::default(), &eo)
         .unwrap()
         .sfyx;
@@ -428,10 +422,7 @@ fn an_unedited_component_keeps_its_virtuoso_cdf_and_an_edit_regenerates_it() {
     let mut files: Files = imp.files.into_iter().collect();
     let export = |files: &Files| {
         let d = load_tops(files, &["work/netx.shcomp"]);
-        let eo = ExportOptions {
-            producer: "e2e".into(),
-            ..ExportOptions::default()
-        };
+        let eo = ExportOptions::default();
         virtuoso::export(&d, &[0], &Mapping::default(), &eo)
             .unwrap()
             .sfyx
