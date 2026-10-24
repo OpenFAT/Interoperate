@@ -107,7 +107,7 @@ pub fn orient(rot: i16, flip: i16) -> Orient {
 /// read only where netlist text names it (a `spice_sym_def=".include f.cir"` gives the
 /// `.subckt` port order, spec §2). Returns the output files as
 /// `(path, bytes)` sorted by path — `<lib>/<cell>.<ext>`, `schemify.project`,
-/// `import-report.md`, `import-report.txt` — and the [`Report`].
+/// and the [`Report`] (the job writes it with the other rows of the conversion).
 ///
 /// Deterministic: the same inputs and options give byte-identical outputs (ids come
 /// from [`IdRng::for_import`] seeded with `<lib>/<file>` and the record's line).
@@ -133,13 +133,8 @@ pub fn translate_library(
         files.push(t.emit_cell(c, &mut acc));
     }
     files.push(("schemify.project".to_owned(), t.manifest().into_bytes()));
-    let report = t.finish(&files, acc);
+    let report = t.finish(acc);
     report.assert_conservation();
-    files.push((
-        "import-report.md".to_owned(),
-        report.markdown().into_bytes(),
-    ));
-    files.push(("import-report.txt".to_owned(), report.text().into_bytes()));
     files.sort_by(|a, b| a.0.cmp(&b.0));
     assert!(
         files.windows(2).all(|w| w[0].0 != w[1].0),
@@ -2791,7 +2786,7 @@ impl<'o> Tables<'o> {
         rel.to_owned()
     }
 
-    fn finish(&self, files: &[(String, Vec<u8>)], mut acc: Acc) -> Report {
+    fn finish(&self, mut acc: Acc) -> Report {
         // Symbols that became no cell: their records are carried by the records
         // their instances became (labels, ports, code) or by the core cell.
         for (si, sym) in self.syms.iter().enumerate() {
@@ -2819,10 +2814,6 @@ impl<'o> Tables<'o> {
                 format!("type={}", sym.ty),
             );
         }
-        let mut outputs: Vec<String> = files.iter().map(|f| f.0.clone()).collect();
-        outputs.push("import-report.md".into());
-        outputs.push("import-report.txt".into());
-        outputs.sort();
         Report {
             files: self
                 .srcs
@@ -2832,7 +2823,6 @@ impl<'o> Tables<'o> {
             records_in: self.srcs.iter().map(|s| records_in(&s.file)).collect(),
             records_out: acc.out,
             items: acc.items,
-            outputs,
             unused_attrs: acc.unused,
             device_instances: acc.device_instances,
             core_instances: acc.core_instances,

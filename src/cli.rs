@@ -19,7 +19,7 @@
 //! `xschem-drc` too) supplies PDK path variables and `drc` procs. `--spiceinit` reads an
 //! ngspice `.spiceinit`: its `sourcepath` (`$VAR`s from the environment) is where model
 //! includes are looked up. A Magic `--tech` file's `include`s are read beside it. Writes the outputs
-//! (`<lib>/<cell>.<ext>`, `schemify.project`, `import-report.{md,txt}`) and prints a
+//! (`<lib>/<cell>.<ext>`, `schemify.project`, `interop.report.{md,txt}`) and prints a
 //! summary. Exit status: 0 ok, 1 an output failed its check, 2 usage or I/O error.
 
 use std::path::{Path, PathBuf};

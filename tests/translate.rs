@@ -110,8 +110,6 @@ fn fixture_translates_and_every_output_checks() {
         "lib/nand.shprim",
         "lib/tb.shbench",
         "schemify.project",
-        "import-report.md",
-        "import-report.txt",
     ] {
         assert!(paths.contains(&p), "{p} missing from {paths:?}");
     }

@@ -1,9 +1,9 @@
-//! The import report (spec `import.md` §7): per-file record counts, every item that did
-//! not translate one-to-one, and the count-conservation invariant
-//! `records in = records out + records reported`.
+//! The xschem importer's accounting (spec `import.md` §7): per-file record counts, every
+//! item that did not translate one-to-one, and the count-conservation invariant
+//! `records in = records out + records reported`. It becomes rows of the one written
+//! report, [`crate::notes::Notes`], through [`Report::to_notes`].
 
 use std::collections::BTreeMap;
-use std::fmt::Write;
 
 use crate::template::Reason;
 
@@ -120,8 +120,6 @@ pub struct Report {
     pub records_out: Vec<u32>,
     /// Report rows in discovery order.
     pub items: Vec<Item>,
-    /// Output files written, sorted.
-    pub outputs: Vec<String>,
     /// Instance attributes that are neither parameters nor netlist controls, by key,
     /// with their counts (footprints, `sig_type`, …); dropped.
     pub unused_attrs: BTreeMap<String, u32>,
@@ -172,112 +170,36 @@ impl Report {
         m
     }
 
-    /// Renders `import-report.md`.
-    pub fn markdown(&self) -> String {
-        let mut s = String::new();
-        let (rin, rout): (u64, u64) = (
-            self.records_in.iter().map(|&n| u64::from(n)).sum(),
-            self.records_out.iter().map(|&n| u64::from(n)).sum(),
-        );
-        let rep: u64 = self.items.iter().map(|i| u64::from(i.records)).sum();
-        let _ = writeln!(s, "# Import report\n");
-        let _ = writeln!(s, "| Count | Value |\n|---|---|");
-        let _ = writeln!(s, "| input files | {} |", self.files.len());
-        let _ = writeln!(s, "| output files | {} |", self.outputs.len());
-        let _ = writeln!(s, "| records in | {rin} |");
-        let _ = writeln!(s, "| records out (emitted or folded) | {rout} |");
-        let _ = writeln!(s, "| records reported | {rep} |");
-        let _ = writeln!(
-            s,
-            "| devices instances mapped to core | {} / {} |",
-            self.core_instances, self.device_instances
-        );
-        let _ = writeln!(
-            s,
-            "\nCount conservation: records in = out + reported holds per file.\n"
-        );
-        let _ = writeln!(s, "## Items by class\n\n| Class | Items |\n|---|---|");
-        for (c, n) in self.counts() {
-            let _ = writeln!(s, "| {} | {n} |", c.word());
-        }
-        let _ = writeln!(s, "\n## needs_review\n");
-        self.table(&mut s, |c| matches!(c, Class::Review(_)));
-        let _ = writeln!(
-            s,
-            "\n## Generated alternate-schematic cells and unknown tokens\n"
-        );
-        self.table(&mut s, |c| matches!(c, Class::AltCell | Class::Token));
-        let _ = writeln!(s, "\n## Dropped constructs\n");
-        self.table(&mut s, |c| matches!(c, Class::Dropped(_)));
-        let _ = writeln!(s, "\n## Coordinate roundings (D33)\n");
-        self.table(&mut s, |c| matches!(c, Class::Rounding));
-        let _ = writeln!(
-            s,
-            "\n## Unused instance attributes\n\n| Key | Count |\n|---|---|"
-        );
-        for (k, n) in &self.unused_attrs {
-            let _ = writeln!(s, "| `{}` | {n} |", k.replace('|', "\\|"));
-        }
-        s
-    }
-
-    fn table(&self, s: &mut String, keep: impl Fn(Class) -> bool) {
-        let _ = writeln!(
-            s,
-            "| File:line | Class | Records | Detail |\n|---|---|---|---|"
-        );
-        for it in self.items.iter().filter(|i| keep(i.class)) {
-            let detail: String = it
-                .detail
-                .chars()
-                .take(160)
-                .map(|c| match c {
-                    '\n' | '\r' => ' ',
-                    '|' => '¦',
-                    c => c,
-                })
-                .collect();
-            let _ = writeln!(
-                s,
-                "| {}:{} | {} | {} | `{}` |",
-                self.files[it.file as usize],
-                it.line,
-                it.class.word(),
-                it.records,
-                detail.replace('`', "'")
-            );
-        }
-    }
-
-    /// Renders `import-report.txt`: one tab-separated line per item
-    /// (`class file line records detail`, newlines in details escaped as `\n`), after
-    /// a `files`/`records` header block.
-    pub fn text(&self) -> String {
-        let mut s = String::new();
+    /// Appends this import's rows to the one report every command writes (spec
+    /// `interop.md` §12): one row per item (`<file>:<line>`), one `records` row per input
+    /// file, one `unused-attr` row per key and one `info` row with the `devices` → `core`
+    /// instance counts.
+    pub fn to_notes(&self, notes: &mut crate::notes::Notes) {
+        let rep = self.records_reported();
         for (i, f) in self.files.iter().enumerate() {
-            let _ = writeln!(
-                s,
-                "file\t{f}\t{}\t{}",
-                self.records_in[i], self.records_out[i]
+            notes.add(
+                "records",
+                f,
+                format!(
+                    "in {} out {} reported {}",
+                    self.records_in[i], self.records_out[i], rep[i]
+                ),
             );
         }
         for it in &self.items {
-            let _ = writeln!(
-                s,
-                "{}\t{}\t{}\t{}\t{}",
-                it.class.word(),
-                self.files[it.file as usize],
-                it.line,
-                it.records,
-                it.detail
-                    .replace('\\', "\\\\")
-                    .replace('\n', "\\n")
-                    .replace('\t', "\\t")
-            );
+            let at = format!("{}:{}", self.files[it.file as usize], it.line);
+            notes.add(&it.class.word(), &at, it.detail.clone());
         }
         for (k, n) in &self.unused_attrs {
-            let _ = writeln!(s, "unused-attr\t{k}\t{n}");
+            notes.add("unused-attr", k, n.to_string());
         }
-        s
+        notes.add(
+            "info",
+            "-",
+            format!(
+                "devices instances mapped to core: {} / {}",
+                self.core_instances, self.device_instances
+            ),
+        );
     }
 }

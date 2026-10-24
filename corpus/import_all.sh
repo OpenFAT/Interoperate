@@ -8,7 +8,7 @@
 #
 # For each rcfile group of golden.sh (xschem, sky130, gf180, ihp) it converts the
 # group's xschem search path into <out>/<group>/ (one Schemify library per xschem
-# library directory, schemify.project, import-report.{md,txt}) and checks every output
+# library directory, schemify.project, interop.report.{md,txt}) and checks every output
 # with the import oracle (schemify-interop exits 1 if any output fails to load).
 #
 # It then writes <out>/benches.map, one line per benches.txt entry:

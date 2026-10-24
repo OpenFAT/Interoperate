@@ -237,12 +237,7 @@ impl Job {
                         let dir = out.rsplit_once('/').map_or("", |(d, _)| d);
                         let mut writes = vec![(out.clone(), e.sfyx.into_bytes())];
                         for (p, t) in e.ocean {
-                            let path = if dir.is_empty() {
-                                format!("ocean/{p}")
-                            } else {
-                                format!("{dir}/ocean/{p}")
-                            };
-                            writes.push((path, t.into_bytes()));
+                            writes.push((join(dir, &format!("ocean/{p}")), t.into_bytes()));
                         }
                         finish(writes, &out, &e.notes, "Virtuoso export")
                     }
@@ -272,24 +267,7 @@ impl Job {
                     return self.ask(need);
                 }
                 match virtuoso::import(&text, &self.files, &map, &opts) {
-                    Ok(imp) => {
-                        let mut writes = imp.files;
-                        let base = sfyx.strip_suffix(".sfyx").unwrap_or(&sfyx).to_owned();
-                        writes.push((
-                            format!("{base}.report.md"),
-                            imp.notes.markdown("Virtuoso import").into_bytes(),
-                        ));
-                        writes.push((format!("{base}.report.txt"), imp.notes.text().into_bytes()));
-                        writes.sort_by(|a, b| a.0.cmp(&b.0));
-                        let n = writes.len() - 2;
-                        Step::Done {
-                            writes,
-                            summary: format!(
-                                "Virtuoso import: {n} files, {} report rows ({base}.report.md)",
-                                imp.notes.rows.len()
-                            ),
-                        }
-                    }
+                    Ok(imp) => finish(imp.files, &sfyx, &imp.notes, "Virtuoso import"),
                     Err(p) => Step::Failed(p),
                 }
             }
@@ -307,23 +285,9 @@ impl Job {
                         let writes = x
                             .files
                             .into_iter()
-                            .map(|(p, b)| {
-                                (
-                                    if dir.is_empty() {
-                                        p
-                                    } else {
-                                        format!("{dir}/{p}")
-                                    },
-                                    b,
-                                )
-                            })
+                            .map(|(p, b)| (join(dir, &p), b))
                             .collect();
-                        finish(
-                            writes,
-                            &format!("{dir}/xschem-export"),
-                            &x.notes,
-                            "xschem export",
-                        )
+                        finish(writes, &join(dir, REPORT), &x.notes, "xschem export")
                     }
                     Err(p) => Step::Failed(p),
                 }
@@ -395,11 +359,11 @@ impl Job {
         let (outputs, report) = crate::translate_library(&inputs, &opts);
         let problems = crate::check_output(&outputs);
         self.problems = problems.len();
-        let mut summary = summarize(&outputs, &report, procs.len(), x.grid_pm);
-        for p in problems.iter().take(60) {
-            summary.push_str(&format!("check: {p}\n"));
+        let mut notes = Notes::default();
+        report.to_notes(&mut notes);
+        for p in &problems {
+            notes.add("check", "-", p.clone());
         }
-        summary.push_str(&format!("check: {} problems", problems.len()));
         // `.` is the project root itself: the import becomes the project.
         let dir = match x.out_dir.trim_end_matches('/') {
             "." => "",
@@ -407,15 +371,19 @@ impl Job {
         };
         let writes = outputs
             .into_iter()
-            .map(|(p, b)| {
-                let p = if dir.is_empty() {
-                    p
-                } else {
-                    format!("{dir}/{p}")
-                };
-                (p, b)
-            })
+            .map(|(p, b)| (join(dir, &p), b))
             .collect();
+        let Step::Done {
+            writes,
+            mut summary,
+        } = finish(writes, &join(dir, REPORT), &notes, "xschem import")
+        else {
+            unreachable!("finish is Done")
+        };
+        for p in problems.iter().take(60) {
+            summary.push_str(&format!("\ncheck: {p}"));
+        }
+        summary.push_str(&format!("\ncheck: {} problems", problems.len()));
         Step::Done { writes, summary }
     }
 
@@ -451,81 +419,20 @@ impl Job {
     }
 }
 
-/// The xschem import's summary, one line per fact: inputs and outputs, `core` coverage,
-/// report classes, files to review, and the device limits extracted.
-pub fn summarize(
-    outputs: &[(String, Vec<u8>)],
-    report: &crate::Report,
-    procs: usize,
-    grid_pm: Option<u32>,
-) -> String {
-    use crate::report::Class;
-    use std::fmt::Write as _;
-    let mut s = String::new();
-    let count = |ext: &str| outputs.iter().filter(|o| o.0.ends_with(ext)).count();
-    let _ = writeln!(
-        s,
-        "inputs {} files; outputs {} shprim, {} shcomp, {} shbench; {} drc procs; grid {:?} pm",
-        report.files.len(),
-        count(".shprim"),
-        count(".shcomp"),
-        count(".shbench"),
-        procs,
-        grid_pm
-    );
-    let _ = writeln!(
-        s,
-        "devices instances mapped to core: {} / {}",
-        report.core_instances, report.device_instances
-    );
-    let mut by_class = std::collections::BTreeMap::new();
-    for it in &report.items {
-        *by_class.entry(it.class.word()).or_insert(0u32) += 1;
+/// Stem of the report a conversion writes inside a directory output (spec `interop.md` §12).
+const REPORT: &str = "interop";
+
+/// `rel` under `dir` (`""`: the project root).
+fn join(dir: &str, rel: &str) -> String {
+    if dir.is_empty() {
+        rel.to_owned()
+    } else {
+        format!("{dir}/{rel}")
     }
-    for (c, n) in &by_class {
-        if matches!(
-            c.split(':').next(),
-            Some("needs_review" | "dropped" | "alt-cell" | "unknown-token" | "rounding")
-        ) {
-            let _ = writeln!(s, "  {c}: {n}");
-        }
-    }
-    let reviewed: BTreeSet<&str> = report
-        .items
-        .iter()
-        .filter(|i| matches!(i.class, Class::Review(_)))
-        .map(|i| report.files[i.file as usize].as_str())
-        .collect();
-    let _ = writeln!(s, "  files with needs_review items: {}", reviewed.len());
-    let mut limits = 0;
-    for (path, bytes) in outputs.iter().filter(|o| o.0.ends_with(".shprim")) {
-        let Ok(d) = schemify_format::parse(bytes) else {
-            continue;
-        };
-        for r in 1..d.record_count() {
-            if d.record_kind(r) != schemify_format::RecordKind::Param {
-                continue;
-            }
-            let get = |k| d.find_attr(r, k).and_then(|a| d.attr_value(a, 0));
-            let (min, max, grid) = (get("min"), get("max"), get("grid"));
-            if min.is_some() || max.is_some() {
-                limits += 1;
-                let _ = writeln!(
-                    s,
-                    "  limit {path} {}: min {} max {} grid {}",
-                    d.field(r, 0).unwrap_or(""),
-                    min.unwrap_or("-"),
-                    max.unwrap_or("-"),
-                    grid.unwrap_or("-")
-                );
-            }
-        }
-    }
-    let _ = writeln!(s, "  params with min/max: {limits}");
-    s
 }
 
-/// Adds the report files beside `base` and builds the summary.
+/// Adds the report beside `base` (`amp.sfyx` → `amp.report.md`, `out/interop` →
+/// `out/interop.report.md`; spec `interop.md` §12) and builds the summary.
 fn finish(mut writes: Vec<(String, Vec<u8>)>, base: &str, notes: &Notes, what: &str) -> Step {
     let base = base.strip_suffix(".sfyx").unwrap_or(base);
     let n = writes.len();

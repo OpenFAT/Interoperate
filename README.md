@@ -179,8 +179,10 @@ schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec im
 schemify-interop install-skill   <dir>
 ```
 
-Paths after `<project>` are relative to it. Each conversion writes a report next to its output
-(`<name>.report.md`, `.report.txt`): everything that did not cross one to one, with a reason.
+Paths after `<project>` are relative to it. Each conversion writes a report: beside a file
+output (`amp.sfyx` → `amp.report.md`, `.report.txt`), inside a directory output
+(`interop.report.md`, `.report.txt`). It lists everything that did not cross one to one, with
+a reason.
 
 ## First time with Virtuoso
 

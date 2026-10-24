@@ -420,12 +420,11 @@ fn round_trip_netlists_agree() {
                 f.name,
                 r.diffs,
                 x.notes.text(),
-                report
-                    .text()
-                    .lines()
-                    .filter(|l| !l.starts_with("file"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
+                {
+                    let mut n = interop::notes::Notes::default();
+                    report.to_notes(&mut n);
+                    n.text()
+                }
             ));
         }
     }
