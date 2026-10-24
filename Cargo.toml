@@ -1,6 +1,6 @@
 [package]
 name = "interop"
-description = "Interop plugin (D24 as amended 2026-10-12): xschem import today; Virtuoso import/export and xschem export to come. Never linked into the core."
+description = "Interop plugin (D24 as amended 2026-10-12, D41): xschem and Cadence Virtuoso import and export. Never linked into the core."
 version = "0.1.0"
 edition = "2024"
 license = "MIT"

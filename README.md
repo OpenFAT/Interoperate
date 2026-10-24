@@ -11,13 +11,131 @@ Two interfaces: the **plugin** (`interop.wasm`, loaded by the editor) and, secon
 | Direction | What crosses |
 |---|---|
 | Virtuoso → Schemify | cells (symbol, schematic, CDF parameters, Verilog-A/Verilog views), PDK libraries (symbols, CDF, simInfo → netlist templates), maestro setups (variables, analyses, corners, outputs, specs) |
-| Schemify → Virtuoso | the same, plus gm/Id sizing intent that is solved on the target PDK (PDK-agnostic flow) |
+| Schemify → Virtuoso | the same |
 | xschem → Schemify | designs and PDK device libraries (`schemify-interop xschem-import`) |
 | Schemify → xschem | `.sch`/`.sym`, core devices onto xschem's `devices/` symbols |
 
 Nothing Cadence-made is linked or shipped. Virtuoso runs one SKILL file, `schemify.il`, that
 dumps and loads a plain data file (`.sfyx`). All translation happens in Schemify, in tested
 Rust code. The SKILL side only moves data, and its data is never evaluated (`lineread`, D7).
+
+## Virtuoso ↔ Schemify map
+
+Where each part of Virtuoso lives in Schemify, and whether the plugin carries it across.
+**Yes**: both ways. **Kept**: Schemify-only, survives a round trip but Virtuoso never sees it.
+**No**: neither side's version crosses. Exact rules: spec §6 (cells), §9 (ADE).
+
+**Design data**
+
+| Virtuoso | Schemify | Crosses |
+|---|---|---|
+| library (`cds.lib`) | `lib` line in `schemify.project`; project root ↔ `schemify`, `core` ↔ `schemify_core`, rename with `--lib L=V` | yes |
+| cell with symbol + schematic | `.shcomp` | yes |
+| device cell (symbol, no schematic), PDK cell | `.shprim` (mirror, `provenance virtuoso <lib>/<cell>`) | yes |
+| testbench cell / cell with a `maestro` view | `.shbench` | yes |
+| `symbol` view | the cell's symbol (`i` to open) | yes |
+| `schematic` view | the cell's schematic | yes |
+| `veriloga`, `verilog`/`functional` views | impl `veriloga`, `verilog` | yes |
+| CDF parameters | `param` (kinds and units: spec §6.3) | yes |
+| CDF `prompt` | param `doc` | yes |
+| CDF callbacks | not run; `computed`/`valid` rules from `SfyCharacterize`, or `SfyImport ?callbacks t` | no |
+| simInfo `spectre` / `auCdl` | impl `format spectre` / `format cdl` | yes |
+| (none) | `format spice`/`xyce`, param `min max step grid`, `prose` docs, `waive` | kept |
+| analogLib (`res cap vdc vpulse nmos4 iprobe …`) | `core:` devices (spec §6.5) | yes |
+| `basic/ipin opin iopin` | `port` | yes |
+| `basic/noConn` | `noconn` | yes |
+| `gnd!`, `vdd!` and other global symbols | global `label` | yes |
+| `netSet` / inherited connections `[@p:%:d!]` | `inherit` | yes |
+| Hierarchy Editor `config` view | bench `config` | no |
+| Constraint Manager | `constraint` records | no (Schemify's kept) |
+| Check and Save (`schCheck`) | live checks, `schemify check` | runs on load |
+| OSS / CDL netlisting | `n`, `schemify netlist --dialect spectre\|cdl` | not needed |
+| two PDKs naming one device differently | `interop.map` | yes |
+
+**ADE (Explorer, Assembler, maestro)**
+
+| Virtuoso | Schemify | Crosses |
+|---|---|---|
+| maestro view, one test | one `.shbench` | yes |
+| more tests in one view | one bench per test | first test only |
+| design variables | `var` | yes |
+| parametric sweep (comma list) | `sweep` (`values`/`lin`/`log`) | yes |
+| corners (model files, sections, vars, temperature) | `corner` (`lib`, `include`, `set`, `temp`) | yes |
+| analyses (tran, ac, dc, noise, saved op point) | `.tran .ac .dc .noise .op` in the analysis `code` block | yes |
+| test model files | `.lib`/`.include` | yes |
+| definition files (`.scs`) | `code … spectre` | yes |
+| outputs (calculator) | `output` (spec §9.1 table) | yes |
+| specs `>` `<` | `spec … min max` | yes |
+| Monte Carlo | `montecarlo` + var `dist` | no (Schemify's kept) |
+| optimization (GXL) | `optimize` | no (Schemify's kept) |
+| OCEAN script | generated `ocean/<cell>.ocn`; `schemify run` | export only |
+| ADE Verifier | none | no |
+| ViVA waveforms, Calculator | waves dock (ngspice, Xyce and LTspice raw files), output expressions | no (results never cross) |
+| Spectre | Spectre netlist dialect; Schemify itself runs ngspice or ESPice | n/a |
+
+**Outside Schemify.** Layout (L/XL/EXL, pcells, ModGen), DRC/LVS (PVS, Pegasus, Calibre),
+extraction (Quantus, extracted views), EAD, Voltus-Fi, RF and AMS Designer have no Schemify
+side. A Schemify schematic sent to Virtuoso is a normal schematic, so all of those work on it
+there. For LVS outside Virtuoso, `schemify netlist --dialect cdl` writes the CDL. SKILL
+automation stays in Virtuoso. Schemify's own scripting is Lua config (`init.lua`) and wasm
+plugins.
+
+## xschem ↔ Schemify map
+
+Same reading as above. Exact rules: import [import.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/import.md)
+§1–§6, export [interop.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/interop.md) §11.
+xschem has no ADE: its simulation setup is the netlist text placed on the schematic, so the
+second table is short.
+
+**Design data**
+
+| xschem | Schemify | Crosses |
+|---|---|---|
+| a library directory on `XSCHEM_LIBRARY_PATH` (`xschemrc`) | `lib <dir>` line in `schemify.project`, one library per directory (`sym`/`sch`/`xschem` folders skipped); export writes an `xschemrc` fragment | yes |
+| `set NAME $PDK_ROOT/…` in the PDK `xschemrc` | `set NAME …` in `schemify.project`; `${NAME}` in netlist text | import only |
+| `X.sym` (`type=subcircuit`) + `X.sch` | `.shcomp` | yes |
+| `X.sym` alone (a device with a `format`) | `.shprim` | yes |
+| `X.sch` alone, or holding netlist text | `.shbench` | yes |
+| `X.sch` with `ipin`/`opin`/`iopin` but no `.sym` (an xschem LCC) | `.shcomp` with a derived interface, plus the bench copy `X__top.shbench` | import only |
+| `B 5` pin boxes (`name`, `dir`, `sim_pinnumber`) | `pin` (order kept; same-named pins become `alias` pins) | yes |
+| `template` `k=v` pairs | `param` (kind inferred: number, bool, string, choice) | yes |
+| (none) | param `unit min max step grid doc show`, `prose` docs, `waive`, `constraint` | kept |
+| `format`, `lvs_format`, `spectre_format`, `verilog_format` | impl `format spice` / `cdl` / `spectre` / `verilog` | yes |
+| `device_model`, `spice_sym_def` | impl `body` | yes (export writes `device_model`) |
+| `spice_ignore=true\|open\|short` | impl or inst `ignore` | yes |
+| `extra=` nets, a standalone `@VDD` in a format | inherited pins, inst `inherit` | yes |
+| `devices/*.sym` (`res capa ind vsource isource nmos4 pmos4 npn pnp diode vcvs vccs cccs ccvs ammeter spice_probe switch_ngspice delay_line bsource parax_cap`) | `core:` devices (`DEVICE_MAP`) | yes |
+| `lab_pin`, `lab_wire`, `gnd`, `vdd` | `label` (`global true` for globals) | yes |
+| `ipin`/`opin`/`iopin` instance | `port` | yes |
+| `noconn.sym` | `noconn` | yes |
+| `N` wire (`bus=true`) | `wire` (`bus true`) | yes |
+| `C` instance (`rot`, `flip`) | `inst` (`at x y <orient>`, table in import.md §3.1) | yes |
+| symbol `L B P A` drawings, symbol `T` text | `line rect poly arc circle`, `stext` | yes |
+| schematic `L B P A` drawings | `shape` | export only (import drops them) |
+| schematic `T` text | `text` (display-only Tcl texts dropped) | yes |
+| PDK `drc=` procs, model-card bins, tech-file grid | param `min` / `max` / `grid` | import only |
+| instance `format=` override, `schematic=` alternate | variant cells `X__<inst>`, `X__<alt>` | import only |
+| embedded symbols `[…]`, `bus_tap`, symbol generators `x.tcl(…)` | — | no (reviewed) |
+| launchers, logos, titles, graphs, images, `architecture` blocks | — | dropped |
+
+**Simulation**
+
+| xschem | Schemify | Crosses |
+|---|---|---|
+| `code`, `code_shown`, `netlist_commands`, `simulator_commands` (spice) | `code <name> spice` block | yes |
+| `.param k=v` lines in that text | `var` | yes (export writes a `.param` block) |
+| `.lib`, `.include`, `.temp` lines | kept in the `code` block; export writes the default `corner` as a block | partial |
+| `only_toplevel=true` text and devices | the `X__top.shbench` copy | import only |
+| xschem graphs, `ngspice::get_node` annotations, the Simulate menu | waves dock, op annotation, `s` / `schemify run` | no (results never cross) |
+| (none) | other `corner`s, `sweep`, `montecarlo`, `optimize`, `output`, `spec`, `config` | kept |
+| VHDL / Verilog / tEDAx netlisting (`G` `V` `E` blocks) | `format verilog` only | partial |
+
+**Outside Schemify.** xschem's Tcl scripting, its built-in logic simulator (`0`–`4`), symbol
+generators and waveform graphs have no Schemify side. The editor itself keeps xschem's keys
+and gestures (the Schemify guide, `editor.md`).
+
+[ARCHITECTURE.md](ARCHITECTURE.md) is the plan to lay the code out along these two maps:
+one file per row, each holding both directions of that row.
 
 ## Install
 
@@ -235,8 +353,6 @@ No Cadence tool runs here, so:
     byte-identical.
   - A Virtuoso-made dump imported, exported and reloaded into the original library dumps
     identically.
-- **The gm/Id solver** is written in both SKILL and Rust, and the two agree bit for bit on
-  random vectors. The Rust one is within 2 % of an analytic device.
 - **xschem export** is checked against real xschem netlists.
 - **What cannot be proven here** is listed as numbered assumptions in spec §13. `SfySelfTest`
   and the probe settle them on the first real run.

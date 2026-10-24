@@ -1,40 +1,18 @@
-//! The interop plugin (D24 as amended 2026-10-12): conversions between Schemify and other
-//! tools' formats. Today that is the clean-room xschem importer (D1, D14): `.sch`/`.sym`
-//! designs and PDK libraries, SPICE model-card bin ranges, tech-file grids and Cadence
-//! `cdfDump` output. Virtuoso import/export and xschem export are to come, beside these
-//! modules. It is never linked into the core: the editor loads it as a wasm guest (the
-//! `plugin` module, `wasm32-unknown-unknown` only), and the native command line
-//! `schemify-interop` (the `cli` module, feature `cli`) runs the same code over the file
-//! system.
+//! The interop plugin (D24 as amended 2026-10-12, D41): conversions between Schemify and
+//! other tools. xschem import and export (specs `import.md`, `interop.md` §11), Cadence
+//! Virtuoso import and export through the `.sfyx` exchange file and the shipped SKILL bridge
+//! (`interop.md` §4–§9). Never linked into the core: the editor loads it as a wasm guest
+//! (`plugin`, `wasm32-unknown-unknown` only) and the native command line `schemify-interop`
+//! (`cli`, feature `cli`) runs the same [`job::Job`] over the file system.
 //!
-//! Two layers. The **readers** turn text into data-oriented tables and never evaluate,
-//! execute or resolve anything. The **translation** ([`translate_library`], spec
-//! `docs/spec/import.md`) turns those tables into Schemify files (`.shprim`/`.shcomp`/
-//! `.shbench`, a project manifest and an import report); [`check_output`] is its
-//! oracle (every file loads in `doc`, round-trips, and every expression compiles).
-//! Behaviour comes from `docs/spec/import.md` and from golden netlists produced by running
-//! xschem, never from xschem source (D1).
+//! The layout follows the user-facing maps in the README (ARCHITECTURE.md): one Schemify
+//! `Design` in the middle, the tool-specific translation per tool, and a shared pipeline
+//! (`design` load, `map` resolve, `nets`, `remap`, `merge`, report) that names no tool.
 //!
-//! | Transform | Reads | Writes |
-//! |---|---|---|
-//! | [`translate_library`] | `(path, bytes)` of `.sym`/`.sch` + [`Options`] | `(path, bytes)` outputs + [`Report`] |
-//! | [`tcl::pdk_vars`], [`tcl::drc_procs`] | PDK `xschemrc` text | project `set` entries, `drc` rules |
-//! | [`check_output`] | translated outputs | list of problems (empty = valid) |
-//! | [`xschem::read`] | `.sch`/`.sym` text | [`xschem::XschemFile`]: record tables, dropped-record issues, D33 roundings |
-//! | [`attr::Attrs::parse_into`] | one attribute string | key/value rows (unescaped, source spans) |
-//! | [`attr::classify`] | one value or text | [`attr::Idioms`] bitset (corpus audit) |
-//! | [`symbol::extract`] | [`xschem::XschemFile`] | [`symbol::SymbolInterface`]: attributes, template, pins in netlist order |
-//! | [`spice::scan`] | model cards, through a caller loader | [`spice::ModelScan`]: models, bins, subckts, OSDI evidence |
-//! | [`tech::read_lyt`], [`tech::read_magic`] | KLayout / Magic tech files | manufacturing grid in picometres |
-//! | [`cdf::read`] | `cdfDump` SKILL text | [`cdf::CdfDump`]: parameter tables and a review list |
-//!
-//! One lexer per syntax: [`xschem::read`] for records, [`attr`] for attribute strings,
-//! `spice` (`logical_lines`, `words`, `lex_number`) for every SPICE text the translator
-//! reads (model cards, `.subckt` ports, bench `.param`s, numbers in expressions).
-//!
-//! Every reader is total over its input: malformed parts land in an issue table with a
-//! location instead of a panic, and each reader asserts a count-conservation invariant on
-//! exit (records or lines read = kept + reported).
+//! Readers turn text into data-oriented tables and never evaluate, execute or resolve
+//! anything; every reader is total over its input (malformed parts land in an issue table
+//! with a location) and asserts count conservation on exit. Behaviour comes from the specs
+//! and from golden outputs produced by running the tools, never from their source (D1).
 
 // SIMD triage (simd-loops): inputs are single files of kilobytes (the 3,218-file corpus is
 // ~60 MB, read in ~0.1 s), every scanner is a byte state machine (a chain dependency),
