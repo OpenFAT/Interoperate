@@ -52,6 +52,7 @@ pub mod cli;
 pub mod core;
 pub mod decimal;
 pub mod design;
+pub mod gather;
 pub mod job;
 mod limits;
 pub mod map;

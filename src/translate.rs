@@ -364,7 +364,7 @@ struct Tables<'o> {
 }
 
 /// Normalises a `/` path lexically (`.`/`..`/empty components).
-fn normalize(path: &str) -> String {
+pub(crate) fn normalize(path: &str) -> String {
     let abs = path.starts_with('/');
     let mut parts: Vec<&str> = Vec::new();
     for c in path.split('/') {
@@ -381,7 +381,7 @@ fn normalize(path: &str) -> String {
     if abs { format!("/{j}") } else { j }
 }
 
-fn dir_of(p: &str) -> &str {
+pub(crate) fn dir_of(p: &str) -> &str {
     p.rsplit_once('/').map_or("", |(d, _)| d)
 }
 
@@ -394,7 +394,7 @@ fn stem_of(p: &str) -> &str {
     f.rsplit_once('.').map_or(f, |(s, _)| s)
 }
 
-fn join(dir: &str, rel: &str) -> String {
+pub(crate) fn join(dir: &str, rel: &str) -> String {
     if dir.is_empty() || rel.starts_with('/') {
         normalize(rel)
     } else {
@@ -1170,8 +1170,33 @@ impl<'o> Tables<'o> {
                 self.resolve(sym.src, &v)
                     .or_else(|| self.resolve(sym.src, &format!("{v}.sch")))
             }
-            None => self.index.get(&format!("{dir}/{stem}.sch")).copied(),
+            None => self
+                .index
+                .get(&format!("{dir}/{stem}.sch"))
+                .copied()
+                .or_else(|| self.along_path(path, "sch")),
         }
+    }
+
+    /// The input named like `path` with extension `ext`, looked up along the search path:
+    /// `path` relative to the first root holding it (the name a reference would use) is
+    /// tried under every root in order. xschem finds a symbol's default schematic this way,
+    /// so a library kept as `symbols/` and `schematics/` search-path entries pairs `x.sym`
+    /// with `x.sch` (spec §1).
+    fn along_path(&self, path: &str, ext: &str) -> Option<u32> {
+        let rel = self.opts.roots.iter().find_map(|root| {
+            let root = normalize(root);
+            path.strip_prefix(root.as_str())?
+                .strip_prefix('/')
+                .map(str::to_owned)
+        })?;
+        let stem = rel.rsplit_once('.').map_or(rel.as_str(), |(s, _)| s);
+        debug_assert!(!stem.is_empty());
+        let name = format!("{stem}.{ext}");
+        self.opts
+            .roots
+            .iter()
+            .find_map(|root| self.index.get(&join(&normalize(root), &name)).copied())
     }
 
     fn plan_cells(&mut self, acc: &mut Acc) {

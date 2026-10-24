@@ -26,11 +26,15 @@ struct World {
 
 impl World {
     fn new() -> Option<World> {
+        World::with_grants(&GRANTS)
+    }
+
+    fn with_grants(grants: &[&str]) -> Option<World> {
         let wasm =
             std::fs::read(Path::new(env!("CARGO_MANIFEST_DIR")).join("interop.wasm")).ok()?;
         let mut plugins = Plugins::new();
         let id = plugins
-            .load("interop", &wasm, &GRANTS, FUEL_DEFAULT)
+            .load("interop", &wasm, grants, FUEL_DEFAULT)
             .expect("loads");
         let mut w = World {
             plugins,
@@ -87,6 +91,19 @@ impl World {
                     IoOp::FsWrite => {
                         written.insert(path, r.data.clone());
                         (0, Vec::new())
+                    }
+                    // The host's listing: paths under the directory, relative, in path order.
+                    IoOp::FsList => {
+                        let prefix = format!("{path}/");
+                        let rels: Vec<&str> = files
+                            .keys()
+                            .filter_map(|k| k.strip_prefix(prefix.as_str()))
+                            .collect();
+                        if rels.is_empty() {
+                            (Code::Gone.neg(), Vec::new())
+                        } else {
+                            (0, rels.join("\n").into_bytes())
+                        }
                     }
                     op => panic!("unexpected {op:?}"),
                 };
@@ -149,6 +166,7 @@ fn native(cmd: Command, files: &BTreeMap<String, Vec<u8>>) -> BTreeMap<String, V
     let mut j = Job::new(cmd);
     loop {
         match j.step() {
+            Step::List(_) => unreachable!("only xschem imports list directories"),
             Step::Read(ps) => {
                 for p in ps {
                     let b = files.get(&p).cloned();
@@ -284,6 +302,44 @@ fn package_manifest_requests_the_tested_grants() {
         .iter()
         .filter_map(|l| l.strip_prefix("  grant "))
         .collect();
-    assert_eq!(grants, GRANTS);
+    // `read:*`: every `read:<NAME>` the user grants (config spec §5), for xschem imports.
+    assert_eq!(grants, [&GRANTS[..], &["read:*"]].concat());
     assert!(rest.contains(&"  fuel 100000000000"), "{rest:?}");
+}
+
+/// `interop.xschem_import` through the real host: listings and reads of `${LIB}/…` paths
+/// (`read:LIB`), a design library converted whole, from the `--root` library only the cell
+/// the design places, the outputs written under `-o`. (A path without its grant is refused
+/// by the host: `schemify-plugin`'s authorize tests.)
+#[test]
+fn xschem_import_reads_granted_roots_only() {
+    let sym = "v {xschem version=3.4.7 file_version=1.2}\nK {type=subcircuit\nformat=\"@name @pinlist @symname\"\ntemplate=\"name=x1\"}\nB 5 -42.5 -2.5 -37.5 2.5 {name=A dir=in}\n";
+    let tb = "v {xschem version=3.4.7 file_version=1.2}\nC {cells/used.sym} 0 0 0 0 {name=x1}\n";
+    let files: BTreeMap<String, Vec<u8>> = [
+        ("design/tb.sch", tb),
+        ("${LIB}/cells/used.sym", sym),
+        ("${LIB}/cells/unused.sym", sym),
+        ("${LIB}/cells/demo_tb.sch", tb),
+    ]
+    .into_iter()
+    .map(|(p, t)| (p.to_owned(), t.as_bytes().to_vec()))
+    .collect();
+    let Some(mut w) = World::with_grants(&["read_project", "write_project", "read:LIB"]) else {
+        return; // no committed module in this checkout
+    };
+    let out = w.run(
+        "interop.xschem_import",
+        "design --root ${LIB} -o imported",
+        &files,
+    );
+    let names: Vec<&str> = out.keys().map(String::as_str).collect();
+    assert!(names.contains(&"imported/design/tb.shbench"), "{names:?}");
+    assert!(names.contains(&"imported/cells/used.shprim"), "{names:?}");
+    assert!(names.contains(&"imported/schemify.project"), "{names:?}");
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.contains("unused") || n.contains("demo_tb")),
+        "{names:?}"
+    );
 }

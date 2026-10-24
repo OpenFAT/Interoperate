@@ -45,6 +45,31 @@ pub enum Command {
         /// Output directory.
         dir: String,
     },
+    /// xschem libraries → Schemify files under `out_dir` (import spec; `--root` as
+    /// [`crate::gather`] gathers it).
+    XschemImport(Box<XschemImport>),
+}
+
+/// The settings of [`Command::XschemImport`]. Paths are whatever the driver reads: host
+/// paths on the command line, project or `${VAR}/…` paths in the plugin.
+#[derive(Clone, Debug, Default)]
+pub struct XschemImport {
+    /// Library directories converted wholesale, in search-path order.
+    pub convert: Vec<String>,
+    /// Search-path elements after them, contributing only what is referenced.
+    pub roots: Vec<String>,
+    /// `xschemrc` files: PDK path variables and `drc` procs.
+    pub rcs: Vec<String>,
+    /// Where the outputs go (`<out_dir>/<lib>/<cell>.<ext>`, `schemify.project`, reports).
+    pub out_dir: String,
+    /// Map xschem `devices/` symbols onto the `core` library (import spec §6).
+    pub map_core: bool,
+    /// Model-card scans for device limits (the command line reads them beforehand).
+    pub models: Vec<crate::spice::ModelScan>,
+    /// Manufacturing grid in picometres (from a tech file).
+    pub grid_pm: Option<u32>,
+    /// A Cadence `cdfDump`.
+    pub cdf: Option<crate::cdf::CdfDump>,
 }
 
 /// What the driver must do next.
@@ -52,6 +77,9 @@ pub enum Command {
 pub enum Step {
     /// Read these paths and [`Job::supply`] each (bytes, or `None` when absent).
     Read(Vec<String>),
+    /// List the files under these directories and [`Job::supply_list`] each (paths relative
+    /// to the directory, or `None` when it cannot be listed).
+    List(Vec<String>),
     /// Write these files; the job is finished.
     Done {
         /// (project-relative path, bytes), sorted by path.
@@ -72,6 +100,11 @@ pub struct Job {
     files: Files,
     absent: BTreeSet<String>,
     asked: BTreeSet<String>,
+    /// Directories asked for by [`Step::List`] and not yet supplied.
+    asked_lists: BTreeSet<String>,
+    gather: Option<crate::gather::Gather>,
+    /// Problems the output check found in the finished import (0 for other commands).
+    problems: usize,
     rounds: u32,
 }
 
@@ -83,6 +116,9 @@ impl Job {
             files: Files::new(),
             absent: BTreeSet::new(),
             asked: BTreeSet::new(),
+            asked_lists: BTreeSet::new(),
+            gather: None,
+            problems: 0,
             rounds: 0,
         }
     }
@@ -107,9 +143,31 @@ impl Job {
         }
     }
 
-    /// Paths asked for and not yet supplied.
+    /// Hands in the listing of one directory asked for by [`Step::List`].
+    ///
+    /// # Panics
+    ///
+    /// When `dir` was not asked for (a driver bug).
+    pub fn supply_list(&mut self, dir: &str, files: Option<Vec<String>>) {
+        assert!(
+            self.asked_lists.remove(dir),
+            "listing of {dir}, which was not asked for"
+        );
+        self.gather
+            .as_mut()
+            .expect("lists are asked by an import")
+            .listed(dir, files);
+    }
+
+    /// Paths and directories asked for and not yet supplied.
     pub fn pending(&self) -> usize {
-        self.asked.len()
+        self.asked.len() + self.asked_lists.len()
+    }
+
+    /// How many problems the output check found in a finished xschem import: a driver
+    /// reports them as a failure (the outputs are written all the same).
+    pub fn problems(&self) -> usize {
+        self.problems
     }
 
     /// Advances the job. Call again after supplying every path of a [`Step::Read`].
@@ -119,16 +177,21 @@ impl Job {
     /// When reads are still pending.
     pub fn step(&mut self) -> Step {
         assert!(
-            self.asked.is_empty(),
+            self.pending() == 0,
             "step with {} reads pending",
-            self.asked.len()
+            self.pending()
         );
         self.rounds += 1;
         if self.rounds > ROUNDS_MAX {
             return Step::Failed(vec![format!("more than {ROUNDS_MAX} read rounds")]);
         }
+        if let Command::XschemImport(x) = &self.command {
+            let x = x.clone();
+            return self.xschem_import(&x);
+        }
         let command = self.command.clone();
         match command {
+            Command::XschemImport(_) => unreachable!("handled above"),
             Command::InstallSkill { dir } => {
                 let dir = dir.trim_end_matches('/');
                 let join = |f: &str| {
@@ -268,6 +331,94 @@ impl Job {
         }
     }
 
+    /// One step of [`Command::XschemImport`]: list the search path, gather the inputs round
+    /// by round, then translate them.
+    fn xschem_import(&mut self, x: &XschemImport) -> Step {
+        use crate::gather::Gather;
+        if x.convert.is_empty() {
+            return Step::Failed(vec!["no library directory to import".into()]);
+        }
+        let g = self
+            .gather
+            .get_or_insert_with(|| Gather::new(&x.convert, &x.roots));
+        let unlisted = g.unlisted();
+        if !unlisted.is_empty() {
+            self.asked_lists.extend(unlisted.iter().cloned());
+            return Step::List(unlisted);
+        }
+        let rcs: Vec<String> = x.rcs.iter().filter(|p| !self.known(p)).cloned().collect();
+        if !rcs.is_empty() {
+            return self.ask(rcs);
+        }
+        let g = self.gather.as_mut().expect("created above");
+        let want = g.next(&self.files, &self.absent);
+        if !want.is_empty() {
+            return self.ask(want);
+        }
+        let g = self.gather.as_ref().expect("created above");
+        let mut vars: Vec<(String, String)> = Vec::new();
+        let mut procs = Vec::new();
+        for rc in &x.rcs {
+            let Some(text) = self.files.get(rc) else {
+                return Step::Failed(vec![format!("{rc}: cannot read")]);
+            };
+            let text = String::from_utf8_lossy(text);
+            for v in crate::tcl::pdk_vars(&text) {
+                if !vars.iter().any(|(n, _)| *n == v.0) {
+                    vars.push(v);
+                }
+            }
+            procs.extend(crate::tcl::drc_procs(&text));
+        }
+        let inputs: Vec<(&str, &[u8])> = g
+            .inputs()
+            .filter_map(|p| Some((p.as_str(), self.files.get(p)?.as_slice())))
+            .collect();
+        if !inputs
+            .iter()
+            .any(|(p, _)| p.ends_with(".sym") || p.ends_with(".sch"))
+        {
+            return Step::Failed(vec![format!(
+                "no .sym or .sch files under {}",
+                x.convert.join(", ")
+            )]);
+        }
+        let opts = crate::Options {
+            roots: g.search_path(),
+            pdk_vars: &vars,
+            map_core: x.map_core,
+            models: &x.models,
+            drc: &procs,
+            grid_pm: x.grid_pm,
+            cdf: x.cdf.as_ref(),
+        };
+        let (outputs, report) = crate::translate_library(&inputs, &opts);
+        let problems = crate::check_output(&outputs);
+        self.problems = problems.len();
+        let mut summary = summarize(&outputs, &report, procs.len(), x.grid_pm);
+        for p in problems.iter().take(60) {
+            summary.push_str(&format!("check: {p}\n"));
+        }
+        summary.push_str(&format!("check: {} problems", problems.len()));
+        // `.` is the project root itself: the import becomes the project.
+        let dir = match x.out_dir.trim_end_matches('/') {
+            "." => "",
+            d => d,
+        };
+        let writes = outputs
+            .into_iter()
+            .map(|(p, b)| {
+                let p = if dir.is_empty() {
+                    p
+                } else {
+                    format!("{dir}/{p}")
+                };
+                (p, b)
+            })
+            .collect();
+        Step::Done { writes, summary }
+    }
+
     fn known(&self, p: &str) -> bool {
         self.files.contains_key(p) || self.absent.contains(p)
     }
@@ -298,6 +449,80 @@ impl Job {
         self.asked.extend(fresh.iter().cloned());
         Step::Read(fresh)
     }
+}
+
+/// The xschem import's summary, one line per fact: inputs and outputs, `core` coverage,
+/// report classes, files to review, and the device limits extracted.
+pub fn summarize(
+    outputs: &[(String, Vec<u8>)],
+    report: &crate::Report,
+    procs: usize,
+    grid_pm: Option<u32>,
+) -> String {
+    use crate::report::Class;
+    use std::fmt::Write as _;
+    let mut s = String::new();
+    let count = |ext: &str| outputs.iter().filter(|o| o.0.ends_with(ext)).count();
+    let _ = writeln!(
+        s,
+        "inputs {} files; outputs {} shprim, {} shcomp, {} shbench; {} drc procs; grid {:?} pm",
+        report.files.len(),
+        count(".shprim"),
+        count(".shcomp"),
+        count(".shbench"),
+        procs,
+        grid_pm
+    );
+    let _ = writeln!(
+        s,
+        "devices instances mapped to core: {} / {}",
+        report.core_instances, report.device_instances
+    );
+    let mut by_class = std::collections::BTreeMap::new();
+    for it in &report.items {
+        *by_class.entry(it.class.word()).or_insert(0u32) += 1;
+    }
+    for (c, n) in &by_class {
+        if matches!(
+            c.split(':').next(),
+            Some("needs_review" | "dropped" | "alt-cell" | "unknown-token" | "rounding")
+        ) {
+            let _ = writeln!(s, "  {c}: {n}");
+        }
+    }
+    let reviewed: BTreeSet<&str> = report
+        .items
+        .iter()
+        .filter(|i| matches!(i.class, Class::Review(_)))
+        .map(|i| report.files[i.file as usize].as_str())
+        .collect();
+    let _ = writeln!(s, "  files with needs_review items: {}", reviewed.len());
+    let mut limits = 0;
+    for (path, bytes) in outputs.iter().filter(|o| o.0.ends_with(".shprim")) {
+        let Ok(d) = schemify_format::parse(bytes) else {
+            continue;
+        };
+        for r in 1..d.record_count() {
+            if d.record_kind(r) != schemify_format::RecordKind::Param {
+                continue;
+            }
+            let get = |k| d.find_attr(r, k).and_then(|a| d.attr_value(a, 0));
+            let (min, max, grid) = (get("min"), get("max"), get("grid"));
+            if min.is_some() || max.is_some() {
+                limits += 1;
+                let _ = writeln!(
+                    s,
+                    "  limit {path} {}: min {} max {} grid {}",
+                    d.field(r, 0).unwrap_or(""),
+                    min.unwrap_or("-"),
+                    max.unwrap_or("-"),
+                    grid.unwrap_or("-")
+                );
+            }
+        }
+    }
+    let _ = writeln!(s, "  params with min/max: {limits}");
+    s
 }
 
 /// Adds the report files beside `base` and builds the summary.

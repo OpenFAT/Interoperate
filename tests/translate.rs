@@ -364,3 +364,55 @@ B 5 37.5 -2.542.5 2.5 {name=Y dir=out}
     let (out, _) = run(&fixture());
     assert!(out.iter().any(|f| f.0 == "lib/nand.shprim"));
 }
+
+/// A symbol with no schematic beside it pairs with the same-named schematic along the
+/// search path (import spec §1), as xschem finds it: a library kept as `symbols/` and
+/// `schematics/` search-path entries gives one `.shcomp`, not a `.shprim` plus a stray
+/// schematic. A schematic beside the symbol still wins, and without the search path
+/// nothing is paired.
+#[test]
+fn symbol_pairs_with_its_schematic_along_the_search_path() {
+    let fx = fixture();
+    let dev: Vec<(String, String)> = fx
+        .iter()
+        .filter(|(p, _)| p.starts_with("x/devices/"))
+        .cloned()
+        .collect();
+    let sym = "v {xschem version=3.4.7 file_version=1.2}\nK {type=subcircuit\nformat=\"@name @pinlist @symname\"\ntemplate=\"name=x1\"}\nB 5 -42.5 -2.5 -37.5 2.5 {name=A dir=in}\nB 5 37.5 -2.5 42.5 2.5 {name=Z dir=out}\n";
+    let sch = "v {xschem version=3.4.7 file_version=1.2}\nC {ipin.sym} -40 0 0 0 {name=p1 lab=A}\nC {opin.sym} 40 0 0 0 {name=p2 lab=Z}\nC {res.sym} 0 0 1 0 {name=R1 value=1k}\n";
+    let translate = |extra: &[(&str, &str)], roots: &[&str]| {
+        let mut files = dev.clone();
+        files.extend(
+            extra
+                .iter()
+                .map(|(p, s)| ((*p).to_owned(), (*s).to_owned())),
+        );
+        let roots: Vec<String> = roots.iter().map(|r| (*r).to_owned()).collect();
+        let inputs: Vec<(&str, &[u8])> = files
+            .iter()
+            .map(|(p, s)| (p.as_str(), s.as_bytes()))
+            .collect();
+        let (out, _) = translate_library(&inputs, &opts(&roots, &[]));
+        out.into_iter().map(|f| f.0).collect::<Vec<String>>()
+    };
+    let split = [("x/schematics/amp.sch", sch), ("x/symbols/amp.sym", sym)];
+    let search = ["x/schematics", "x/symbols", "x/devices"];
+
+    let out = translate(&split, &search);
+    assert!(out.contains(&"symbols/amp.shcomp".to_owned()), "{out:?}");
+    assert!(
+        !out.iter().any(|p| p.starts_with("schematics/amp.")),
+        "{out:?}"
+    );
+
+    // Without the search path the two stay apart, as before.
+    let out = translate(&split, &[]);
+    assert!(out.contains(&"symbols/amp.shprim".to_owned()), "{out:?}");
+
+    // A schematic beside the symbol wins over one along the path (its derived cell stays).
+    let mut beside = split.to_vec();
+    beside.push(("x/symbols/amp.sch", sch));
+    let out = translate(&beside, &search);
+    assert!(out.contains(&"symbols/amp.shcomp".to_owned()), "{out:?}");
+    assert!(out.contains(&"schematics/amp.shcomp".to_owned()), "{out:?}");
+}

@@ -3,4 +3,5 @@ schemify 1 project
 plugin interop path interop.wasm
   grant read_project
   grant write_project
+  grant read:*
   fuel 100000000000

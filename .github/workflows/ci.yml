@@ -99,7 +99,7 @@ jobs:
           exit $status
 
   # The guest (Nix: the flake.lock rustc and wasm-ld). build.sh is byte-reproducible and fails
-  # at the 1500 KB limit; the last step fails when the committed interop.wasm differs from the
+  # at the 2048 KB limit; the last step fails when the committed interop.wasm differs from the
   # rebuild: commit the `interop-wasm` artifact of the run.
   guest:
     runs-on: ubuntu-latest

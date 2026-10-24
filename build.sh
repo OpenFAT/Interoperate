@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Builds the interop guest for wasm32-unknown-unknown into interop.wasm at the repository root
 # (committed: a Schemify project loads it with `plugin interop path <dir>/interop.wasm`, and
-# tests/guest.rs drives it through the real host). Fails when the module reaches 1500 KB
+# tests/guest.rs drives it through the real host). Fails when the module reaches 2048 KB
 # (the format, doc, expr crates and every converter are linked in).
 #
 # Needs the wasm32-unknown-unknown std (rust-toolchain.toml; `nix develop` has Rust 1.95.0 with
@@ -32,7 +32,7 @@ target="${CARGO_TARGET_DIR:-$here/target}"
 cargo build --manifest-path "$here/Cargo.toml" --locked --release --target wasm32-unknown-unknown
 
 wasm="$target/wasm32-unknown-unknown/release/interop.wasm"
-limit=1500
+limit=2048
 size=$(wc -c <"$wasm")
 if (( size >= limit * 1024 )); then
   echo "error: interop.wasm is $size bytes (limit $limit KB)" >&2

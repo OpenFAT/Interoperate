@@ -13,8 +13,9 @@
 //!
 //! Each `<lib-dir>` is one element of the xschem library search path, in the order
 //! given, and every `.sym`/`.sch` under it is converted. `--root` adds a search-path
-//! element whose files are only referenced (xschem's `xschem_library` parent, so that
-//! `devices/res.sym` resolves) — they must also be under some `<lib-dir>`. `--xschemrc` (repeatable: pass
+//! element that is not converted wholesale: only what the inputs reference from it,
+//! transitively (`pull_referenced`), so `--root <xschem_library> --root <pdk xschem dir>`
+//! converts the devices a design places and no demo benches. `--xschemrc` (repeatable: pass
 //! `xschem-drc` too) supplies PDK path variables and `drc` procs. `--spiceinit` reads an
 //! ngspice `.spiceinit`: its `sourcepath` (`$VAR`s from the environment) is where model
 //! includes are looked up. A Magic `--tech` file's `include`s are read beside it. Writes the outputs
@@ -23,8 +24,7 @@
 
 use std::path::{Path, PathBuf};
 
-use crate::report::Class;
-use crate::{Options, check_output, spice, tcl, tech, translate_library};
+use crate::{spice, tech};
 
 struct Args {
     /// Search path in order: (dir, convert its files).
@@ -245,6 +245,20 @@ fn drive(project: &Path, command: crate::job::Command) -> u8 {
                     job.supply(&p, bytes);
                 }
             }
+            Step::List(dirs) => {
+                for d in dirs {
+                    let root = project.join(&d);
+                    let listing = root.is_dir().then(|| {
+                        let mut paths = Vec::new();
+                        walk(&root, &mut paths);
+                        paths
+                            .iter()
+                            .filter_map(|q| q.strip_prefix(&root).ok().map(slash))
+                            .collect()
+                    });
+                    job.supply_list(&d, listing);
+                }
+            }
             Step::Done { writes, summary } => {
                 for (p, b) in &writes {
                     let path = project.join(p);
@@ -260,7 +274,7 @@ fn drive(project: &Path, command: crate::job::Command) -> u8 {
                     }
                 }
                 println!("{summary}");
-                return 0;
+                return u8::from(job.problems() > 0);
             }
             Step::Failed(problems) => {
                 for p in problems {
@@ -393,43 +407,28 @@ fn xschem_import(args: &[String]) -> u8 {
     let Some(args) = parse_args(args) else {
         return usage();
     };
-    let mut roots = Vec::new();
-    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut x = crate::job::XschemImport {
+        out_dir: slash(&args.out),
+        map_core: args.core,
+        rcs: args.rcs.iter().map(|p| slash(p)).collect(),
+        ..crate::job::XschemImport::default()
+    };
     for (d, convert) in &args.dirs {
         let Ok(d) = std::fs::canonicalize(d) else {
             eprintln!("import: cannot open {}", d.display());
             return 2;
         };
-        roots.push(slash(&d));
-        if !convert {
-            continue;
-        }
-        let mut paths = Vec::new();
-        walk(&d, &mut paths);
-        for p in paths {
-            let key = slash(&p);
-            if seen.insert(key.clone()) {
-                match std::fs::read(&p) {
-                    Ok(b) => files.push((key, b)),
-                    Err(e) => eprintln!("import: {}: {e}", p.display()),
-                }
-            }
+        if *convert {
+            x.convert.push(slash(&d));
+        } else {
+            x.roots.push(slash(&d));
         }
     }
-    let mut vars = Vec::new();
-    let mut procs = Vec::new();
     for rc in &args.rcs {
-        let Ok(text) = std::fs::read_to_string(rc) else {
+        if !rc.is_file() {
             eprintln!("import: cannot read {}", rc.display());
             return 2;
-        };
-        for v in tcl::pdk_vars(&text) {
-            if !vars.iter().any(|(n, _): &(String, String)| *n == v.0) {
-                vars.push(v);
-            }
         }
-        procs.extend(tcl::drc_procs(&text));
     }
     let search_dirs: Vec<PathBuf> = args
         .spiceinit
@@ -491,102 +490,12 @@ fn xschem_import(args: &[String]) -> u8 {
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| crate::cdf::read(&t));
-    let opts = Options {
-        roots: &roots,
-        pdk_vars: &vars,
-        map_core: args.core,
-        models: &scans,
-        drc: &procs,
-        grid_pm,
-        cdf: cdf.as_ref(),
-    };
-    let inputs: Vec<(&str, &[u8])> = files
-        .iter()
-        .map(|(p, b)| (p.as_str(), b.as_slice()))
-        .collect();
-    let (outputs, report) = translate_library(&inputs, &opts);
-    for (rel, bytes) in &outputs {
-        let path = args.out.join(rel);
-        let ok = path
-            .parent()
-            .is_none_or(|d| std::fs::create_dir_all(d).is_ok())
-            && std::fs::write(&path, bytes).is_ok();
-        if !ok {
-            eprintln!("import: cannot write {}", path.display());
-            return 2;
-        }
-    }
-    summarize(&outputs, &report, procs.len(), grid_pm);
-    let problems = check_output(&outputs);
-    for p in problems.iter().take(60) {
-        eprintln!("check: {p}");
-    }
-    println!("check: {} problems", problems.len());
-    if problems.is_empty() { 0 } else { 1 }
-}
-
-fn summarize(
-    outputs: &[(String, Vec<u8>)],
-    report: &crate::Report,
-    procs: usize,
-    grid_pm: Option<u32>,
-) {
-    let count = |ext: &str| outputs.iter().filter(|o| o.0.ends_with(ext)).count();
-    println!(
-        "inputs {} files; outputs {} shprim, {} shcomp, {} shbench; {} drc procs; grid {:?} pm",
-        report.files.len(),
-        count(".shprim"),
-        count(".shcomp"),
-        count(".shbench"),
-        procs,
-        grid_pm
-    );
-    println!(
-        "devices instances mapped to core: {} / {}",
-        report.core_instances, report.device_instances
-    );
-    let mut by_class = std::collections::BTreeMap::new();
-    for it in &report.items {
-        *by_class.entry(it.class.word()).or_insert(0u32) += 1;
-    }
-    for (c, n) in &by_class {
-        if matches!(
-            c.split(':').next(),
-            Some("needs_review" | "dropped" | "alt-cell" | "unknown-token" | "rounding")
-        ) {
-            println!("  {c}: {n}");
-        }
-    }
-    let reviewed: std::collections::BTreeSet<&str> = report
-        .items
-        .iter()
-        .filter(|i| matches!(i.class, Class::Review(_)))
-        .map(|i| report.files[i.file as usize].as_str())
-        .collect();
-    println!("  files with needs_review items: {}", reviewed.len());
-    // Limits extracted: params carrying min/max/grid.
-    let mut limits = 0;
-    for (path, bytes) in outputs.iter().filter(|o| o.0.ends_with(".shprim")) {
-        let Ok(d) = schemify_format::parse(bytes) else {
-            continue;
-        };
-        for r in 1..d.record_count() {
-            if d.record_kind(r) != schemify_format::RecordKind::Param {
-                continue;
-            }
-            let get = |k| d.find_attr(r, k).and_then(|a| d.attr_value(a, 0));
-            let (min, max, grid) = (get("min"), get("max"), get("grid"));
-            if min.is_some() || max.is_some() {
-                limits += 1;
-                println!(
-                    "  limit {path} {}: min {} max {} grid {}",
-                    d.field(r, 0).unwrap_or(""),
-                    min.unwrap_or("-"),
-                    max.unwrap_or("-"),
-                    grid.unwrap_or("-")
-                );
-            }
-        }
-    }
-    println!("  params with min/max: {limits}");
+    x.models = scans;
+    x.grid_pm = grid_pm;
+    x.cdf = cdf;
+    // The same job the plugin runs (`interop.xschem_import`), over host paths.
+    drive(
+        Path::new(""),
+        crate::job::Command::XschemImport(Box::new(x)),
+    )
 }

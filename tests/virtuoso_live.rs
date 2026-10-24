@@ -91,6 +91,7 @@ fn job(project: &Path, cmd: Command) -> Result<Vec<(String, Vec<u8>)>, Vec<Strin
     let mut job = Job::new(cmd);
     for _ in 0..interop::job::ROUNDS_MAX {
         match job.step() {
+            Step::List(_) => unreachable!("only xschem imports list directories"),
             Step::Read(paths) => {
                 for p in paths {
                     job.supply(&p, std::fs::read(project.join(&p)).ok());

@@ -35,6 +35,7 @@ fn export() -> BTreeMap<String, String> {
     });
     for _ in 0..64 {
         match job.step() {
+            Step::List(_) => unreachable!("only xschem imports list directories"),
             Step::Read(paths) => {
                 for p in paths {
                     job.supply(&p, std::fs::read(root().join(&p)).ok());
