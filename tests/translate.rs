@@ -3,9 +3,10 @@
 //! (`check_output`), count conservation (asserted inside `translate_library`),
 //! byte-identical re-import, and no panic on mutated inputs.
 
+use interop::design::place;
 use interop::report::{Class, Drop};
 use interop::template::Reason;
-use interop::translate::{ORIENT_TABLE, orient, place};
+use interop::translate::{ORIENT_TABLE, orient};
 use interop::{Options, check_output, translate_library};
 use proptest::prelude::*;
 use schemify_format::{Orient, parse};

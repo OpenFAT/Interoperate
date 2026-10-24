@@ -19,9 +19,10 @@ use super::{Import, ImportOptions};
 use crate::design::{
     Files, cell_path, copy_header, push_anchored, push_attr, push_lib, push_record,
 };
-use crate::map::{CORE_LIB, Mapping, ROOT_LIB};
+use crate::map::Mapping;
 use crate::merge;
 use crate::notes::Notes;
+use crate::plan::{CORE_LIB, ROOT_LIB};
 use crate::profile::{self, coord_text, net_from_virtuoso, point_from_virtuoso};
 use crate::sfyx::{self, Error, Record, Value};
 
@@ -3529,14 +3530,14 @@ fn manifest_with(old: Option<&Vec<u8>>, new: &BTreeMap<String, String>) -> Strin
 /// the export's renames; masters outside the dump resolve through `d`'s files.
 pub(crate) fn image(
     records: &[Record],
-    plan: &crate::map::Plan,
+    plan: &crate::plan::Plan,
     d: &crate::design::Design,
     map: &Mapping,
 ) -> BTreeMap<(String, String), Document<'static>> {
     let dump = dump(records).expect("the exporter writes valid records");
     let mut iopts = ImportOptions::default();
     for (ci, c) in d.cells.iter().enumerate() {
-        if plan.how[ci] == crate::map::How::Design {
+        if plan.how[ci] == crate::plan::How::Design {
             iopts.lib_map.insert(plan.lib[ci].clone(), c.lib.clone());
         }
     }

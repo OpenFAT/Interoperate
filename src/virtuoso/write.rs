@@ -1,6 +1,6 @@
 //! Design → `.sfyx` records (spec `interop.md` §6, §7.3).
 //!
-//! Spine of [`export`]: `map::resolve` → per exported cell, `cell_out` builds the dump
+//! Spine of [`export`]: `plan::resolve` → per exported cell, `cell_out` builds the dump
 //! tables ([`DCell`]: CDF, symbol and schematic cellviews, text views; `remap::apply` edits
 //! for re-mastered instances) → `ade::export` per bench → the image import of those
 //! records (`read::image`) → `merge::stash` per cell (Schemify-only data and every record
@@ -19,10 +19,11 @@ use super::read::{
 use super::{Export, ExportOptions, ade};
 use crate::align;
 use crate::design::{Cell, Design, geom, sym_pins};
-use crate::map::{self, How, Mapping, Plan};
+use crate::map::Mapping;
 use crate::merge;
 use crate::nets;
 use crate::notes::Notes;
+use crate::plan::{self, How, Plan};
 use crate::profile::{
     self, MILLI_PER_INCH, coord_text, dir_to_virtuoso, net_from_virtuoso, net_to_virtuoso, norm_box,
 };
@@ -69,7 +70,7 @@ pub fn export(
             return Err(vec![format!("top {t} is not a cell of the design")]);
         }
     }
-    let plan = map::resolve(d, tops, m, opts.analoglib, &opts.lib_map)?;
+    let plan = plan::resolve(d, tops, m, opts.analoglib, &opts.lib_map)?;
     let mut notes = Notes::default();
     let mut dump = Dump {
         producer: opts.producer.clone(),
@@ -1829,7 +1830,7 @@ fn schematic_out(
         let new_pins = d
             .cells
             .iter()
-            .find(|x| map::mirror_of(x).is_some_and(|(l, cl)| (l.as_str(), cl.as_str()) == target))
+            .find(|x| plan::mirror_of(x).is_some_and(|(l, cl)| (l.as_str(), cl.as_str()) == target))
             .map(|x| {
                 let sp = sym_pins(x);
                 sp.name

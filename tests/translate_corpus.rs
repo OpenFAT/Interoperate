@@ -13,8 +13,9 @@ use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
 use interop::attr::Attrs;
+use interop::design::place;
 use interop::symbol;
-use interop::translate::{ORIENT_TABLE, place};
+use interop::translate::ORIENT_TABLE;
 use interop::{Options, check_output, translate_library, xschem};
 use schemify_format::Orient;
 

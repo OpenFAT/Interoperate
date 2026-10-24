@@ -200,7 +200,7 @@ fn generated(seed: u64) -> Fixture {
                 continue;
             }
             let pc = |i| schemify_format::parse_coord(doc.field(r, i).unwrap()).unwrap();
-            let p = interop::translate::place([pc(2), pc(3)], o, at).unwrap();
+            let p = interop::design::place([pc(2), pc(3)], o, at).unwrap();
             let net = nets[rng.below(nets.len())];
             let mut q = p;
             if rng.below(2) == 0 {

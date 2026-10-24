@@ -672,10 +672,21 @@ pub fn geom(d: &Design, ci: usize) -> Geom {
     g
 }
 
-/// Transforms symbol-local `p` by `o` and translates it to `at` (format spec §3); `None` when
-/// the result leaves `i32`.
+/// Transforms a symbol-local point by `o` and translates it to `at` (format spec §3).
+/// `None` when the result leaves `i32` milli-units.
 pub fn place(p: [i32; 2], o: Orient, at: [i32; 2]) -> Option<[i32; 2]> {
-    crate::translate::place(p, o, at)
+    let (mut x, mut y) = (i64::from(p[0]), i64::from(p[1]));
+    if o.mirrored() {
+        x = -x;
+    }
+    (x, y) = match o.quarter_turns() {
+        0 => (x, y),
+        1 => (-y, x),
+        2 => (-x, -y),
+        _ => (y, -x),
+    };
+    let r = [x + i64::from(at[0]), y + i64::from(at[1])];
+    Some([i32::try_from(r[0]).ok()?, i32::try_from(r[1]).ok()?])
 }
 
 #[cfg(test)]

@@ -97,7 +97,7 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
     if !problems.is_empty() {
         return Err(problems);
     }
-    let live = closure(d, tops);
+    let live = crate::plan::closure(d, tops);
     let mut root_dir = ROOT_DIR.to_owned();
     for k in 2..d.libs.len() + 3 {
         if !d.libs.contains_key(&root_dir) {
@@ -141,25 +141,6 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
         "every top writes at least one file"
     );
     Ok(XschemExport { files, notes })
-}
-
-/// Marks every cell reachable from `tops`.
-fn closure(d: &Design, tops: &[usize]) -> Vec<bool> {
-    let mut live = vec![false; d.cells.len()];
-    let mut queue: Vec<usize> = tops.to_vec();
-    while let Some(ci) = queue.pop() {
-        if std::mem::replace(&mut live[ci], true) {
-            continue;
-        }
-        let c = &d.cells[ci];
-        for r in c.records(RecordKind::Inst) {
-            if let Some(m) = d.resolve(ci, c.field(r, 1)) {
-                queue.push(m);
-            }
-        }
-    }
-    assert!(tops.iter().all(|&t| live[t]));
-    live
 }
 
 fn target_of(d: &Design, ci: usize, top: bool, root_dir: &str) -> Target {

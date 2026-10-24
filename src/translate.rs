@@ -27,6 +27,7 @@ use schemify_format::{
 use crate::attr::{Attrs, at_tokens};
 use crate::cdf::{CdfDump, CdfType};
 use crate::core::{self, DeviceMap};
+use crate::design::place;
 use crate::limits;
 use crate::report::{Class, Drop, Item, Report};
 use crate::spice::{self, ModelScan};
@@ -97,23 +98,6 @@ pub const ORIENT_TABLE: [[Orient; 2]; 4] = [
 /// `flip != 0`) to an orientation.
 pub fn orient(rot: i16, flip: i16) -> Orient {
     ORIENT_TABLE[rot.rem_euclid(4) as usize][usize::from(flip != 0)]
-}
-
-/// Transforms a symbol-local point by `o` and translates it to `at` (format spec §3).
-/// `None` when the result leaves `i32` milli-units.
-pub fn place(p: [i32; 2], o: Orient, at: [i32; 2]) -> Option<[i32; 2]> {
-    let (mut x, mut y) = (i64::from(p[0]), i64::from(p[1]));
-    if o.mirrored() {
-        x = -x;
-    }
-    (x, y) = match o.quarter_turns() {
-        0 => (x, y),
-        1 => (-y, x),
-        2 => (-x, -y),
-        _ => (y, -x),
-    };
-    let r = [x + i64::from(at[0]), y + i64::from(at[1])];
-    Some([i32::try_from(r[0]).ok()?, i32::try_from(r[1]).ok()?])
 }
 
 /// Translates xschem libraries into Schemify files.
