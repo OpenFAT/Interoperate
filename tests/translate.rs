@@ -5,7 +5,7 @@
 
 use interop::check::check_output;
 use interop::design::place;
-use interop::xschem::read::{ORIENT_TABLE, orient};
+use interop::xschem::file::{ORIENT_TABLE, orient};
 use interop::xschem::read::{Options, translate_library};
 use interop::xschem::report::{Class, Drop};
 use interop::xschem::template::Reason;

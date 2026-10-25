@@ -15,6 +15,7 @@ pub mod ael;
 pub mod align;
 pub mod characterize;
 pub mod devices;
+pub mod dump;
 pub mod map;
 pub mod merge;
 pub mod nets;

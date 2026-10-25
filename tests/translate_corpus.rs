@@ -16,7 +16,7 @@ use interop::check::check_output;
 use interop::design::place;
 use interop::xschem::attr::Attrs;
 use interop::xschem::file as xschem;
-use interop::xschem::read::ORIENT_TABLE;
+use interop::xschem::file::ORIENT_TABLE;
 use interop::xschem::read::{Options, translate_library};
 use interop::xschem::symbol;
 use schemify_format::Orient;

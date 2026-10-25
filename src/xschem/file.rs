@@ -853,6 +853,30 @@ impl<'a> Cursor<'a> {
     }
 }
 
+/// xschem `(rot, flip)` → Schemify orientation, indexed `[rot][flip]`. xschem flips x
+/// about the origin, then rotates clockwise on screen (y down) in quarter turns —
+/// exactly the `M` then `R` order of format spec §3. Fixed by golden evidence: the
+/// corpus test `orientation_table_reproduces_golden_connectivity` derives every row
+/// from xschem's netlists independently and asserts this table.
+pub const ORIENT_TABLE: [[schemify_format::Orient; 2]; 4] = [
+    [schemify_format::Orient::R0, schemify_format::Orient::MR0],
+    [schemify_format::Orient::R90, schemify_format::Orient::MR90],
+    [
+        schemify_format::Orient::R180,
+        schemify_format::Orient::MR180,
+    ],
+    [
+        schemify_format::Orient::R270,
+        schemify_format::Orient::MR270,
+    ],
+];
+
+/// Maps an xschem rotation/flip pair (any integers; xschem uses `rot` mod 4 and
+/// `flip != 0`) to an orientation.
+pub fn orient(rot: i16, flip: i16) -> schemify_format::Orient {
+    ORIENT_TABLE[rot.rem_euclid(4) as usize][usize::from(flip != 0)]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
