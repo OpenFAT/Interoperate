@@ -9,10 +9,12 @@ use schemify_doc::Project;
 use schemify_expr::{Mode, Program, Template};
 use schemify_format::{Document, RecordKind, parse};
 
-use crate::template::BUILTINS;
 use schemify_doc::core_library;
 
-/// Checks translated outputs (`(path, bytes)` as [`crate::translate_library`] returns
+/// Template identifiers the netlister provides (expr spec §6).
+pub const BUILTINS: &[&str] = &["name", "cell", "model", "pins", "params", "file"];
+
+/// Checks translated outputs (`(path, bytes)` as [`crate::xschem::read::translate_library`] returns
 /// them). Returns one line per problem; empty means every check passed.
 ///
 /// # Time complexity

@@ -6,8 +6,8 @@ mod common;
 mod skill;
 
 use interop::design::Files;
-use interop::map::Mapping;
 use interop::virtuoso::characterize::{self, Device, Kind};
+use interop::virtuoso::map::Mapping;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 
 const BUILD: &str = include_str!("fixtures/skill/build.il");

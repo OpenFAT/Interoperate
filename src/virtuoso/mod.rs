@@ -7,15 +7,23 @@
 use schemify_format::{Document, RecordKind};
 
 use crate::design::{Design, Files};
-use crate::map::Mapping;
-use crate::merge;
 use crate::notes::Notes;
+use crate::virtuoso::map::Mapping;
 
 pub mod ade;
 pub mod ael;
+pub mod align;
 pub mod characterize;
 pub mod devices;
+pub mod map;
+pub mod merge;
+pub mod nets;
+pub mod plan;
+pub mod profile;
 pub mod read;
+pub mod remap;
+pub mod sfyx;
+pub mod skill;
 pub mod write;
 
 /// Export settings.

@@ -2,7 +2,7 @@
 //!
 //! 1. **Round trip.** Every fixture project (the app and elab fixtures, plus generated
 //!    benches of `core` devices in every orientation) is exported, re-imported with
-//!    `interop::translate_library` (search roots: the export and xschem's system `devices`
+//!    `interop::xschem::read::translate_library` (search roots: the export and xschem's system `devices`
 //!    library when an `xschem` binary is on PATH, else the interface stand-ins in
 //!    `tests/fixtures/xschem_export/devices`), and both the original and the re-import are
 //!    elaborated and netlisted; `spicecmp` must find them equivalent.
@@ -20,8 +20,8 @@ use std::process::Command;
 use std::time::{Duration, Instant};
 
 use interop::design::{self, Design, Files};
-use interop::xschem_out::{XschemExport, export};
-use interop::{Options, translate_library};
+use interop::xschem::read::{Options, translate_library};
+use interop::xschem::write::{XschemExport, export};
 use schemify_doc::{DocHandle, Project, core_file, core_library};
 use schemify_elab::{Dialect, Request, Severity, elaborate, no_funcs};
 use schemify_format::{Orient, RecordKind, format_coord, parse};

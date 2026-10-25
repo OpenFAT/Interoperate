@@ -17,6 +17,10 @@ pub type Files = BTreeMap<String, Vec<u8>>;
 /// Cells per Design (doc's per-project cell capacity).
 pub const CELLS_MAX: usize = 1 << 16;
 
+/// Rounds of reads a load or a job may ask for (each round is one level of the reference
+/// closure).
+pub const ROUNDS_MAX: u32 = 4096;
+
 /// Pseudo-directory of the bundled `core` library in [`Cell::path`].
 pub const CORE_DIR: &str = "core";
 
@@ -291,7 +295,7 @@ pub fn load_closed(files: &Files, tops: &[&str]) -> Result<Design, Vec<String>> 
     let mut absent = BTreeSet::new();
     // Each round marks at least one new path absent and the paths come from the closure's
     // finitely many cellrefs, so the loop ends; the bound is the job's.
-    for _ in 0..crate::job::ROUNDS_MAX {
+    for _ in 0..ROUNDS_MAX {
         match load(files, &absent, tops) {
             Ok(d) => return Ok(d),
             Err(LoadError::Missing(m)) => {
@@ -302,10 +306,27 @@ pub fn load_closed(files: &Files, tops: &[&str]) -> Result<Design, Vec<String>> 
             Err(LoadError::Invalid(p)) => return Err(p),
         }
     }
-    Err(vec![format!(
-        "more than {} load rounds",
-        crate::job::ROUNDS_MAX
-    )])
+    Err(vec![format!("more than {} load rounds", ROUNDS_MAX)])
+}
+
+/// The closure of `tops` (cells instantiated from them, transitively), as a mask over
+/// `d.cells`.
+pub fn closure(d: &Design, tops: &[usize]) -> Vec<bool> {
+    let mut seen = vec![false; d.cells.len()];
+    let mut stack: Vec<usize> = tops.to_vec();
+    while let Some(ci) = stack.pop() {
+        assert!(ci < d.cells.len(), "top {ci} is not a cell");
+        if std::mem::replace(&mut seen[ci], true) {
+            continue;
+        }
+        let c = &d.cells[ci];
+        for r in c.records(schemify_format::RecordKind::Inst) {
+            if let Some(t) = d.resolve(ci, c.field(r, 1)) {
+                stack.push(t);
+            }
+        }
+    }
+    seen
 }
 
 /// The project path of cell `stem` with extension `ext` in directory `dir` (`""`: the

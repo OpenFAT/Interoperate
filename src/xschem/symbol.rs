@@ -14,8 +14,8 @@
 //! are the translator's job, not this module's.
 
 use crate::Span;
-use crate::attr::Attrs;
-use crate::xschem::{GlobalTag, XschemFile};
+use crate::xschem::attr::Attrs;
+use crate::xschem::file::{GlobalTag, XschemFile};
 
 /// The layer xschem draws symbol pins on.
 pub const PIN_LAYER: u8 = 5;
@@ -158,7 +158,7 @@ fn half(sum: i64) -> i32 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::xschem::read;
+    use crate::xschem::file::read;
 
     #[test]
     fn file_order_unless_every_pin_has_sim_pinnumber() {

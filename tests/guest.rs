@@ -257,7 +257,7 @@ fn guest_conversions_equal_the_native_job_byte_for_byte() {
     let got = w.run("interop.install_skill", "il", &files);
     assert_eq!(
         got["il/schemify.il"],
-        interop::skill::schemify_il().into_bytes()
+        interop::virtuoso::skill::schemify_il().into_bytes()
     );
     // A Virtuoso import of the export, into the same project.
     let mut with = files.clone();

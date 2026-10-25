@@ -9,9 +9,10 @@
 
 use std::path::{Path, PathBuf};
 
-use interop::attr::{Attrs, at_tokens, classify};
-use interop::xschem::{self, XschemFile};
-use interop::{cdf, spice, symbol, tech};
+use interop::pdk::{cdf, spice, tech};
+use interop::xschem::attr::{Attrs, at_tokens, classify};
+use interop::xschem::file::{self as xschem, XschemFile};
+use interop::xschem::symbol;
 use proptest::prelude::*;
 
 /// Characters that drive every branch of the xschem, attribute and SPICE grammars.

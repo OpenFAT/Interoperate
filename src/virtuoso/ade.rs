@@ -27,7 +27,7 @@ use schemify_format::{Document, FileKind, RecordKind};
 use super::ael::{self, AelName, Name};
 use crate::design::{Cell, Design, push_attr, push_record};
 use crate::notes::Notes;
-use crate::sfyx::{Error, Record, Value, i, pairs, s, text};
+use crate::virtuoso::sfyx::{Error, Record, Value, i, pairs, s, text};
 
 /// Rows per kind (vars, analyses, corners, models, outputs, specs, definition files) of one
 /// test; more is refused on import (a bench, at most 2^22 records, is asserted below it on

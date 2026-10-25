@@ -6,9 +6,9 @@
 //! a plain default of 1e-3 or more is in micrometres (sky130 `L=0.15` with
 //! `.option scale=1e-6`). Model bins are metres and are converted accordingly.
 
-use crate::spice::{self, ModelScan};
-use crate::tcl::{Bound, DrcProc, regex_match};
-use crate::template::spice_number;
+use crate::pdk::spice::{self, ModelScan};
+use crate::xschem::tcl::{Bound, DrcProc, regex_match};
+use crate::xschem::template::spice_number;
 
 /// What one symbol's limits come from.
 #[derive(Clone, Copy, Debug)]
@@ -271,7 +271,7 @@ fn drc_limits(call: &str, inp: &Inputs, out: &mut Vec<Limit>, review: &mut Vec<S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::tcl::drc_procs;
+    use crate::xschem::tcl::drc_procs;
 
     fn s(v: &[(&str, &str)]) -> Vec<(String, String)> {
         v.iter()

@@ -7,7 +7,7 @@
 use schemify_format::{Document, RecordKind, parse, write};
 
 use crate::design::{copy_attr, copy_header, push_attr};
-use crate::sfyx::{self, Record, Value};
+use crate::virtuoso::sfyx::{self, Record, Value};
 
 /// Most points one device may have (`SfyCharacterize` writes at most 4024).
 pub const POINTS_MAX: usize = 10_000;

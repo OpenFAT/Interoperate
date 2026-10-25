@@ -1,4 +1,4 @@
-//! The shipped SKILL (`interop::skill`) through the test interpreter and mock database
+//! The shipped SKILL (`interop::virtuoso::skill`) through the test interpreter and mock database
 //! (spec `interop.md` §4, §5).
 //!
 //! Fixtures are mock libraries built by `tests/fixtures/skill/build.il` through the same
@@ -7,7 +7,7 @@
 
 mod skill;
 
-use interop::sfyx;
+use interop::virtuoso::sfyx;
 use proptest::prelude::*;
 use skill::mockdb::MockDb;
 use skill::{Interp, V, read_all};
@@ -80,13 +80,13 @@ fn golden(name: &str, text: &str) {
 
 #[test]
 fn every_shipped_line_reads_in_the_prefix_subset() {
-    for (name, text) in interop::skill::PARTS {
+    for (name, text) in interop::virtuoso::skill::PARTS {
         if let Err(e) = read_all(text) {
             panic!("{name}: {e}");
         }
     }
-    read_all(interop::skill::PROBE).expect("sfy_probe.il reads");
-    read_all(&interop::skill::schemify_il()).expect("schemify.il reads");
+    read_all(interop::virtuoso::skill::PROBE).expect("sfy_probe.il reads");
+    read_all(&interop::virtuoso::skill::schemify_il()).expect("schemify.il reads");
 }
 
 #[test]
@@ -642,7 +642,8 @@ fn conn_records_draw_a_labelled_stub_at_the_real_pin() {
 #[test]
 fn the_probe_runs_on_the_mock() {
     let mut i = fixtures();
-    i.load(interop::skill::PROBE).expect("probe loads");
+    i.load(interop::virtuoso::skill::PROBE)
+        .expect("probe loads");
     assert!(
         run(
             &mut i,
@@ -701,7 +702,7 @@ fn netset_overrides_dump_and_load_with_their_type() {
     assert!(ok.truthy() && !log.contains("skipped:prop"), "{log}");
     assert!(t.contains("\"bulk\" \"netSet\" \"VDDA\")"), "{t}");
     // Rust reads the type (a net override below the master's own pins is reviewed).
-    interop::sfyx::read(&t).expect("canonical");
+    interop::virtuoso::sfyx::read(&t).expect("canonical");
     // Loaded back, the property keeps its type.
     let ok = run(&mut i, r#"(SfyImport "/t/ns.sfyx" ?lib "scratch")"#);
     assert!(ok.truthy(), "{}", file(&i, "/t/ns.sfyx.log"));

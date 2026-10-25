@@ -3,7 +3,7 @@
 //! `pdk-xschem-devices.md` §1, §5.5–§5.6).
 //!
 //! An attribute string is the content of a `{…}` brace string after the file-level
-//! escapes are gone ([`crate::xschem`] removes them). This module removes the second
+//! escapes are gone ([`crate::xschem::file`] removes them). This module removes the second
 //! layer: separators are space, TAB, newline, `;` and NUL outside quotes; `"` toggles
 //! quoting unless escaped; `\` escapes the next char; the value handed out drops every
 //! unescaped `"` and `\` (xschem's normal lookup). Nothing is evaluated: `tcleval(…)`,
@@ -34,7 +34,7 @@ impl Attrs {
     /// # Examples
     ///
     /// ```
-    /// use interop::attr::Attrs;
+    /// use interop::xschem::attr::Attrs;
     /// let a = Attrs::parse("name=M1 ;  W = 1\nad=\"expr('@W * 0.29')\" lock");
     /// assert_eq!(a.get("W"), Some("1"));
     /// assert_eq!(a.get("ad"), Some("expr('@W * 0.29')"));
@@ -264,7 +264,7 @@ pub struct AtTokens<'a> {
 /// # Examples
 ///
 /// ```
-/// use interop::attr::{at_tokens, AtKind};
+/// use interop::xschem::attr::{at_tokens, AtKind};
 /// let t: Vec<_> = at_tokens("@spiceprefix@name @@D \\@lit @prefix\\a21").collect();
 /// assert_eq!(t.iter().map(|t| t.name).collect::<Vec<_>>(), ["spiceprefix", "name", "D", "prefix"]);
 /// assert_eq!(t[2].kind, AtKind::PinNet);
@@ -432,7 +432,7 @@ const TCL_COMMANDS: &[(&str, Idioms)] = &[
 /// # Examples
 ///
 /// ```
-/// use interop::attr::{classify, Idioms};
+/// use interop::xschem::attr::{classify, Idioms};
 /// let i = classify("tcleval(Q@name le=[ev { @El * 1.0e-6 } ])");
 /// assert!(i.contains(Idioms::TCLEVAL | Idioms::TCL_EV | Idioms::AT_ATTR));
 /// assert!(!classify("$[@model\\]").intersects(Idioms::TCL_COMMAND | Idioms::TCL_VAR));

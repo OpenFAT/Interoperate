@@ -3,9 +3,9 @@
 
 use std::collections::BTreeMap;
 
-use crate::design::Design;
-use crate::map::Mapping;
+use crate::design::{Design, closure};
 use crate::virtuoso::devices;
+use crate::virtuoso::map::Mapping;
 
 /// How a cell crosses to Virtuoso.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -67,26 +67,6 @@ pub fn virtuoso_lib(lib: &str, lib_map: &BTreeMap<String, String>) -> String {
         "core" => CORE_LIB.into(),
         l => l.into(),
     }
-}
-
-/// The closure of `tops` (cells instantiated from them, transitively), as a mask over
-/// `d.cells`.
-pub fn closure(d: &Design, tops: &[usize]) -> Vec<bool> {
-    let mut seen = vec![false; d.cells.len()];
-    let mut stack: Vec<usize> = tops.to_vec();
-    while let Some(ci) = stack.pop() {
-        assert!(ci < d.cells.len(), "top {ci} is not a cell");
-        if std::mem::replace(&mut seen[ci], true) {
-            continue;
-        }
-        let c = &d.cells[ci];
-        for r in c.records(schemify_format::RecordKind::Inst) {
-            if let Some(t) = d.resolve(ci, c.field(r, 1)) {
-                stack.push(t);
-            }
-        }
-    }
-    seen
 }
 
 /// The provenance target `lib/cell` of a Virtuoso mirror cell.

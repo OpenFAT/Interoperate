@@ -21,47 +21,21 @@
 #![deny(unsafe_code)] // `forbid` would reject the guest SDK's `export!` (it allows it)
 #![warn(missing_docs)]
 
-pub mod align;
-pub mod attr;
-pub mod cdf;
 pub mod check;
 #[cfg(feature = "cli")]
 pub mod cli;
-pub mod core;
 pub mod decimal;
 pub mod design;
-pub mod gather;
 pub mod job;
-mod limits;
-pub mod map;
-pub mod merge;
-pub mod nets;
 pub mod notes;
-pub mod plan;
-pub mod profile;
-pub mod remap;
-pub mod report;
-pub mod sfyx;
-pub mod skill;
-pub mod spice;
-pub mod symbol;
-pub mod tcl;
-pub mod tech;
-pub mod template;
-pub mod translate;
+pub mod pdk;
 pub mod virtuoso;
 pub mod xschem;
-pub mod xschem_out;
 
 // The guest target only: the WASI build of `schemify-interop` (CI determinism) must not
 // export guest entry points that import the `schemify` host module.
 #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
 mod plugin;
-
-pub use crate::core::DEVICE_MAP;
-pub use check::check_output;
-pub use report::Report;
-pub use translate::{Options, translate_library};
 
 /// Byte range into an arena string owned by the table that hands it out.
 ///

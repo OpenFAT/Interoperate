@@ -1,5 +1,5 @@
 //! `interop.map`: cell, pin and parameter translation between Schemify libraries and
-//! Virtuoso libraries (spec `interop.md` §8.2). [`crate::plan::resolve`] reads it.
+//! Virtuoso libraries (spec `interop.md` §8.2). [`crate::virtuoso::plan::resolve`] reads it.
 //!
 //! The file is line records without a header (format.md §2). It is read with the format
 //! crate's own reader by prefixing a `journal` header, the one file kind whose records are

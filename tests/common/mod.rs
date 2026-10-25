@@ -7,8 +7,8 @@
 use std::path::{Path, PathBuf};
 
 use interop::design::{Design, Files, load_closed};
-use interop::map::Mapping;
-use interop::sfyx;
+use interop::virtuoso::map::Mapping;
+use interop::virtuoso::sfyx;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 
 /// The copies of Schemify's fixture projects, at their Schemify paths

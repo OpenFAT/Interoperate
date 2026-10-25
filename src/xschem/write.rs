@@ -24,10 +24,10 @@ use std::fmt::Write as _;
 
 use schemify_format::{FileKind, Orient, RecordKind, format_coord, parse_coord};
 
-use crate::core::{DEVICE_MAP, DeviceMap};
 use crate::design::{Cell, Design, SymPins, sym_pins};
 use crate::notes::Notes;
-use crate::translate::ORIENT_TABLE;
+use crate::xschem::devices::{DEVICE_MAP, DeviceMap};
+use crate::xschem::read::ORIENT_TABLE;
 
 /// The files of one export and what did not carry over.
 #[derive(Clone, Debug, Default)]
@@ -97,7 +97,7 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
     if !problems.is_empty() {
         return Err(problems);
     }
-    let live = crate::plan::closure(d, tops);
+    let live = crate::design::closure(d, tops);
     let mut root_dir = ROOT_DIR.to_owned();
     for k in 2..d.libs.len() + 3 {
         if !d.libs.contains_key(&root_dir) {
@@ -1692,7 +1692,7 @@ mod tests {
         for (rot, row) in ORIENT_TABLE.iter().enumerate() {
             for (flip, o) in row.iter().enumerate() {
                 assert_eq!(rot_flip(*o), (rot, flip));
-                assert_eq!(crate::translate::orient(rot as i16, flip as i16), *o);
+                assert_eq!(crate::xschem::read::orient(rot as i16, flip as i16), *o);
             }
         }
     }

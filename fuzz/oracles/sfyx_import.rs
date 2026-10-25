@@ -7,8 +7,8 @@
 /// problems and never panics (its count-conservation and table asserts are the checks).
 fn sfyx_import_oracle(data: &[u8]) {
     use interop::design::Files;
-    use interop::map::Mapping;
-    use interop::sfyx;
+    use interop::virtuoso::map::Mapping;
+    use interop::virtuoso::sfyx;
     use interop::virtuoso::{self, ImportOptions};
     let Ok(text) = std::str::from_utf8(data) else {
         return;

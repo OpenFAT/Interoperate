@@ -624,7 +624,7 @@ pub fn virtuoso(libs: &[&str]) -> Interp<mockdb::MockDb> {
     for l in libs {
         i.host.add_lib(l);
     }
-    i.load(&interop::skill::schemify_il())
+    i.load(&interop::virtuoso::skill::schemify_il())
         .expect("schemify.il loads");
     i
 }

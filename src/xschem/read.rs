@@ -5,7 +5,7 @@
 //! 1. `read_sources`: every `.sym`/`.sch` → [`XschemFile`] tables, sorted by path.
 //! 2. `classify_symbols`: symbol attributes → class (cell, label, port, code, …).
 //! 3. `plan_symbols`: cell symbols → interface plans (pins, params, impls, limits);
-//!    `devices/` symbols listed in [`core::DEVICE_MAP`] → `core` targets instead.
+//!    `devices/` symbols listed in [`devices::DEVICE_MAP`] → `core` targets instead.
 //! 4. `plan_cells`: (symbol, schematic) pairs → `.shprim`/`.shcomp`/`.shbench` cells,
 //!    plus alternate-schematic cells requested by instances.
 //! 5. `name_libs`: cell directories → library names.
@@ -24,20 +24,20 @@ use schemify_format::{
     Document, FileKind, IdRng, Orient, RecordKind, fresh_id, parse_coord, write,
 };
 
-use crate::attr::{Attrs, at_tokens};
-use crate::cdf::{CdfDump, CdfType};
-use crate::core::{self, DeviceMap};
 use crate::design::place;
-use crate::limits;
-use crate::report::{Class, Drop, Item, Report};
-use crate::spice::{self, ModelScan};
-use crate::symbol::{self, PinDir, SymbolInterface};
-use crate::tcl::{self, DrcProc};
-use crate::template::{
+use crate::pdk::cdf::{CdfDump, CdfType};
+use crate::pdk::spice::{self, ModelScan};
+use crate::xschem::attr::{Attrs, at_tokens};
+use crate::xschem::devices::{self, DeviceMap};
+use crate::xschem::file::{self, GlobalTag, NumField, XschemFile};
+use crate::xschem::limits;
+use crate::xschem::report::{Class, Drop, Item, Report};
+use crate::xschem::symbol::{self, PinDir, SymbolInterface};
+use crate::xschem::tcl::{self, DrcProc};
+use crate::xschem::template::{
     self, ExprMode, FormatCtx, Reason, Review, is_ident, literal, review, spice_number,
     string_value,
 };
-use crate::xschem::{self, GlobalTag, NumField, XschemFile};
 
 /// Instance attributes that are netlist text of their own: an instance that sets one to
 /// other text than its symbol gets a variant cell (spec §3).
@@ -448,7 +448,7 @@ impl<'o> Tables<'o> {
         let mut items = Vec::new();
         for (path, bytes) in sorted {
             let text = String::from_utf8_lossy(bytes);
-            let file = match xschem::read(&text) {
+            let file = match file::read(&text) {
                 Ok(f) => f,
                 Err(e) => {
                     items.push(Item {
@@ -661,7 +661,7 @@ impl<'o> Tables<'o> {
         if !self.opts.map_core || file_of(dir_of(path)) != "devices" {
             return None;
         }
-        let map = core::device_map(stem_of(path))?;
+        let map = devices::device_map(stem_of(path))?;
         let iface = self.core_ifaces.entry(map.cell).or_insert_with(|| {
             iface_of_cell_bytes(schemify_doc::core_file(map.cell).expect("mapped cell exists"))
         });
@@ -734,7 +734,9 @@ impl<'o> Tables<'o> {
         // over symbol order A, Y). Pins it does not name keep their order after.
         if let Some(f) = fmt.filter(|f| !f.contains("@pinlist")) {
             let mut order: Vec<String> = Vec::new();
-            for t in crate::attr::at_tokens(f).filter(|t| t.kind == crate::attr::AtKind::PinNet) {
+            for t in crate::xschem::attr::at_tokens(f)
+                .filter(|t| t.kind == crate::xschem::attr::AtKind::PinNet)
+            {
                 if pins.iter().any(|q| q.name == t.name) && !order.iter().any(|o| o == t.name) {
                     order.push(t.name.to_owned());
                 }
@@ -2700,7 +2702,7 @@ impl<'o> Tables<'o> {
                 n => get(n),
             };
             match (t.kind, value) {
-                (crate::attr::AtKind::Percent, None) => text.push_str(t.name),
+                (crate::xschem::attr::AtKind::Percent, None) => text.push_str(t.name),
                 (_, Some(v)) => text.push_str(v),
                 _ => {}
             }
@@ -2709,7 +2711,7 @@ impl<'o> Tables<'o> {
                 + t.name.len()
                 + usize::from(matches!(
                     t.kind,
-                    crate::attr::AtKind::PinNet | crate::attr::AtKind::PinAttr
+                    crate::xschem::attr::AtKind::PinNet | crate::xschem::attr::AtKind::PinAttr
                 ));
         }
         push_unescaped(&mut text, &fmt[last.min(fmt.len())..]);
@@ -3498,7 +3500,7 @@ fn pin_order(pins: &[PinOut], ports: &[String]) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::{PinOut, dotted_bus, pin_order};
-    use crate::spice::subckt_lines;
+    use crate::pdk::spice::subckt_lines;
 
     fn pin(name: &str) -> PinOut {
         PinOut {

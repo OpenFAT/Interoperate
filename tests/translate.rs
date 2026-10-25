@@ -3,11 +3,12 @@
 //! (`check_output`), count conservation (asserted inside `translate_library`),
 //! byte-identical re-import, and no panic on mutated inputs.
 
+use interop::check::check_output;
 use interop::design::place;
-use interop::report::{Class, Drop};
-use interop::template::Reason;
-use interop::translate::{ORIENT_TABLE, orient};
-use interop::{Options, check_output, translate_library};
+use interop::xschem::read::{ORIENT_TABLE, orient};
+use interop::xschem::read::{Options, translate_library};
+use interop::xschem::report::{Class, Drop};
+use interop::xschem::template::Reason;
 use proptest::prelude::*;
 use schemify_format::{Orient, parse};
 
@@ -81,7 +82,7 @@ fn opts<'a>(roots: &'a [String], vars: &'a [(String, String)]) -> Options<'a> {
     }
 }
 
-fn run(files: &[(String, String)]) -> (Vec<(String, Vec<u8>)>, interop::Report) {
+fn run(files: &[(String, String)]) -> (Vec<(String, Vec<u8>)>, interop::xschem::report::Report) {
     let roots = vec!["x/devices".to_owned(), "x".to_owned()];
     let vars = vec![("MODELS".to_owned(), "${PDK_ROOT}/models".to_owned())];
     let inputs: Vec<(&str, &[u8])> = files

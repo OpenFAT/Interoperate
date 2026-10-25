@@ -5,8 +5,8 @@
 /// oracle is "no panic": the reader asserts record conservation and arena bounds on exit,
 /// so an assertion failure is a reader bug.
 fn xschem_read_oracle(data: &[u8]) {
-    use interop::attr::{Attrs, at_tokens, classify};
-    use interop::{symbol, xschem};
+    use interop::xschem::attr::{Attrs, at_tokens, classify};
+    use interop::xschem::{file as xschem, symbol};
     let text = String::from_utf8_lossy(data);
     let Ok(file) = xschem::read(&text) else {
         return;

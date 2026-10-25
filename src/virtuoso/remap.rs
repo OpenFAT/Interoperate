@@ -8,7 +8,7 @@
 use schemify_format::{Document, FileKind, Orient, RecordKind};
 
 use crate::design::{Geom, copy_attr, copy_header, place, push_anchored, push_attr};
-use crate::nets::{NO_NODE, Nets, on_segment};
+use crate::virtuoso::nets::{NO_NODE, Nets, on_segment};
 
 /// One grid step in milli-units (10 xschem units, 1/16 inch): pull-back and stub length.
 pub const STEP: i32 = 10_000;
@@ -28,7 +28,7 @@ pub struct Remaster {
     /// geometry is known; `None` asks the loader to connect (`conn` records).
     pub new_pins: Option<Vec<(String, [i32; 2])>>,
     /// Where the new master's origin goes when it is not the instance's
-    /// ([`crate::align::fit`]: its pins then land on the old ones); `None`: in place.
+    /// ([`crate::virtuoso::align::fit`]: its pins then land on the old ones); `None`: in place.
     pub at: Option<[i32; 2]>,
 }
 

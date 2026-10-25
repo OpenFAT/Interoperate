@@ -12,7 +12,8 @@
 //!
 //! `SCHEMIFY_CORPUS_FILTER=<substring>` restricts the benches (for working one down).
 
-use interop::{Options, tcl, translate_library};
+use interop::xschem::read::{Options, translate_library};
+use interop::xschem::tcl;
 use schemify_doc::core_library;
 use schemify_doc::{DocHandle, Project};
 use schemify_elab::{Dialect, Request, elaborate, no_funcs};

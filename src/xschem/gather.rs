@@ -16,10 +16,10 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::design::Files;
-use crate::translate::{dir_of, join, normalize};
+use crate::xschem::read::{dir_of, join, normalize};
 
 /// Inputs one import may gather (the translator's own input cap).
-pub const INPUTS_MAX: usize = crate::translate::MAX_FILES;
+pub const INPUTS_MAX: usize = crate::xschem::read::MAX_FILES;
 
 /// The gathering state of one import.
 #[derive(Debug)]
@@ -181,7 +181,7 @@ impl Gather {
     fn references(&self, path: &str, bytes: &[u8]) -> Vec<String> {
         let Some(file) = std::str::from_utf8(bytes)
             .ok()
-            .and_then(|t| crate::xschem::read(t).ok())
+            .and_then(|t| crate::xschem::file::read(t).ok())
         else {
             return Vec::new();
         };
@@ -193,7 +193,7 @@ impl Gather {
             .filter_map(|s| self.resolve(here, file.str(*s)))
             .collect();
         if path.ends_with(".sym") {
-            let iface = crate::symbol::extract(&file);
+            let iface = crate::xschem::symbol::extract(&file);
             let named = iface
                 .attrs
                 .get("schematic")

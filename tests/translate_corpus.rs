@@ -12,11 +12,13 @@
 use std::collections::{BTreeMap, HashMap};
 use std::path::{Path, PathBuf};
 
-use interop::attr::Attrs;
+use interop::check::check_output;
 use interop::design::place;
-use interop::symbol;
-use interop::translate::ORIENT_TABLE;
-use interop::{Options, check_output, translate_library, xschem};
+use interop::xschem::attr::Attrs;
+use interop::xschem::file as xschem;
+use interop::xschem::read::ORIENT_TABLE;
+use interop::xschem::read::{Options, translate_library};
+use interop::xschem::symbol;
 use schemify_format::Orient;
 
 fn cache() -> Option<PathBuf> {
@@ -157,7 +159,7 @@ fn every_corpus_group_translates_checks_and_reimports_identically() {
         let reviews = report
             .items
             .iter()
-            .filter(|i| matches!(i.class, interop::report::Class::Review(_)))
+            .filter(|i| matches!(i.class, interop::xschem::report::Class::Review(_)))
             .count();
         eprintln!(
             "{}: {} inputs, {} outputs, {} records in, {} needs_review, devices→core {}/{}",

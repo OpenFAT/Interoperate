@@ -10,9 +10,9 @@ use std::path::{Path, PathBuf};
 
 use common::{load_tops, strip_stash};
 use interop::design::{Design, Files};
-use interop::map::Mapping;
 use interop::notes::Notes;
-use interop::sfyx::{self, Record, Value};
+use interop::virtuoso::map::Mapping;
+use interop::virtuoso::sfyx::{self, Record, Value};
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 use skill::mockdb::MockDb;
 use skill::{Interp, V};

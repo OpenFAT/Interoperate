@@ -651,7 +651,7 @@ const ALIB_CONTROLLED: &[(&str, [i32; 2])] = &[
 /// symbol's frame, milli-units, y down), for the cells of [`DEVICES`] and the global
 /// symbols. Measured on ICADVM20.1's analogLib by the live kit (`live`,
 /// rows `analoglib.pins.*`, 2026-10-15), which compares this table with the analogLib it
-/// runs against every time. [`crate::align::fit`] places re-mastered instances by it;
+/// runs against every time. [`crate::virtuoso::align::fit`] places re-mastered instances by it;
 /// `None` for a cell it does not hold (connections then go through stubs).
 pub fn alib_pins(cell: &str) -> Option<&'static [(&'static str, [i32; 2])]> {
     Some(match cell {

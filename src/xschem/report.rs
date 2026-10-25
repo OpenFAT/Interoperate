@@ -5,7 +5,7 @@
 
 use std::collections::BTreeMap;
 
-use crate::template::Reason;
+use crate::xschem::template::Reason;
 
 /// Why a construct was dropped. Dropped constructs have no netlist effect in xschem
 /// (graphics, display text, launchers) or are reported elsewhere; anything that could

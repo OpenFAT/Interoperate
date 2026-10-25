@@ -16,8 +16,8 @@ use common::{
     located, project, read_tree, root, strip_fp,
 };
 use interop::design::Files;
-use interop::map::Mapping;
-use interop::sfyx;
+use interop::virtuoso::map::Mapping;
+use interop::virtuoso::sfyx;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 use skill::mockdb::MockDb;
 use skill::{Interp, V};

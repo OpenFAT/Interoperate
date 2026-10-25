@@ -19,12 +19,12 @@ use super::{Import, ImportOptions};
 use crate::design::{
     Files, cell_path, copy_header, push_anchored, push_attr, push_lib, push_record,
 };
-use crate::map::Mapping;
-use crate::merge;
 use crate::notes::Notes;
-use crate::plan::{CORE_LIB, ROOT_LIB};
-use crate::profile::{self, coord_text, net_from_virtuoso, point_from_virtuoso};
-use crate::sfyx::{self, Error, Record, Value};
+use crate::virtuoso::map::Mapping;
+use crate::virtuoso::merge;
+use crate::virtuoso::plan::{CORE_LIB, ROOT_LIB};
+use crate::virtuoso::profile::{self, coord_text, net_from_virtuoso, point_from_virtuoso};
+use crate::virtuoso::sfyx::{self, Error, Record, Value};
 
 // Data design (six questions): in = one `.sfyx` text (≤ 2^30 bytes, ≤ 2^24 records); out
 // = one Schemify document per design/ref cell. Rows per kind live in `Vec`s per
@@ -3042,7 +3042,7 @@ fn schematic_in(
             let id = ids.next(if first { id_of(w.r) } else { None }, &reserved);
             first = false;
             let xy = [seg[0][0], seg[0][1], seg[1][0], seg[1][1]];
-            crate::remap::push_wire(doc, &id, xy, w.width > 0);
+            crate::virtuoso::remap::push_wire(doc, &id, xy, w.width > 0);
         }
     }
     // Labels.
@@ -3312,7 +3312,7 @@ fn remaster(
         };
         let ci = d.find(&path).expect("loaded");
         let g = geom(&d, ci);
-        let n = crate::nets::extract(&d, ci, &g);
+        let n = crate::virtuoso::nets::extract(&d, ci, &g);
         let mut rem = Vec::new();
         let mut masters = Vec::new();
         for p in todo {
@@ -3341,9 +3341,9 @@ fn remaster(
             // Virtuoso master's, in the instance's orientation.
             let at = new_pins.as_ref().and_then(|np| {
                 let (o, at) = (g.inst_orient[inst], g.inst_at[inst]);
-                crate::align::fit_instance(&old_pins.at, &pairs, np, o, at)
+                crate::virtuoso::align::fit_instance(&old_pins.at, &pairs, np, o, at)
             });
-            rem.push(crate::remap::Remaster {
+            rem.push(crate::virtuoso::remap::Remaster {
                 inst,
                 pins: pairs,
                 new_pins,
@@ -3360,7 +3360,7 @@ fn remaster(
                 ),
             ));
         }
-        let e = crate::remap::apply(&g, &n, &rem);
+        let e = crate::virtuoso::remap::apply(&g, &n, &rem);
         let (doc, st, m) = docs[k].take().expect("pending cells are built");
         let mut taken: BTreeSet<String> = (1..doc.record_count())
             .filter(|&r| doc.record_kind(r).key() == schemify_format::KeyRule::Id)
@@ -3368,7 +3368,7 @@ fn remaster(
             .collect();
         let seed = format!("{}/{}/remap", ctx.dump.cells[k].lib, ctx.dump.cells[k].name);
         let mut ord = 0u32;
-        let new = crate::remap::apply_to_doc(&d.cells[ci].doc, &g, &e, &masters, || {
+        let new = crate::virtuoso::remap::apply_to_doc(&d.cells[ci].doc, &g, &e, &masters, || {
             ord += 1;
             let mut rng = IdRng::for_import(&seed, ord);
             let id = fresh_id(&mut rng, |c| taken.contains(c))
@@ -3530,14 +3530,14 @@ fn manifest_with(old: Option<&Vec<u8>>, new: &BTreeMap<String, String>) -> Strin
 /// the export's renames; masters outside the dump resolve through `d`'s files.
 pub(crate) fn image(
     records: &[Record],
-    plan: &crate::plan::Plan,
+    plan: &crate::virtuoso::plan::Plan,
     d: &crate::design::Design,
     map: &Mapping,
 ) -> BTreeMap<(String, String), Document<'static>> {
     let dump = dump(records).expect("the exporter writes valid records");
     let mut iopts = ImportOptions::default();
     for (ci, c) in d.cells.iter().enumerate() {
-        if plan.how[ci] == crate::plan::How::Design {
+        if plan.how[ci] == crate::virtuoso::plan::How::Design {
             iopts.lib_map.insert(plan.lib[ci].clone(), c.lib.clone());
         }
     }

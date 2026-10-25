@@ -13,6 +13,8 @@
 
 use schemify_expr::{Mode, Program};
 
+use crate::check::BUILTINS;
+
 /// Why a construct could not be translated; the caller turns it into a `needs_review`
 /// report item and leaves the affected field at its default.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
@@ -116,9 +118,6 @@ pub struct Converted {
     pub dropped: Vec<String>,
 }
 
-/// Template identifiers the netlister provides (expr spec §6).
-pub const BUILTINS: &[&str] = &["name", "cell", "model", "pins", "params", "file"];
-
 /// Builtins a parameter may not be named after (`model` may: the builtin falls back to
 /// the `model` parameter).
 pub const RESERVED: &[&str] = &["name", "cell", "pins", "params", "file"];
@@ -142,7 +141,7 @@ pub fn is_ident(s: &str) -> bool {
 /// # Examples
 ///
 /// ```
-/// use interop::template::{convert_format, FormatCtx};
+/// use interop::xschem::template::{convert_format, FormatCtx};
 /// let params = ["model".to_string(), "W".to_string()];
 /// let pins = ["D".to_string(), "G".to_string()];
 /// let ctx = FormatCtx { params: &params, pins: &pins, implicit: &[], spiceprefix: Some("X"), schematic: false, rename: &[] };
@@ -570,7 +569,7 @@ pub enum ExprMode {
 /// # Examples
 ///
 /// ```
-/// use interop::template::{translate_expr, ExprMode};
+/// use interop::xschem::template::{translate_expr, ExprMode};
 /// let k = ["W".to_string(), "nf".to_string()];
 /// assert_eq!(translate_expr("int((@nf + 1)/2) * @W / @nf * 0.29", ExprMode::Xschem, &k).as_deref(),
 ///            Some("int((nf + 1)/2) * W / nf * 0.29"));
@@ -687,7 +686,7 @@ fn map_word(word: &str, call: bool, mode: ExprMode, known: &[String]) -> Option<
 /// Lexes a SPICE number at the start of `s`: returns the expr literal and the bytes
 /// consumed. `None` when a digit run is followed by something no literal allows.
 fn number_token(s: &str) -> Option<(String, usize)> {
-    let [mantissa, number, letters] = crate::spice::lex_number(s)?;
+    let [mantissa, number, letters] = crate::pdk::spice::lex_number(s)?;
     let mut lit = s[..mantissa].trim_end_matches('.').to_owned();
     if lit.starts_with('.') {
         lit.insert(0, '0');
@@ -721,7 +720,7 @@ fn number_token(s: &str) -> Option<(String, usize)> {
 /// # Examples
 ///
 /// ```
-/// use interop::template::spice_number;
+/// use interop::xschem::template::spice_number;
 /// assert_eq!(spice_number("10Meg").as_deref(), Some("10meg"));
 /// assert_eq!(spice_number(" -1.5e-3 ").as_deref(), Some("-1.5e-3"));
 /// assert_eq!(spice_number("W_N"), None);
@@ -753,7 +752,7 @@ pub fn spice_number(text: &str) -> Option<String> {
 /// # Examples
 ///
 /// ```
-/// use interop::template::string_value;
+/// use interop::xschem::template::string_value;
 /// let p = ["WP".to_string(), "C".to_string()];
 /// assert_eq!(string_value("'wp*2' {x}", &p), "'{WP}*2' {{x}}");
 /// assert_eq!(string_value("c='C' m == c", &p), "c='{C}' m == {C}");

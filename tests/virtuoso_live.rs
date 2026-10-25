@@ -26,7 +26,7 @@ use common::{
     canonical, design_libs, is_cell, line_of, located, read_tree, record_of, root, strip_fp,
 };
 use interop::job::{Command, Job, Step};
-use interop::sfyx::{self, Record};
+use interop::virtuoso::sfyx::{self, Record};
 use interop::virtuoso::{ExportOptions, ImportOptions};
 use skill::Interp;
 use skill::mockdb::MockDb;
@@ -89,7 +89,7 @@ fn path_str(p: &Path) -> String {
 /// Runs a conversion job against the files of `project`, as `schemify-interop` does.
 fn job(project: &Path, cmd: Command) -> Result<Vec<(String, Vec<u8>)>, Vec<String>> {
     let mut job = Job::new(cmd);
-    for _ in 0..interop::job::ROUNDS_MAX {
+    for _ in 0..interop::design::ROUNDS_MAX {
         match job.step() {
             Step::List(_) => unreachable!("only xschem imports list directories"),
             Step::Read(paths) => {
@@ -701,9 +701,12 @@ fn prepare(work: &Path, o: &Opts) {
     o.save(work);
     write(
         &work.join("skill/schemify.il"),
-        interop::skill::schemify_il(),
+        interop::virtuoso::skill::schemify_il(),
     );
-    write(&work.join("skill/sfy_probe.il"), interop::skill::PROBE);
+    write(
+        &work.join("skill/sfy_probe.il"),
+        interop::virtuoso::skill::PROBE,
+    );
     write(&work.join("skill/sfy_live.il"), LIVE_IL);
     let inp = work.join("in");
     let out = work.join("out");
@@ -1112,7 +1115,7 @@ fn mid(work: &Path, o: &Opts) {
                 continue;
             }
         };
-        let problems = interop::check_output(&files);
+        let problems = interop::check::check_output(&files);
         lines.push(if problems.is_empty() {
             format!(
                 "PASS user.import.{k} {} files, every cell loads",
@@ -1188,7 +1191,7 @@ fn mid(work: &Path, o: &Opts) {
             Some(Err(e)) => lines.push(format!("FAIL pdk.import {}", e.join("; "))),
             Some(Ok(files)) => {
                 let n = files.iter().filter(|(p, _)| p.ends_with(".shprim")).count();
-                let problems = interop::check_output(&files);
+                let problems = interop::check::check_output(&files);
                 lines.push(if problems.is_empty() && n > 0 {
                     format!("PASS pdk.import {n} device cells, every one loads")
                 } else if n == 0 {
@@ -1623,7 +1626,7 @@ fn check_alib_pins(r: &mut Report, work: &Path) {
                 .collect();
             let old = &cp[..new.len()];
             let id = format!("align.{}.{a}", d.core);
-            match interop::align::fit(old, &new, schemify_format::Orient::R0) {
+            match interop::virtuoso::align::fit(old, &new, schemify_format::Orient::R0) {
                 Some(f) if f.full() => r.add(
                     id,
                     Grade::Pass,
@@ -2175,7 +2178,7 @@ fn mock(work: &Path) -> Interp<MockDb> {
             skill::V::str("tt"),
         ])]),
     )];
-    i.load(interop::skill::PROBE).unwrap();
+    i.load(interop::virtuoso::skill::PROBE).unwrap();
     i.load(LIVE_IL).unwrap();
     i.load(BUILD).unwrap();
     i.load("(SfyFixStdlib)").unwrap();

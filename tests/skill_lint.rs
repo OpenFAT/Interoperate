@@ -402,13 +402,13 @@ impl Lint {
 
 fn lint() -> Lint {
     let mut l = Lint::default();
-    let mut files: Vec<(&str, Vec<V>)> = interop::skill::PARTS
+    let mut files: Vec<(&str, Vec<V>)> = interop::virtuoso::skill::PARTS
         .iter()
         .map(|(n, t)| (*n, read_all(t).unwrap_or_else(|e| panic!("{n}: {e}"))))
         .collect();
     files.push((
         "sfy_probe.il",
-        read_all(interop::skill::PROBE).expect("probe reads"),
+        read_all(interop::virtuoso::skill::PROBE).expect("probe reads"),
     ));
     for (n, forms) in &files {
         l.file = n.to_string();
@@ -523,8 +523,11 @@ fn callback_stack_binds_only_sfy_names_and_preflight_lists_every_function() {
     // (keyword parameters, the entry points' API, excepted).
     let mut seen = Vec::new();
     let mut fns: Option<Vec<String>> = None;
-    let mut sources: Vec<&str> = interop::skill::PARTS.iter().map(|(_, t)| *t).collect();
-    sources.push(interop::skill::PROBE);
+    let mut sources: Vec<&str> = interop::virtuoso::skill::PARTS
+        .iter()
+        .map(|(_, t)| *t)
+        .collect();
+    sources.push(interop::virtuoso::skill::PROBE);
     for src in sources {
         for f in read_all(src).unwrap() {
             let items = f.items();

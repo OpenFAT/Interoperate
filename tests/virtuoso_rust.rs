@@ -12,8 +12,8 @@ use common::{
     strip_stash,
 };
 use interop::design::{Design, Files};
-use interop::map::Mapping;
-use interop::sfyx;
+use interop::virtuoso::map::Mapping;
+use interop::virtuoso::sfyx;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
 
 /// Loads every cell file of `files`.
@@ -216,7 +216,7 @@ fn same_netlist(name: &str, ours: &str) {
 /// Every imported cell file loads in `doc` without errors and round-trips (the import
 /// oracle of the xschem importer, reused).
 fn loads(files: &[(String, Vec<u8>)]) {
-    let problems = interop::check_output(files);
+    let problems = interop::check::check_output(files);
     assert!(problems.is_empty(), "{problems:#?}");
 }
 
@@ -1042,11 +1042,11 @@ fn partition(
     pin_names: &dyn Fn(&str, usize) -> String,
 ) -> BTreeSet<BTreeSet<String>> {
     let g = interop::design::geom(d, ci);
-    let n = interop::nets::extract(d, ci, &g);
+    let n = interop::virtuoso::nets::extract(d, ci, &g);
     let mut by_net: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
     for (k, pins) in n.inst_pin.iter().enumerate() {
         for (p, node) in pins.iter().enumerate() {
-            if *node == interop::nets::NO_NODE {
+            if *node == interop::virtuoso::nets::NO_NODE {
                 continue;
             }
             // Same-named nets are one net (elab connects labels by name).
@@ -1080,11 +1080,11 @@ fn remastered_devices_keep_every_net() {
     let d = design(&f);
     let ci = d.find("tb.shbench").unwrap();
     let g = interop::design::geom(&d, ci);
-    let n = interop::nets::extract(&d, ci, &g);
+    let n = interop::virtuoso::nets::extract(&d, ci, &g);
     let res2 = interop::design::sym_pins(&d.cells[d.find("dev/res2.shprim").unwrap()]);
-    let todo: Vec<interop::remap::Remaster> = (0..g.inst_id.len())
+    let todo: Vec<interop::virtuoso::remap::Remaster> = (0..g.inst_id.len())
         .filter(|&k| d.cells[g.inst_master[k] as usize].name == "res")
-        .map(|k| interop::remap::Remaster {
+        .map(|k| interop::virtuoso::remap::Remaster {
             inst: k,
             pins: vec![(0, "a".into()), (1, "b".into())],
             new_pins: Some(
@@ -1097,14 +1097,14 @@ fn remastered_devices_keep_every_net() {
             at: None,
         })
         .collect();
-    let e = interop::remap::apply(&g, &n, &todo);
+    let e = interop::virtuoso::remap::apply(&g, &n, &todo);
     assert!(!e.stubs.is_empty() && !e.labels.is_empty());
-    let masters: Vec<interop::remap::NewMaster> = todo
+    let masters: Vec<interop::virtuoso::remap::NewMaster> = todo
         .iter()
         .map(|t| (t.inst, "dev:res2".to_owned(), None))
         .collect();
     let mut k = 0;
-    let doc = interop::remap::apply_to_doc(&d.cells[ci].doc, &g, &e, &masters, || {
+    let doc = interop::virtuoso::remap::apply_to_doc(&d.cells[ci].doc, &g, &e, &masters, || {
         k += 1;
         format!("zz{k:04}")
     });

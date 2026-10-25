@@ -7,8 +7,8 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
 use interop::job::{Command, Job, Step};
-use interop::sfyx::{self, Record};
 use interop::virtuoso::ExportOptions;
+use interop::virtuoso::sfyx::{self, Record};
 
 fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/exercise1")

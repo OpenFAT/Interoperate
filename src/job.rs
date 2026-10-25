@@ -9,9 +9,9 @@
 
 use std::collections::BTreeSet;
 
-use crate::design::{Files, LoadError, load};
-use crate::map::Mapping;
+use crate::design::{Files, LoadError, ROUNDS_MAX, load};
 use crate::notes::Notes;
+use crate::virtuoso::map::Mapping;
 use crate::virtuoso::{self, ExportOptions, ImportOptions};
 
 /// What to convert. Paths are project-relative.
@@ -46,7 +46,7 @@ pub enum Command {
         dir: String,
     },
     /// xschem libraries → Schemify files under `out_dir` (import spec; `--root` as
-    /// [`crate::gather`] gathers it).
+    /// [`crate::xschem::gather`] gathers it).
     XschemImport(Box<XschemImport>),
 }
 
@@ -145,11 +145,11 @@ pub struct XschemImport {
     /// Map xschem `devices/` symbols onto the `core` library (import spec §6).
     pub map_core: bool,
     /// Model-card scans for device limits (the command line reads them beforehand).
-    pub models: Vec<crate::spice::ModelScan>,
+    pub models: Vec<crate::pdk::spice::ModelScan>,
     /// Manufacturing grid in picometres (from a tech file).
     pub grid_pm: Option<u32>,
     /// A Cadence `cdfDump`.
-    pub cdf: Option<crate::cdf::CdfDump>,
+    pub cdf: Option<crate::pdk::cdf::CdfDump>,
 }
 
 /// What the driver must do next.
@@ -171,9 +171,6 @@ pub enum Step {
     Failed(Vec<String>),
 }
 
-/// Rounds of reads a job may ask for (each round is one level of the reference closure).
-pub const ROUNDS_MAX: u32 = 4096;
-
 /// A conversion in progress.
 pub struct Job {
     command: Command,
@@ -182,7 +179,7 @@ pub struct Job {
     asked: BTreeSet<String>,
     /// Directories asked for by [`Step::List`] and not yet supplied.
     asked_lists: BTreeSet<String>,
-    gather: Option<crate::gather::Gather>,
+    gather: Option<crate::xschem::gather::Gather>,
     /// Problems the output check found in the finished import (0 for other commands).
     problems: usize,
     rounds: u32,
@@ -285,11 +282,11 @@ impl Job {
                     writes: vec![
                         (
                             join("schemify.il"),
-                            crate::skill::schemify_il().into_bytes(),
+                            crate::virtuoso::skill::schemify_il().into_bytes(),
                         ),
                         (
                             join("sfy_probe.il"),
-                            crate::skill::PROBE.as_bytes().to_vec(),
+                            crate::virtuoso::skill::PROBE.as_bytes().to_vec(),
                         ),
                     ],
                     summary: format!(
@@ -355,7 +352,7 @@ impl Job {
                     Err(s) => return s,
                 };
                 let top_ix: Vec<usize> = (0..tops.len()).collect();
-                match crate::xschem_out::export(&d, &top_ix) {
+                match crate::xschem::write::export(&d, &top_ix) {
                     Ok(x) => {
                         let dir = out_dir.trim_end_matches('/');
                         let writes = x
@@ -374,7 +371,7 @@ impl Job {
     /// One step of [`Command::XschemImport`]: list the search path, gather the inputs round
     /// by round, then translate them.
     fn xschem_import(&mut self, x: &XschemImport) -> Step {
-        use crate::gather::Gather;
+        use crate::xschem::gather::Gather;
         if x.convert.is_empty() {
             return Step::Failed(vec!["no library directory to import".into()]);
         }
@@ -403,12 +400,12 @@ impl Job {
                 return Step::Failed(vec![format!("{rc}: cannot read")]);
             };
             let text = String::from_utf8_lossy(text);
-            for v in crate::tcl::pdk_vars(&text) {
+            for v in crate::xschem::tcl::pdk_vars(&text) {
                 if !vars.iter().any(|(n, _)| *n == v.0) {
                     vars.push(v);
                 }
             }
-            procs.extend(crate::tcl::drc_procs(&text));
+            procs.extend(crate::xschem::tcl::drc_procs(&text));
         }
         let inputs: Vec<(&str, &[u8])> = g
             .inputs()
@@ -423,7 +420,7 @@ impl Job {
                 x.convert.join(", ")
             )]);
         }
-        let opts = crate::Options {
+        let opts = crate::xschem::read::Options {
             roots: g.search_path(),
             pdk_vars: &vars,
             map_core: x.map_core,
@@ -432,8 +429,8 @@ impl Job {
             grid_pm: x.grid_pm,
             cdf: x.cdf.as_ref(),
         };
-        let (outputs, report) = crate::translate_library(&inputs, &opts);
-        let problems = crate::check_output(&outputs);
+        let (outputs, report) = crate::xschem::read::translate_library(&inputs, &opts);
+        let problems = crate::check::check_output(&outputs);
         self.problems = problems.len();
         let mut notes = Notes::default();
         report.to_notes(&mut notes);

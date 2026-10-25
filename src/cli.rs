@@ -26,7 +26,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::job::{Command, USAGE, parse};
-use crate::{spice, tech};
+use crate::pdk::{spice, tech};
 
 fn usage() -> u8 {
     eprintln!(
@@ -378,7 +378,7 @@ fn xschem_import(args: &[String]) -> u8 {
     let cdf = cdf
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
-        .map(|t| crate::cdf::read(&t));
+        .map(|t| crate::pdk::cdf::read(&t));
     x.models = scans;
     x.grid_pm = grid_pm;
     x.cdf = cdf;

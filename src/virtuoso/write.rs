@@ -17,18 +17,18 @@ use super::read::{
     Spin, Term, TextView, Wire,
 };
 use super::{Export, ExportOptions, ade};
-use crate::align;
 use crate::design::{Cell, Design, geom, sym_pins};
-use crate::map::Mapping;
-use crate::merge;
-use crate::nets;
 use crate::notes::Notes;
-use crate::plan::{self, How, Plan};
-use crate::profile::{
+use crate::virtuoso::align;
+use crate::virtuoso::map::Mapping;
+use crate::virtuoso::merge;
+use crate::virtuoso::nets;
+use crate::virtuoso::plan::{self, How, Plan};
+use crate::virtuoso::profile::{
     self, MILLI_PER_INCH, coord_text, dir_to_virtuoso, net_from_virtuoso, net_to_virtuoso, norm_box,
 };
-use crate::remap::{self, Remaster, STEP};
-use crate::sfyx::{self, Record, Value, i, pairs, s};
+use crate::virtuoso::remap::{self, Remaster, STEP};
+use crate::virtuoso::sfyx::{self, Record, Value, i, pairs, s};
 
 /// Units per inch the exporter writes (§3.1): one unit is one Schemify milli-unit.
 pub const UPI: i32 = MILLI_PER_INCH as i32;

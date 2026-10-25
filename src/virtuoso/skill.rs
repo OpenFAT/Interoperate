@@ -3,15 +3,18 @@
 
 /// The parts of `schemify.il`, in load order: (file name, text).
 pub const PARTS: &[(&str, &str)] = &[
-    ("sfy_io.il", include_str!("../skill/sfy_io.il")),
-    ("sfy_cells.il", include_str!("../skill/sfy_cells.il")),
-    ("sfy_ade.il", include_str!("../skill/sfy_ade.il")),
-    ("sfy_char.il", include_str!("../skill/sfy_char.il")),
-    ("sfy_selftest.il", include_str!("../skill/sfy_selftest.il")),
+    ("sfy_io.il", include_str!("../../skill/sfy_io.il")),
+    ("sfy_cells.il", include_str!("../../skill/sfy_cells.il")),
+    ("sfy_ade.il", include_str!("../../skill/sfy_ade.il")),
+    ("sfy_char.il", include_str!("../../skill/sfy_char.il")),
+    (
+        "sfy_selftest.il",
+        include_str!("../../skill/sfy_selftest.il"),
+    ),
 ];
 
 /// The probe a user runs once on a real Virtuoso (§5.5); not part of `schemify.il`.
-pub const PROBE: &str = include_str!("../skill/sfy_probe.il");
+pub const PROBE: &str = include_str!("../../skill/sfy_probe.il");
 
 /// `schemify.il`: every part, each preceded by a comment naming it.
 pub fn schemify_il() -> String {
