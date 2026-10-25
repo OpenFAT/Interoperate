@@ -99,7 +99,7 @@ second table is short.
 | `X.sch` with `ipin`/`opin`/`iopin` but no `.sym` (an xschem LCC) | `.shcomp` with a derived interface, plus the bench copy `X__top.shbench` | import only |
 | `B 5` pin boxes (`name`, `dir`, `sim_pinnumber`) | `pin` (order kept; same-named pins become `alias` pins) | yes |
 | `template` `k=v` pairs | `param` (kind inferred: number, bool, string, choice) | yes |
-| (none) | param `unit min max step grid doc show`, `prose` docs, `waive`, `constraint` | kept |
+| (none) | param `unit doc show`, `prose` docs, `waive`, `constraint` | no: Schemify-only, reported on export; an xschem re-import writes fresh files |
 | `format`, `lvs_format`, `spectre_format`, `verilog_format` | impl `format spice` / `cdl` / `spectre` / `verilog` | yes |
 | `device_model`, `spice_sym_def` | impl `body` | yes (export writes `device_model`) |
 | `spice_ignore=true\|open\|short` | impl or inst `ignore` | yes |
@@ -361,16 +361,17 @@ No Cadence tool runs here, so:
 
 ## Code
 
-| File | Does |
+[ARCHITECTURE.md](ARCHITECTURE.md) maps every row of the two maps above to its file.
+
+| Directory | Does |
 |---|---|
-| `src/design.rs`, `src/nets.rs`, `src/profile.rs` | Schemify files as tables, connectivity, coordinate/orientation/name rules |
-| `src/sfyx.rs` | the exchange-file codec |
-| `src/virtuoso/` | `write` (export), `read` (import), `ael` (values), `devices` (analogLib table), `ade` (maestro) |
-| `src/merge.rs`, `src/remap.rs`, `src/map.rs` | keeping Schemify-only data, re-mastering, `interop.map` |
-| `src/xschem_out.rs`, `src/translate.rs` … | xschem export and import |
-| `src/job.rs` | one conversion as pure steps, driven by `src/plugin.rs` (editor) and `src/cli.rs` |
+| `src/xschem/` | xschem import (`read`) and export (`write`), one child file per map row |
+| `src/virtuoso/` | Virtuoso import (`read`) and export (`write`), the `.sfyx` codec and dump model, maestro (`ade`), `interop.map`, re-mastering, merging |
+| `src/pdk/` | PDK side inputs: model cards, tech-file grids, `cdfDump` |
+| `src/design.rs`, `src/notes.rs`, `src/check.rs` | the Schemify-shaped Design, the report, the output oracle |
+| `src/job.rs` | one conversion as pure steps and the command grammar, driven by `src/plugin.rs` (editor) and `src/cli.rs` |
 | `skill/*.il` | the parts of `schemify.il` |
-| `tests/` | `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, and the xschem import suites |
+| `tests/` | `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, the xschem import suites, `deps` (the module DAG) |
 
 ## Development
 

@@ -2,11 +2,12 @@
 //!
 //! | Map rows | File |
 //! |---|---|
-//! | `.sch`/`.sym` record syntax | `file` (reader), `attr` (attribute strings) |
-//! | which symbols and schematics are cells, libraries, search path | `read` (`classify_symbols`, `plan_cells`, `name_libs`), `gather` |
-//! | symbol interface: pins, params, formats | `symbol`, `read` (`plan_symbols`), `template` |
+//! | `.sch`/`.sym` record syntax, orientations | `file`, `attr` |
+//! | which symbols and schematics are cells; libraries; the search path | `read/cells`, `gather` |
+//! | symbol interface: pins, params, formats, limits | `read/interface`, `symbol`, `limits`, `write/symbol` |
+//! | records of a cell (graphics, schematic, code) | `read/emit`, `write/schematic` |
 //! | `devices/*.sym` ↔ `core:` | `devices` |
-//! | values, expressions, Tcl | `template`, `tcl` |
+//! | values, expressions, Tcl, templates | `template`, `tcl`, `write/values` |
 //! | import accounting (count conservation) | `report` |
 //! | the two spines | `read::translate_library` (import), `write::export` (export) |
 

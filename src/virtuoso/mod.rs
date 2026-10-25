@@ -1,8 +1,10 @@
 //! Cadence Virtuoso bridge (spec `interop.md` §4–§9): Design ⇄ `.sfyx` records.
 //!
-//! Spine ([`export`], [`import`]): see the spec's §1 table. Submodules: `read` (records →
-//! Design), `write` (Design → records), `ael` (values, §3.4), `devices` (§6.5–§6.6),
-//! `ade` (maestro ⇄ bench, §9).
+//! Spines: [`export`] (`write`), [`import`] (`read`), each with one child file per map row
+//! (`interface`, `symbol`, `schematic`, `cells`). Shared by both: `sfyx` (codec), `dump` (the
+//! model), `ael` and `profile` (values, names, coordinates, §3), `devices` (§6.5–§6.6),
+//! `ade` (maestro ⇄ bench, §9), `map` (`interop.map`, §8.2), `plan` (where each cell goes),
+//! `nets`, `remap` and `align` (re-mastering, §6.4), `merge` (keeping Schemify-only data, §7.3).
 
 use schemify_format::{Document, RecordKind};
 
