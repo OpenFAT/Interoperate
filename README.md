@@ -1,9 +1,9 @@
 # interop: Schemify ⇄ Cadence Virtuoso and xschem
 
 Use Schemify as your schematic editor while your team stays in Cadence Virtuoso, and move
-designs to and from xschem. A [Schemify](https://github.com/OmarSiwy/Schemify) plugin, never
-part of the core (D24 as amended, D41). Normative spec: [interop.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/interop.md); xschem
-import: [import.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/spec/import.md).
+designs to and from xschem. A [Schemify](https://github.com/OpenFAT/Schemify) plugin, never
+part of the core (D24 as amended, D41). Normative spec: [interop.md](https://github.com/OpenFAT/Schemify/blob/main/docs/spec/interop.md); xschem
+import: [import.md](https://github.com/OpenFAT/Schemify/blob/main/docs/spec/import.md).
 
 Two interfaces: the **plugin** (`interop.wasm`, loaded by the editor) and, secondary, the
 **native CLI** `schemify-interop` for the same conversions without the editor.
@@ -26,7 +26,7 @@ For yourself, in every project: add it to your Schemify config (`init.lua`) and 
 
 ```lua
 schemify.pack.add {
-  { src = "https://github.com/OmarSiwy/Schemify-Interop", name = "interop",
+  { src = "https://github.com/OpenFAT/Interoperate", name = "interop",
     grant = { "read_project", "write_project" }, fuel = 100000000000 },
 }
 ```
@@ -52,7 +52,7 @@ In the editor the File menu gains **Export to Virtuoso (.sfyx)…**, **Import fr
 the editor, the same conversions run from the command line:
 
 ```
-cargo install --git https://github.com/OmarSiwy/Schemify-Interop --features cli   # or a release binary, or `nix run github:OmarSiwy/Schemify-Interop --`
+cargo install --git https://github.com/OpenFAT/Interoperate --features cli   # or a release binary, or `nix run github:OpenFAT/Interoperate --`
 
 schemify-interop virtuoso-export <project> <cell-file>... -o <file.sfyx> [--lib L=V]... [--core-cells]
 schemify-interop virtuoso-import <project> <file.sfyx> [--lib L=V]... [--analoglib]

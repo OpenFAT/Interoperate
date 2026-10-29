@@ -79,7 +79,7 @@
           doCheck = false;
           meta = {
             description = "Schemify interop plugin, native CLI (xschem import)";
-            homepage = "https://github.com/OmarSiwy/Schemify-Interop";
+            homepage = "https://github.com/OpenFAT/Interoperate";
             license = pkgs.lib.licenses.mit;
             mainProgram = "schemify-interop";
             platforms = systems;

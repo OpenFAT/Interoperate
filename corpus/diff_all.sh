@@ -18,7 +18,7 @@ filter="${2:-}"
 
 # spicecmp is Schemify's (tools/spicecmp), installed from the core revision Cargo.toml pins.
 rev="$(sed -n 's/^schemify-spicecmp = .*rev = "\([0-9a-f]*\)".*/\1/p' "$repo/Cargo.toml")"
-cargo install -q --locked --git https://github.com/OmarSiwy/Schemify --rev "$rev" schemify-spicecmp \
+cargo install -q --locked --git https://github.com/OpenFAT/Schemify --rev "$rev" schemify-spicecmp \
   --root "$here/.cache/tools"
 cmp_bin="$here/.cache/tools/bin/spicecmp"
 mkdir -p "$ours/diff"
