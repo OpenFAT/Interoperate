@@ -92,7 +92,7 @@ echo "wrote $map ($(wc -l < "$map") benches)"
 if [[ -z "${NETLIST:-}" ]]; then
   # Schemify's CLI from the core revision Cargo.toml pins.
   rev="$(sed -n 's/^schemify-format = .*rev = "\([0-9a-f]*\)".*/\1/p' "$repo/Cargo.toml")"
-  cargo install -q --locked --git https://github.com/OmarSiwy/Schemify --rev "$rev" schemify-cli \
+  cargo install -q --locked --git https://github.com/OpenFAT/Schemify --rev "$rev" schemify-cli \
     --root "$cache/tools"
   cli="$cache/tools/bin/schemify"
   NETLIST="$cli netlist --dialect %dialect% -o %out% --allow-errors %cell%"

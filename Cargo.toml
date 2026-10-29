@@ -6,7 +6,7 @@ edition = "2024"
 license = "MIT"
 rust-version = "1.95"
 publish = false
-repository = "https://github.com/OmarSiwy/Schemify-Interop"
+repository = "https://github.com/OpenFAT/Interoperate"
 
 # cdylib: the wasm32 guest. rlib: the same importer as a plain library, for the native CLI
 # (`schemify-interop`) and the oracle tests (tests/).
@@ -50,15 +50,15 @@ exclude = ["fuzz"]
 # Schemify's crates, pinned to one core revision. `nightly.yml` builds against `main` too, so
 # core drift shows up within a day; bump the rev here and in every entry together.
 [workspace.dependencies]
-schemify-abi = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0", features = ["guest"] }
-schemify-format = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-doc = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-expr = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-elab = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-netlist = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-wave = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-plugin = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
-schemify-spicecmp = { git = "https://github.com/OmarSiwy/Schemify", rev = "7a37e03be23fbc3fb743fa53c6430e7ab77941a0" }
+schemify-abi = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542", features = ["guest"] }
+schemify-format = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-doc = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-expr = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-elab = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-netlist = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-wave = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
+schemify-spicecmp = { git = "https://github.com/OpenFAT/Schemify", rev = "1752960b3906f9b29765222531b5bfe29e8f6542" }
 
 # Small module: size over speed, no unwinding (a panic is a trap the host reports).
 [profile.release]

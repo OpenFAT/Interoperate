@@ -1,6 +1,6 @@
 # Netlist corpus
 
-Differential oracle for the `netlist` row of [docs/dev/testing.md](https://github.com/OmarSiwy/Schemify/blob/main/docs/dev/testing.md):
+Differential oracle for the `netlist` row of [docs/dev/testing.md](https://github.com/OpenFAT/Schemify/blob/main/docs/dev/testing.md):
 golden netlists produced by *running* a pinned xschem (clean-room, D1) on real
 PDK test benches, compared semantically against ours.
 
