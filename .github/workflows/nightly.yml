@@ -52,7 +52,7 @@ jobs:
       # spicecmp's ignored metamorphic tests read the goldens through SCHEMIFY_GOLDEN.
       - uses: actions/checkout@v5
         with:
-          repository: OmarSiwy/Schemify
+          repository: OpenFAT/Schemify
           ref: main
           path: .schemify
       - name: comparator self-checks on real goldens (Schemify main)
