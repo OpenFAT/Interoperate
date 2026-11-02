@@ -266,6 +266,7 @@ fixtures in `tests/fixtures/schemify/`.
 | `./build.sh` | rebuilds `interop.wasm` (reproducible; commit it with the change) |
 | `SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli --test guest --test xschem_export` | the built guest through Schemify's host, the export netlisted by real xschem |
 | `corpus/fetch.sh && corpus/golden.sh` then `SCHEMIFY_CORPUS=corpus/.cache cargo test --release --test xschem_differential -- --nocapture` | the xschem differential ([corpus/README.md](corpus/README.md)) |
+| `NETLIST=none corpus/import_all.sh DIR && corpus/roundtrip.sh DIR` | the corpus through xschem → Schemify → xschem, re-netlisted by real xschem and compared with the goldens (checks the export) |
 | `determinism/run.sh <schemify-interop command> <out>` | the import every platform must write byte for byte |
 | `cd fuzz && cargo +nightly fuzz run xschem_read` | the fuzzers (`fuzz/seeds.sh` seeds them) |
 

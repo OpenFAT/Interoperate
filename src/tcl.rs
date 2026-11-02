@@ -9,6 +9,9 @@
 //! - [`drc_procs`]: the `switch -regexp $model { … if { $w < 0.42 } … }` procs of
 //!   sky130/IHP → per-model `min`/`max` rules; everything else is listed as unknown.
 
+use std::collections::BTreeSet;
+use std::fmt::Write as _;
+
 /// Extracts PDK path variables from `xschemrc` text: `set NAME value` lines whose value
 /// references another variable (`${PDK_ROOT}`, `$PDK`, `$::X`) and holds no command
 /// substitution. `$X`/`$::X` become `${X}`; the first definition of a name wins.
@@ -67,7 +70,8 @@ fn braced_vars(text: &str, known: impl Fn(&str) -> bool) -> Result<String, Strin
         let braced = b.get(j) == Some(&b'{');
         if braced {
             j += 1;
-        } else if text[j..].starts_with("::") {
+        }
+        if text[j..].starts_with("::") {
             j += 2;
         }
         let start = j;
@@ -133,6 +137,39 @@ pub fn subst(text: &str, vars: &[(String, String)]) -> Result<String, String> {
     Ok(out
         .replace("${USER_CONF_DIR}", "${HOME}/.xschem")
         .replace('\u{1}', "$$"))
+}
+
+/// The inverse of [`subst`]: netlist text holding `${NAME}` as the body of an xschem
+/// `tcleval(…)`. `${NAME}` → `${::NAME}` (a Tcl global: the PDK xschemrc's, or the
+/// environment's through the export's xschemrc), `$$` → `\$`, and `\`, `[`, `]`, `$`
+/// escaped so Tcl `subst` gives the text back. Returns the text and the names, sorted.
+pub fn tcleval_body(text: &str) -> (String, Vec<String>) {
+    let mut out = String::with_capacity(text.len() + 16);
+    let mut names = BTreeSet::new();
+    let mut rest = text;
+    while let Some(ch) = rest.chars().next() {
+        if let Some(r) = rest.strip_prefix("$$") {
+            out.push_str("\\$");
+            rest = r;
+        } else if let Some((name, r)) = rest
+            .strip_prefix("${")
+            .and_then(|r| r.split_once('}'))
+            .filter(|(n, _)| {
+                !n.is_empty() && n.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_')
+            })
+        {
+            write!(out, "${{::{name}}}").unwrap();
+            names.insert(name.to_owned());
+            rest = r;
+        } else {
+            if matches!(ch, '\\' | '[' | ']' | '$') {
+                out.push('\\');
+            }
+            out.push(ch);
+            rest = &rest[ch.len_utf8()..];
+        }
+    }
+    (out, names.into_iter().collect())
 }
 
 fn unescaped(text: &str, needle: u8) -> Option<usize> {
@@ -532,6 +569,16 @@ fn matches_here(p: &[u8], t: &[u8], at: usize) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn tcleval_body_inverts_subst() {
+        let vars = [("M".to_owned(), String::new())];
+        let text = ".lib ${M}/x.lib tt\nB1 a 0 v=$$x [1] \\ ${M}_2";
+        let (body, names) = tcleval_body(text);
+        assert_eq!(names, ["M"]);
+        assert!(body.starts_with(".lib ${::M}/x.lib"), "{body}");
+        assert_eq!(subst(&body, &vars).as_deref(), Ok(text));
+    }
 
     #[test]
     fn proc_argument_lists() {

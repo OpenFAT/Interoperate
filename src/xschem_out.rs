@@ -115,6 +115,7 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
     let mut notes = Notes::default();
     let mut files = Vec::new();
     let mut dirs = BTreeSet::new();
+    let mut globals = BTreeSet::new();
     for (ci, t) in targets.iter().enumerate() {
         let Some(Target::Own(dir)) = t else { continue };
         let c = &d.cells[ci];
@@ -126,11 +127,14 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
             files.push((format!("{dir}/{}.sym", c.name), text.into_bytes()));
         }
         if c.kind() != FileKind::Shprim {
-            let text = write_schematic(d, ci, &targets, &sc, &mut notes);
+            let text = write_schematic(d, ci, &targets, &sc, &mut globals, &mut notes);
             files.push((format!("{dir}/{}.sch", c.name), text.into_bytes()));
         }
     }
-    files.push(("xschemrc".to_owned(), xschemrc(&dirs).into_bytes()));
+    files.push((
+        "xschemrc".to_owned(),
+        xschemrc(&dirs, &globals).into_bytes(),
+    ));
     files.sort_by(|a, b| a.0.cmp(&b.0));
     assert!(
         files.windows(2).all(|w| w[0].0 != w[1].0),
@@ -178,11 +182,14 @@ fn target_of(d: &Design, ci: usize, top: bool, root_dir: &str) -> Target {
         .header("provenance")
         .and_then(|p| p.strip_prefix("xschem "))
         && !top
+        // A variant (`nmos4__MN`, an instance's own format, import §3) is not the original;
+        // a schematic placed as a symbol (`C {x.sch}`, cell `x__lcc`) is.
+        && (p.ends_with(".sch")
+            || p.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(s, _)| s)
+                == Some(&c.name))
     {
-        // ponytail: the importer names a library after its directory, so `<lib>/<file>`
-        // is the reference relative to the library's parent; `devices` is on xschem's
-        // default path itself. A library imported from elsewhere needs its parent on the
-        // user's XSCHEM_LIBRARY_PATH.
+        // The importer records the reference as resolved over its search roots; files of
+        // older imports say `<lib>/<file>`, and `devices` is on xschem's default path.
         let r = p.strip_prefix("devices/").unwrap_or(p);
         return Target::Original(r.to_owned());
     }
@@ -540,6 +547,7 @@ fn write_schematic(
     ci: usize,
     targets: &[Option<Target>],
     sc: &Scope,
+    globals: &mut BTreeSet<String>,
     notes: &mut Notes,
 ) -> String {
     let c = &d.cells[ci];
@@ -699,17 +707,16 @@ fn write_schematic(
                 &c.path,
                 format!("code {name} {lang}: only SPICE text carries"),
             );
-        } else if text.contains("${") {
-            notes.review(
-                "code",
-                &c.path,
-                format!("code {name}: ${{NAME}} expansion has no xschem form"),
-            );
         } else {
-            blocks.push((name.to_owned(), text.replace("$$", "$")));
+            blocks.push((name.to_owned(), text));
         }
     }
-    if !bench && let Some(imp) = default_impl(c) {
+    // A leaf impl's body is the symbol's `device_model`; only a schematic impl's is the
+    // schematic's own text (spec §11).
+    if !bench
+        && let Some(imp) = default_impl(c)
+        && c.field(imp, 1) == "schematic"
+    {
         let name = c.field(imp, 0);
         if let Some(b) = c.records(RecordKind::Body).find(|&b| c.field(b, 0) == name) {
             let text: Vec<&str> = c.doc.verbatim(b).collect();
@@ -722,11 +729,17 @@ fn write_schematic(
         (0, 0)
     };
     for (name, text) in &blocks {
-        let props = [
-            kv("name", name),
-            kv("only_toplevel", "false"),
-            kv("value", text),
-        ];
+        // `${NAME}` (netlist spec §9.12) is xschem's `tcleval` over Tcl globals, as PDK
+        // benches spell their model paths (import.md §5 inverted).
+        let mut props = vec![kv("name", name), kv("only_toplevel", "false")];
+        if text.contains("${") {
+            let (body, used) = crate::tcl::tcleval_body(text);
+            globals.extend(used);
+            props.push(kv("format", "tcleval( @value )"));
+            props.push(kv("value", &body));
+        } else {
+            props.push(kv("value", &text.replace("$$", "$")));
+        }
         component(&mut out, "code_shown.sym", [x0, y], Orient::R0, &props);
         let lines = i32::try_from(text.lines().count()).unwrap_or(i32::MAX / 40_000);
         y = y.saturating_add(60_000 + 20_000 * lines.min(10_000));
@@ -766,13 +779,6 @@ fn bench_text(c: &Cell, sc: &Scope, notes: &mut Notes) -> (String, String) {
                 key => notes.review("corner", &c.path, format!("corner {name} {key}")),
             }
         }
-    }
-    if corner.contains("${") {
-        notes.review(
-            "corner",
-            &c.path,
-            "${NAME} in a model path is written verbatim",
-        );
     }
     let mut vars = String::new();
     for r in c.records(RecordKind::Var) {
@@ -882,12 +888,41 @@ fn instance(
                     continue;
                 };
                 match xschem_value(p.kind, src, sc, mctx.raw.contains(&key)) {
+                    // An original xschem symbol gets a lone name as its source wrote it
+                    // (`W=W`): its templates compose it (sky130 `ad='… * @W / @nf …'`),
+                    // and quotes there break xschem's `expr()`.
+                    Ok(v)
+                        if matches!(target, Target::Original(_))
+                            && v.len() > 2
+                            && v.starts_with('\'')
+                            && v.ends_with('\'')
+                            && is_ident(&v[1..v.len() - 1]) =>
+                    {
+                        props.push(kv(key, &v[1..v.len() - 1]));
+                    }
                     Ok(v) => props.push(kv(key, &v)),
                     Err(why) => notes.review(
                         why,
                         &c.path,
                         format!("{name}.{key}={src:?}: symbol default kept"),
                     ),
+                }
+            }
+            // xschem fills `@nf` inside a template default (`ad=expr('… / @nf …')`) from
+            // the instance's own attributes only: spell out the defaults others refer to.
+            if matches!(target, Target::Original(_)) {
+                let used = |n: &str| {
+                    mparams
+                        .iter()
+                        .any(|q| lex(q.default).is_some_and(|t| t.contains(&Tok::Ident(n))))
+                };
+                for p in mparams
+                    .iter()
+                    .filter(|p| over(p.name).is_none() && used(p.name))
+                {
+                    if let Ok(v) = xschem_value(p.kind, p.default, sc, mctx.raw.contains(&p.name)) {
+                        props.push(kv(p.name, &v));
+                    }
                 }
             }
         }
@@ -1023,8 +1058,11 @@ fn rot_flip(o: Orient) -> (usize, usize) {
 }
 
 /// The `xschemrc` fragment: the output directory on the symbol search path (so
-/// `<lib>/<cell>.sym` references resolve), the libraries listed for the reader.
-fn xschemrc(dirs: &BTreeSet<&str>) -> String {
+/// `<lib>/<cell>.sym` references resolve), the libraries listed for the reader, and each
+/// `${NAME}` the netlist text uses read from the environment when no xschemrc set it.
+// ponytail: project `set` rows are not carried (Design has no manifest sets); the PDK
+// xschemrc defines the imported ones. Write them here if a project defines its own.
+fn xschemrc(dirs: &BTreeSet<&str>, globals: &BTreeSet<String>) -> String {
     let mut out = String::from(
         "# Schemify export (interop.md §11). Source this file from your xschemrc, or pass it\n\
          # with --rcfile: it puts this directory on the symbol search path.\n",
@@ -1033,6 +1071,13 @@ fn xschemrc(dirs: &BTreeSet<&str>) -> String {
         writeln!(out, "# library: {d}").unwrap();
     }
     out.push_str("append XSCHEM_LIBRARY_PATH :[file dirname [file normalize [info script]]]\n");
+    for g in globals {
+        writeln!(
+            out,
+            "if {{![info exists ::{g}] && [info exists ::env({g})]}} {{ set ::{g} $::env({g}) }}"
+        )
+        .unwrap();
+    }
     out
 }
 
@@ -1553,7 +1598,12 @@ fn convert_format(tpl: &str, ctx: &FmtCtx) -> Result<String, String> {
             }
             "model" if ctx.model.is_some() => out.push(Out::Lit(ctx.model.unwrap_or("").into())),
             "params" | "file" => return Err(format!("{{{h}}} has no xschem token")),
-            _ if let Some((_, x)) = ctx.pins.iter().find(|(n, _)| *n == h) => {
+            // A bus pin `y[5:2]` is `{y}` (elab names pins by their base).
+            _ if let Some((_, x)) = ctx
+                .pins
+                .iter()
+                .find(|(n, _)| *n == h || n.split('[').next() == Some(h)) =>
+            {
                 out.push(Out::Tok(format!("@{x}")));
             }
             _ if ctx.inherited.contains(&h) => out.push(Out::Tok(h.into())),

@@ -1774,10 +1774,7 @@ impl<'o> Tables<'o> {
             .or(cell.sch)
             .expect("a cell has a source");
         doc.push_attr("provenance");
-        doc.push_value(&format!(
-            "xschem {lib}/{}",
-            file_of(&self.srcs[main_src as usize].path)
-        ));
+        doc.push_value(&format!("xschem {}", self.sym_ref(main_src, lib)));
         // Ranks 1–2: the symbol (a schematic placed as a symbol has no drawing of its own).
         if let (Some(s), Some(plan)) = (cell.sym, plan) {
             acc.active = cell.tally_sym;
@@ -2759,6 +2756,27 @@ impl<'o> Tables<'o> {
             d.push_field(v);
         }
         write(&d)
+    }
+
+    /// The reference xschem resolves to source `src` over the search roots, as an
+    /// instance would write it (the shortest such): `pump.sym` when the library directory
+    /// is on the path, `sky130_fd_pr/nfet_01v8.sym` when its parent is. `<lib>/<file>` when
+    /// no root holds it. The xschem export references the original symbol by it.
+    fn sym_ref(&self, src: u32, lib: &str) -> String {
+        let path = &self.srcs[src as usize].path;
+        let first_hit = |rel: &str| {
+            self.opts
+                .roots
+                .iter()
+                .find_map(|r| self.index.get(&join(&normalize(r), rel)).copied())
+        };
+        self.opts
+            .roots
+            .iter()
+            .filter_map(|r| path.strip_prefix(normalize(r).as_str())?.strip_prefix('/'))
+            .filter(|rel| first_hit(rel) == Some(src))
+            .min_by_key(|rel| rel.len())
+            .map_or_else(|| format!("{lib}/{}", file_of(path)), str::to_owned)
     }
 
     /// `path` relative to the shallowest search-path root that contains it (as given when

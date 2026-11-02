@@ -198,9 +198,15 @@ fn port_order_matches_golden_subckt_lines(c: &Path, outputs: &[Vec<(String, Vec<
             .find_attr(0, "provenance")
             .and_then(|a| d.attr_value(a, 0))
             .unwrap_or("");
-        let Some((lib, file)) = prov.strip_prefix("xschem ").and_then(|p| p.split_once('/')) else {
+        // The provenance is the symbol reference (`pump.sym`, `sky130_fd_pr/x.sym`); the
+        // output path's directory is the library.
+        let Some(file) = prov
+            .strip_prefix("xschem ")
+            .and_then(|p| p.rsplit('/').next())
+        else {
             continue;
         };
+        let lib = path.split('/').next().unwrap_or("");
         // An alias pin is a second position of an earlier port, not a port.
         let pins = (1..d.record_count())
             .filter(|&r| d.record_kind(r) == schemify_format::RecordKind::Pin)

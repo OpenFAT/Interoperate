@@ -106,10 +106,14 @@ fn params_of(d: &Document) -> Vec<(String, String)> {
         .collect()
 }
 
+/// A cell's pin names as a template names them: a bus pin `y[5:2]` by its base `y` (elab).
 fn pins_of(d: &Document) -> Vec<String> {
     (1..d.record_count())
         .filter(|&r| d.record_kind(r) == RecordKind::Pin)
-        .map(|r| d.field(r, 0).unwrap_or("").to_owned())
+        .map(|r| {
+            let name = d.field(r, 0).unwrap_or("");
+            name.split('[').next().unwrap_or(name).to_owned()
+        })
         .collect()
 }
 
@@ -266,7 +270,7 @@ mod tests {
 
     #[test]
     fn reports_bad_templates_and_unknown_overrides() {
-        let lib = "schemify 1 shprim\n\npin a inout 0 0\n\nparam w 1\n\nimpl spice spice\n  format spice \"{name} {a} {zz}\"\n";
+        let lib = "schemify 1 shprim\n\npin a inout 0 0\npin y[5:2] out 10 0\n\nparam w 1\n\nimpl spice spice\n  format spice \"{name} {a} {y} {zz}\"\n";
         let bench = "schemify 1 shbench\n\ninst 0abcde ./x\n  at 0 0 R0\n  name X1\n  q 3\n";
         let files = vec![
             (
