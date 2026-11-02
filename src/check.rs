@@ -116,7 +116,8 @@ fn pins_of(d: &Document) -> Vec<String> {
 /// Compiles expression `text`; `Err` names the failure or the first identifier outside
 /// `scope`.
 fn expr(text: &str, scope: impl Fn(&str) -> bool) -> Result<(), String> {
-    let p = Program::compile(text, Mode::Scalar).map_err(|e| format!("{:?} {}", e.code, e.msg))?;
+    let p =
+        Program::compile(text, Mode::Scalar).map_err(|e| format!("{:?} {}", e.code, e.message))?;
     match p.idents().find(|i| !scope(i)) {
         Some(i) => Err(format!("unknown identifier {i}")),
         None => Ok(()),
@@ -125,7 +126,7 @@ fn expr(text: &str, scope: impl Fn(&str) -> bool) -> Result<(), String> {
 
 /// [`expr`] for a template.
 fn template(text: &str, scope: impl Fn(&str) -> bool) -> Result<(), String> {
-    let t = Template::parse(text).map_err(|e| format!("{:?} {}", e.code, e.msg))?;
+    let t = Template::parse(text).map_err(|e| format!("{:?} {}", e.code, e.message))?;
     match t.program().idents().find(|i| !scope(i)) {
         Some(i) => Err(format!("unknown identifier {i}")),
         None => Ok(()),
@@ -223,7 +224,7 @@ fn check_expressions(
                         // only the syntax is checked here; elab resolves the names.
                         _ => Program::compile(v, Mode::Scalar)
                             .map(|_| ())
-                            .map_err(|e| format!("{:?} {}", e.code, e.msg)),
+                            .map_err(|e| format!("{:?} {}", e.code, e.message)),
                     };
                     if let Err(e) = res {
                         fail(line, key, v, e);

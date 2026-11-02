@@ -14,7 +14,7 @@
 
 use interop::{Options, tcl, translate_library};
 use schemify_doc::core_library;
-use schemify_doc::{DocHandle, Project};
+use schemify_doc::{Assignment, DocHandle, Project};
 use schemify_elab::{Dialect, Request, elaborate, no_funcs};
 use schemify_netlist::emit;
 use schemify_spicecmp::{Options as CmpOptions, Section, compare};
@@ -354,7 +354,14 @@ fn ngspice_results_agree() {
             continue;
         }
         let (project, handles) = load(&import(&g));
-        let env: Vec<(&str, &str)> = g.env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let env: Vec<Assignment<&str>> = g
+            .env
+            .iter()
+            .map(|(k, v)| Assignment {
+                name: *k,
+                value: v.as_str(),
+            })
+            .collect();
         for name in mine {
             let path = list
                 .lines()
@@ -490,7 +497,14 @@ fn xschem_differential() {
             out.len(),
             t0.elapsed()
         );
-        let env: Vec<(&str, &str)> = g.env.iter().map(|(k, v)| (*k, v.as_str())).collect();
+        let env: Vec<Assignment<&str>> = g
+            .env
+            .iter()
+            .map(|(k, v)| Assignment {
+                name: *k,
+                value: v.as_str(),
+            })
+            .collect();
         for &&(name, _, path) in &mine {
             for (mode, dialect) in [("spice", Dialect::Ngspice), ("cdl", Dialect::Cdl)] {
                 let t = tally.entry((g.name.to_owned(), mode)).or_default();

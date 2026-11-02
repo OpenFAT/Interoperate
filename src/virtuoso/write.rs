@@ -1353,7 +1353,7 @@ fn symbol_out(c: &Cell, ids: &mut Ids, notes: &mut Notes) -> Cv {
             }
             _ => (at, "R0", "centerLeft", "stick", LABEL_HEIGHT / 2),
         };
-        let o = Orient::parse(orient).unwrap_or(Orient::R0);
+        let o = orient.parse().unwrap_or(Orient::R0);
         let style = ["pin", "label", justify, font, "normal"];
         cv.labels
             .push(label(ids.take(), r, term, xy, o, height, style));

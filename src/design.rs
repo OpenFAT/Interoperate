@@ -95,7 +95,7 @@ impl Cell {
 
     /// Field `i` of record `r` as an orientation, `R0` when absent or unknown.
     pub fn orient(&self, r: u32, i: usize) -> Orient {
-        Orient::parse(self.field(r, i)).unwrap_or(Orient::R0)
+        self.field(r, i).parse().unwrap_or(Orient::R0)
     }
 }
 
@@ -636,7 +636,7 @@ pub fn geom(d: &Design, ci: usize) -> Geom {
         g.inst_orient.push(
             c.doc
                 .attr_value(a, 2)
-                .and_then(Orient::parse)
+                .and_then(|s| s.parse().ok())
                 .unwrap_or(Orient::R0),
         );
         g.inst_rec.push(r);

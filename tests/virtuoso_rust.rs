@@ -380,7 +380,7 @@ fn undocumented_losses(path: &str, orig: &str, got: &str) -> Vec<String> {
         let (om, gm) = (by(&o, k), by(&g, k));
         for (id, &r) in &om {
             let Some(&gr) = gm.get(id) else {
-                bad.push(format!("{path}: {} {id} missing", k.word()));
+                bad.push(format!("{path}: {} {id} missing", k.as_str()));
                 continue;
             };
             let same = match k {
@@ -407,7 +407,7 @@ fn undocumented_losses(path: &str, orig: &str, got: &str) -> Vec<String> {
             if !same {
                 bad.push(format!(
                     "{path}: {} {id}: {} → {}",
-                    k.word(),
+                    k.as_str(),
                     rec_text(&o, r, &[]),
                     rec_text(&g, gr, &[])
                 ));
@@ -417,7 +417,7 @@ fn undocumented_losses(path: &str, orig: &str, got: &str) -> Vec<String> {
             bad.push(format!(
                 "{path}: {} extra {}",
                 gm.len() - om.len(),
-                k.word()
+                k.as_str()
             ));
         }
     }

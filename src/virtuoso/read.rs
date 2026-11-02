@@ -904,7 +904,7 @@ impl Target {
         cell_path(
             &self.dir,
             &self.stem,
-            self.kind.map_or("shprim", FileKind::word),
+            self.kind.map_or("shprim", FileKind::as_str),
         )
     }
 }

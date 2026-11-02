@@ -629,7 +629,7 @@ fn write_schematic(
                     &mut out,
                     &symref,
                     at,
-                    Orient::parse(v(2)).unwrap_or(Orient::R0),
+                    v(2).parse().unwrap_or(Orient::R0),
                     &props,
                 );
             }
