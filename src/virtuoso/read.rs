@@ -1649,7 +1649,7 @@ pub fn si_text(t: &str) -> String {
 // ---------------------------------------------------------------------------------------
 
 /// A pin list for a template: explicit holes when every pin is an identifier, else `{pins}`.
-fn pins_template(order: &[String]) -> String {
+pub(crate) fn pins_template(order: &[String]) -> String {
     let ident = |s: &str| {
         let mut ch = s.chars();
         ch.next()
@@ -2458,6 +2458,11 @@ fn derived_pins(sv: &Cv) -> Vec<PinRow> {
         .collect();
     terms.sort();
     terms.dedup_by(|a, b| a.0 == b.0);
+    box_pins(terms)
+}
+
+/// Pins `(name, dir)` in the order given, laid out for [`derived_symbol`].
+fn box_pins(terms: Vec<(String, String)>) -> Vec<PinRow> {
     let (mut l, mut r) = (0, 0);
     terms
         .into_iter()
@@ -2475,6 +2480,21 @@ fn derived_pins(sv: &Cv) -> Vec<PinRow> {
             }
         })
         .collect()
+}
+
+/// Writes a pin record per `(name, dir)`, in order, and their box symbol: the shape of the
+/// editor's "Symbol from ports" (inputs left, the rest right, a box, `{name}`).
+#[cfg(feature = "cli")]
+pub(crate) fn box_symbol(doc: &mut Document<'static>, terms: Vec<(String, String)>) {
+    let pins = box_pins(terms);
+    for p in &pins {
+        doc.begin_record(RecordKind::Pin);
+        doc.push_field(&p.name);
+        doc.push_field(&p.dir);
+        doc.push_field_coord(p.at[0]);
+        doc.push_field_coord(p.at[1]);
+    }
+    derived_symbol(doc, &pins);
 }
 
 fn derived_symbol(doc: &mut Document<'static>, pins: &[PinRow]) {

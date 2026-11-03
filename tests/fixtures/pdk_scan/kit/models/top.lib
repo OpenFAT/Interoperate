@@ -1,0 +1,16 @@
+* Made-up HSPICE-style corner library (no real PDK data).
+.lib tt
+.param dvt_corner=0.0 $ typical
+.inc 'mos.inc'
+.inc "passive.inc"
+.endl tt
+
+.lib ff
+.param dvt_corner=-0.0371
+.inc 'mos.inc'
+.inc "passive.inc"
+.endl ff
+
+.lib escape
+.include '../../outside.inc'
+.endl escape

@@ -24,7 +24,8 @@
 //! | [`attr::Attrs::parse_into`] | one attribute string | key/value rows (unescaped, source spans) |
 //! | [`attr::classify`] | one value or text | [`attr::Idioms`] bitset (corpus audit) |
 //! | [`symbol::extract`] | [`xschem::XschemFile`] | [`symbol::SymbolInterface`]: attributes, template, pins in netlist order |
-//! | [`spice::scan`] | model cards, through a caller loader | [`spice::ModelScan`]: models, bins, subckts, OSDI evidence |
+//! | [`spice::scan`] | model cards, through a caller loader | [`spice::ModelScan`]: models, bins, subckts (ports, parameters), OSDI evidence |
+//! | `pdk_scan::run` (feature `cli`) | a kit's model files, or frames of them | `pdk-scan` protocol 1: one `.shprim` per device, no card data |
 //! | [`tech::read_lyt`], [`tech::read_magic`] | KLayout / Magic tech files | manufacturing grid in picometres |
 //! | [`cdf::read`] | `cdfDump` SKILL text | [`cdf::CdfDump`]: parameter tables and a review list |
 //!
@@ -58,6 +59,8 @@ pub mod map;
 pub mod merge;
 pub mod nets;
 pub mod notes;
+#[cfg(feature = "cli")]
+pub mod pdk_scan;
 pub mod profile;
 pub mod remap;
 pub mod report;

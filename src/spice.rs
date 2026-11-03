@@ -17,6 +17,8 @@
 //!   choice cannot be known then.
 //! - OSDI evidence: `osdi`/`pre_osdi` commands, `N` device lines, and `.model` types that
 //!   are not built into ngspice or XSPICE.
+//! - HSPICE: `.subckt` parameters may follow the ports without `params:`; `.prot`/`.protect`
+//!   … `.unprot`/`.unprotect` blocks (encrypted cards) are counted, never parsed.
 
 use std::path::{Component, Path, PathBuf};
 
@@ -74,6 +76,12 @@ pub struct Bins {
 pub struct Subckts {
     /// Subcircuit name, lowercased.
     pub name: Vec<Span>,
+    /// Enclosing subcircuit row, or [`TOP_LEVEL`].
+    pub subckt: Vec<u32>,
+    /// `[first, count]` into [`ModelScan::port_words`] ([`ModelScan::ports`]).
+    pub ports: Vec<[u32; 2]>,
+    /// `[first, count]` into [`ModelScan::param_words`] ([`ModelScan::subckt_params`]).
+    pub params: Vec<[u32; 2]>,
     /// Row in [`ModelScan::files`].
     pub file: Vec<u16>,
     /// 1-based line of the `.subckt`.
@@ -188,6 +196,8 @@ pub enum LineKind {
     Device,
     /// A line inside a section that is not being read, or in an `.if` branch not taken.
     Inactive,
+    /// `.prot` … `.unprot` (HSPICE protected or encrypted cards), markers included.
+    Protected,
     /// Anything else (stray `+`, junk).
     Other,
 }
@@ -214,6 +224,10 @@ pub struct ModelScan {
     pub devices: Devices,
     /// Positional words of device lines, lowercased.
     pub device_words: Vec<Span>,
+    /// Port names of `.subckt` lines, lowercased.
+    pub port_words: Vec<Span>,
+    /// `[name lowercased, default as written]` of `.subckt` parameters.
+    pub param_words: Vec<[Span; 2]>,
     /// `.param` assignments.
     pub params: Params,
     /// `.lib` section definitions seen.
@@ -438,6 +452,7 @@ impl ModelScan {
             region: Region::Outside,
             found: false,
             control: false,
+            protected: false,
             subckts: Vec::new(),
             conds: Vec::new(),
         };
@@ -470,6 +485,11 @@ impl ModelScan {
             file: cx.file,
             line,
         };
+        // Protected blocks hide everything, section structure included.
+        if cx.protected || matches!(first.as_str(), ".prot" | ".protect") {
+            cx.protected = !matches!(first.as_str(), ".unprot" | ".unprotect");
+            return self.count(LineKind::Protected);
+        }
         // Section structure is tracked even while inactive.
         if first == ".lib" && words.len() == 2 {
             let name = words[1].to_ascii_lowercase();
@@ -568,6 +588,30 @@ impl ModelScan {
                     .get(1)
                     .map_or(String::new(), |w| w.to_ascii_lowercase());
                 self.subckts.name.push(push_span(&mut self.names, &name));
+                self.subckts.subckt.push(subckt);
+                // Ports up to the first `k=v` or `params:`; then every pair is a parameter.
+                let rest = words.get(2..).unwrap_or_default();
+                let n = rest
+                    .iter()
+                    .enumerate()
+                    .position(|(i, w)| {
+                        rest.get(i + 1) == Some(&"=") || w.eq_ignore_ascii_case("params:")
+                    })
+                    .unwrap_or(rest.len());
+                let first_port = self.port_words.len() as u32;
+                for p in &rest[..n] {
+                    let span = push_span(&mut self.names, &p.to_ascii_lowercase());
+                    self.port_words.push(span);
+                }
+                self.subckts.ports.push([first_port, n as u32]);
+                let first_param = self.param_words.len() as u32;
+                for (k, v) in pairs(&rest[n..]) {
+                    let k = push_span(&mut self.names, &k.to_ascii_lowercase());
+                    let v = push_span(&mut self.names, v);
+                    self.param_words.push([k, v]);
+                }
+                let count = self.param_words.len() as u32 - first_param;
+                self.subckts.params.push([first_param, count]);
                 self.subckts.file.push(cx.file);
                 self.subckts.line.push(line);
                 cx.subckts.push(self.subckts.name.len() as u32 - 1);
@@ -765,6 +809,22 @@ impl ModelScan {
             .map(|s| self.str(*s))
     }
 
+    /// Returns the ports of subcircuit row `s`, in order.
+    pub fn ports(&self, s: usize) -> impl Iterator<Item = &str> {
+        let [first, count] = self.subckts.ports[s];
+        self.port_words[first as usize..(first + count) as usize]
+            .iter()
+            .map(|p| self.str(*p))
+    }
+
+    /// Returns `(name, default as written)` of subcircuit row `s`'s parameters, in order.
+    pub fn subckt_params(&self, s: usize) -> impl Iterator<Item = (&str, &str)> {
+        let [first, count] = self.subckts.params[s];
+        self.param_words[first as usize..(first + count) as usize]
+            .iter()
+            .map(|[k, v]| (self.str(*k), self.str(*v)))
+    }
+
     /// Returns the model rows a model or subcircuit name stands for: models named `name`
     /// or whose [`base_name`] is `name`, or, for a subcircuit, the models defined inside
     /// it plus those its devices reference. Sorted, without duplicates.
@@ -834,6 +894,8 @@ struct FileState<'s> {
     region: Region,
     found: bool,
     control: bool,
+    /// Inside `.prot` … `.unprot`.
+    protected: bool,
     subckts: Vec<u32>,
     /// Open `.if` blocks, outermost first.
     conds: Vec<Cond>,
@@ -1075,16 +1137,20 @@ pub(crate) fn words(line: &str) -> Vec<&str> {
     out
 }
 
-/// Returns the `key = value` pairs of a word list.
+/// Returns the `key = value` pairs of a word list. A value that is missing, or is the next
+/// key (`a= b=1`, values stripped by the remote filter), is empty.
 fn pairs<'a>(words: &[&'a str]) -> Vec<(&'a str, &'a str)> {
     let mut out = Vec::new();
     let mut i = 0;
     while i + 1 < words.len() {
-        if words[i + 1] == "=" && i + 2 < words.len() {
+        if words[i + 1] != "=" {
+            i += 1;
+        } else if i + 2 < words.len() && words[i + 2] != "=" && words.get(i + 3) != Some(&"=") {
             out.push((words[i], words[i + 2]));
             i += 3;
         } else {
-            i += 1;
+            out.push((words[i], ""));
+            i += 2;
         }
     }
     out
@@ -1098,7 +1164,7 @@ fn unquote(w: &str) -> &str {
 }
 
 /// Lexically normalises `p`: drops `.` components and folds `x/..`.
-fn normalize(p: &Path) -> PathBuf {
+pub(crate) fn normalize(p: &Path) -> PathBuf {
     let mut out = PathBuf::new();
     for c in p.components() {
         match c {
@@ -1338,6 +1404,53 @@ mod tests {
         assert_eq!(base_name("m.12"), "m");
         assert_eq!(base_name("m.x1"), "m.x1");
         assert_eq!(normalize(Path::new("a/./b/../c")), PathBuf::from("a/c"));
+    }
+
+    #[test]
+    fn subckt_ports_and_params() {
+        let lib = ".subckt NMOS_LVT d g s b w=1u l = 100n\n+ nf={2*w}\n.subckt inner a\n.ends\n.ends\n\
+                   .subckt ng d s params: m=1 x={m + 1}\n.ends\n.subckt bare a= b=\n.ends\n";
+        let s = scan(Path::new("m"), &ScanOptions::default(), fs(&[("m", lib)]));
+        let rows: Vec<_> = (0..s.subckts.name.len())
+            .map(|r| {
+                (
+                    s.str(s.subckts.name[r]),
+                    s.subckts.subckt[r],
+                    s.ports(r).collect::<Vec<_>>(),
+                    s.subckt_params(r).collect::<Vec<_>>(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            rows,
+            [
+                (
+                    "nmos_lvt",
+                    TOP_LEVEL,
+                    vec!["d", "g", "s", "b"],
+                    vec![("w", "1u"), ("l", "100n"), ("nf", "{2*w}")]
+                ),
+                ("inner", 0, vec!["a"], vec![]),
+                (
+                    "ng",
+                    TOP_LEVEL,
+                    vec!["d", "s"],
+                    vec![("m", "1"), ("x", "{m + 1}")]
+                ),
+                // Values stripped by the remote filter.
+                ("bare", TOP_LEVEL, vec![], vec![("a", ""), ("b", "")]),
+            ]
+        );
+    }
+
+    #[test]
+    fn protected_blocks_are_counted_not_read() {
+        let lib = ".model a nmos\n.prot\n.model hidden nmos\n+ x\n.ends\n.lib zz\n.UNPROTECT\n.model b pmos\n.protect\n.subckt h a\n";
+        let s = scan(Path::new("m"), &ScanOptions::default(), fs(&[("m", lib)]));
+        let names: Vec<&str> = s.models.name.iter().map(|n| s.str(*n)).collect();
+        assert_eq!(names, ["a", "b"]);
+        assert!(s.issues.is_empty() && s.subckts.name.is_empty() && s.sections.text.is_empty());
+        assert_eq!(s.line_counts[LineKind::Protected as usize], 7);
     }
 
     #[test]

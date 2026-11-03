@@ -61,6 +61,7 @@ schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec im
 schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
+schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice [--section S]   (PDK scan below)
 ```
 
 Paths after `<project>` are relative to it. Each conversion writes a report next to its output
@@ -228,6 +229,24 @@ differ in shape (spec §6.4, §8.2).
 and an `xschemrc` fragment. Core devices land on xschem's own `devices/*.sym`, and cells first
 imported from xschem point back at their original symbols. The test suite netlists the export
 with a real xschem and compares it with Schemify's netlist.
+
+### PDK scan (remote PDKs)
+
+`schemify-interop pdk-scan` prints a PDK's device interface as Schemify cells, for the
+PDK-Manager plugin to serve as a library without anything from the kit landing on disk. It
+runs next to the kit (`ssh host schemify-interop pdk-scan --root /pdk/kit --entry
+models/top.lib --dialect hspice --section tt`) and reads only under `--root`. Each top-level
+`.subckt` becomes a cell with its ports in order; each MOS `.model` (bins collapsed) one with
+`d g s b`. The cells have `format spice` and `format spectre` and parameter names only:
+no defaults, bins or card values (a parameter is written only when an instance sets it).
+Other model types are counted in an `issue` line. `--protocol` prints `pdkscan 1`.
+
+Without the binary on the kit host, `pdk-scan --remote-script` prints a POSIX `sh` script
+that frames only the structural lines of the files it is given (`.model name type`,
+`.subckt` ports and parameter names, sections, includes). Pipe its output into a local
+`pdk-scan --stdin --root <dir> --entry <file> …`: same cells, plus a `need <path>` line per
+include to fetch next. The output format is in `src/pdk_scan.rs`. Spectre kits are not read
+yet.
 
 ## What does not cross
 

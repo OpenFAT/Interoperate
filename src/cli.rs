@@ -144,6 +144,25 @@ pub fn run(args: &[String]) -> u8 {
         Some((cmd, rest)) if cmd == "xschem-import" => xschem_import(rest),
         Some((cmd, rest)) if cmd == "pdk-derived" => pdk_derived(rest),
         Some((cmd, rest)) if cmd == "virtuoso-refresh" => virtuoso_refresh(rest),
+        Some((cmd, rest)) if cmd == "pdk-scan" => {
+            use std::io::{Read, Write};
+            let mut input = Vec::new();
+            let piped = rest.iter().any(|a| a == "--stdin");
+            let (out, code) = if piped && std::io::stdin().read_to_end(&mut input).is_err() {
+                (b"pdkscan 1\nerror \"cannot read stdin\"\nend\n".to_vec(), 2)
+            } else {
+                crate::pdk_scan::run(rest, &input)
+            };
+            let mut stdout = std::io::stdout().lock();
+            if stdout
+                .write_all(&out)
+                .and_then(|()| stdout.flush())
+                .is_err()
+            {
+                return 2;
+            }
+            code
+        }
         Some((cmd, rest))
             if cmd == "virtuoso-export"
                 || cmd == "virtuoso-import"
@@ -172,6 +191,7 @@ usage: schemify-interop virtuoso-export <project-dir> <cell-file>... -o <file.sf
        schemify-interop install-skill <dir>
        schemify-interop pdk-derived <project-dir> <char.sfyx>
        schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
+       schemify-interop pdk-scan --protocol | --remote-script | [--stdin] --root <dir> --entry <path> --dialect spice|hspice [--section <s>] [--lib <name>]
 (cell files, .sfyx paths and output paths are relative to <project-dir>)";
 
 /// Parses the arguments of a job subcommand into (project directory, command).
