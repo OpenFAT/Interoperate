@@ -292,10 +292,7 @@ fn mos_kind(kind: &str) -> bool {
 /// top-level `subckt` of the files `entry` reaches through `include` (`section=`: that
 /// section of the file), and every MOS `model` not already a subckt, names in their own
 /// case (Spectre is case-sensitive). Lines SpiceRack does not read are counted, never shown:
-/// they may be card data.
-// ponytail: SpiceRack keeps a section's body as raw text until its section support lands
-// (branch pdk-sections); until then a section's own includes are not followed, and an issue
-// line counts the sections read that way.
+/// they may be card data. A file read with a section (`.lib f s`, `include "f" section=s`) is that section only.
 fn rack_devices(
     entry: &Path,
     section: Option<&str>,
@@ -314,7 +311,7 @@ fn rack_devices(
         std::collections::VecDeque::from([(entry.to_path_buf(), section.map(str::to_owned), 0u8)]);
     let mut seen = BTreeSet::new();
     let mut out: Vec<Device> = Vec::new();
-    let (mut unread, mut sections) = (0usize, 0usize);
+    let mut unread = 0usize;
     while let Some((p, sec, depth)) = todo.pop_front() {
         if !seen.insert((p.clone(), sec.clone())) {
             continue;
@@ -344,8 +341,21 @@ fn rack_devices(
             }
         };
         unread += report.unparsed.len();
-        sections += usize::from(sec.is_some());
-        for sc in &ir.subcircuit_defs {
+        let (body, defs) = match &sec {
+            None => (&ir.top, &ir.subcircuit_defs),
+            Some(s) => match ir
+                .sections
+                .iter()
+                .find(|x| x.body.name.eq_ignore_ascii_case(s))
+            {
+                Some(x) => (&x.body, &x.subcircuit_defs),
+                None => {
+                    issues.push(format!("{}: no section {s}", shown(&p)));
+                    continue;
+                }
+            },
+        };
+        for sc in defs {
             let d = Device {
                 target: sc.name.clone(),
                 kind: Kind::Subckt,
@@ -354,7 +364,7 @@ fn rack_devices(
             };
             add(&mut out, issues, d);
         }
-        for m in &ir.top.models {
+        for m in &body.models {
             if mos_kind(&m.kind.to_ascii_lowercase()) && !out.iter().any(|d| d.target == m.name) {
                 let d = Device {
                     target: m.name.clone(),
@@ -365,8 +375,8 @@ fn rack_devices(
                 add(&mut out, issues, d);
             }
         }
-        let refs = ir.top.includes.iter().map(|f| (f, None));
-        let refs = refs.chain(ir.top.libs.iter().map(|(f, s)| (f, Some(s.clone()))));
+        let refs = body.includes.iter().map(|f| (f, None));
+        let refs = refs.chain(body.libs.iter().map(|(f, s)| (f, Some(s.clone()))));
         let dir = p.parent().unwrap_or(Path::new(""));
         for (f, s) in refs {
             if depth >= spice::MAX_INCLUDE_DEPTH {
@@ -383,11 +393,6 @@ fn rack_devices(
     if unread > 0 {
         issues.push(format!(
             "{unread} line(s) SpiceRack does not read (not shown)"
-        ));
-    }
-    if sections > 0 {
-        issues.push(format!(
-            "{sections} section reference(s): their own includes are not followed yet"
         ));
     }
     out

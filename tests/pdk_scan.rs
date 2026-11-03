@@ -373,13 +373,14 @@ fn scan_spectre() -> (String, u8) {
 }
 
 /// The card values of the Spectre fixture: none may leave the kit.
-const SPECTRE_CARDS: [&str; 7] = [
-    "0.4123", "1.17e-9", "-0.3876", "0.0123", "-0.0456", "0.031", "1k",
+const SPECTRE_CARDS: [&str; 8] = [
+    "0.4123", "1.17e-9", "-0.3876", "0.0123", "-0.0456", "0.031", "1k", "2k",
 ];
 
 /// A Spectre kit read with SpiceRack: subckt wrappers (an `inline subckt` and a `\`
 /// continuation included) and the top-level compact models are cells, names in their own
-/// case; corner sections are not cells; no card value appears.
+/// case; corner sections are not cells, but the selected one's include is followed and the
+/// other's is not; no card value appears.
 #[test]
 fn a_spectre_kit_reads_through_spicerack() {
     let (out, code) = scan_spectre();
@@ -393,7 +394,8 @@ fn a_spectre_kit_reads_through_spicerack() {
             "nfet_LVT.shprim",
             "pch_core.shprim",
             "pfet_lvt.shprim",
-            "rhigh.shprim"
+            "rhigh.shprim",
+            "tt_only.shprim"
         ],
         "{out}"
     );
@@ -414,10 +416,7 @@ fn a_spectre_kit_reads_through_spicerack() {
     for card in SPECTRE_CARDS {
         assert!(!out.contains(card), "{card} left the kit:\n{out}");
     }
-    assert!(
-        lines.iter().any(|l| l.contains("section reference")),
-        "{lines:?}"
-    );
+    assert!(!out.contains("ff_missing"), "{lines:?}");
     // Deterministic.
     assert_eq!(scan_spectre().0, out);
 }

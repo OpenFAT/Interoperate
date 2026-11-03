@@ -60,6 +60,8 @@ pub mod merge;
 pub mod nets;
 pub mod notes;
 #[cfg(feature = "cli")]
+pub mod pdk_models;
+#[cfg(feature = "cli")]
 pub mod pdk_scan;
 pub mod profile;
 pub mod remap;

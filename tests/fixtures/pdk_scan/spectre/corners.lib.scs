@@ -1,10 +1,12 @@
 // Corners: bare sections, no library block.
 section tt
 parameters dvth=0.0123
+include "tt_devices.scs"
 simulator lang=spice
 .param dtox=0.031
 simulator lang=spectre
 endsection tt
 section ff
 parameters dvth=-0.0456
+include "ff_missing.scs"
 endsection ff

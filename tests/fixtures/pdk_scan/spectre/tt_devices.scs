@@ -1,0 +1,4 @@
+// Only the tt corner reaches this file.
+subckt tt_only (a b)
+r0 (a b) resistor r=2k
+ends tt_only

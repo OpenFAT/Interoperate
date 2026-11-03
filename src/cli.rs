@@ -144,6 +144,11 @@ pub fn run(args: &[String]) -> u8 {
         Some((cmd, rest)) if cmd == "xschem-import" => xschem_import(rest),
         Some((cmd, rest)) if cmd == "pdk-derived" => pdk_derived(rest),
         Some((cmd, rest)) if cmd == "virtuoso-refresh" => virtuoso_refresh(rest),
+        Some((cmd, rest)) if cmd == "pdk-models" => {
+            let (out, code) = crate::pdk_models::run(rest);
+            print!("{out}");
+            code
+        }
         Some((cmd, rest)) if cmd == "pdk-scan" => {
             use std::io::{Read, Write};
             let mut input = Vec::new();
@@ -191,7 +196,8 @@ usage: schemify-interop virtuoso-export <project-dir> <cell-file|dir>... -o <fil
        schemify-interop install-skill <dir>
        schemify-interop pdk-derived <project-dir> <char.sfyx>
        schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
-       schemify-interop pdk-scan --protocol | --remote-script | [--stdin] --root <dir> --entry <path> --dialect spice|hspice [--section <s>] [--lib <name>]
+       schemify-interop pdk-scan --protocol | --remote-script | [--stdin] --root <dir> --entry <path> --dialect spice|hspice|spectre [--section <s>] [--lib <name>]
+       schemify-interop pdk-models --root <dir> --entry <relpath> --from <d> --to <d> -o <outdir>   (d: spice|hspice|spectre|vacask|xyce|rack)
 (cell files, .sfyx paths and output paths are relative to <project-dir>; a directory names every
 cell file under it)";
 
