@@ -61,6 +61,24 @@ fn a_spectre_kit_goes_through_the_store_unchanged() {
     for f in files {
         assert_eq!(read(&direct, f), read(&back, f), "{f}");
     }
+    // Two entries reaching the same files convert each once.
+    let twice = scratch("twice");
+    let args = [
+        "--root",
+        store.to_str().unwrap(),
+        "--entry",
+        "top.scs",
+        "--entry",
+        "devices.scs",
+        "--from",
+        "rack",
+        "--to",
+        "spectre",
+        "-o",
+        twice.to_str().unwrap(),
+    ];
+    assert_eq!(pdk_models::run(&args.map(String::from)), (want.into(), 1));
+    let _ = std::fs::remove_dir_all(twice);
 
     // And to SPICE: the devices survive.
     let spice = scratch("spice");
