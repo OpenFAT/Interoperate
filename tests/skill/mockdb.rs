@@ -61,6 +61,7 @@ pub const SIGNATURES: &[(&str, &str)] = &[
     ("dbProduceMemName", "t"),
     // Schematic editor (skcompref "PI Functions")
     ("schCreateInst", "d d T p t [n]"),
+    ("dbCreateInst", "d d T p t [n]"),
     ("schCreateWire", "d t t l n n n [t t]"),
     ("schCreateWireLabel", "d d p t t t t n g"),
     ("schCreateNetExpression", "d t d p t t t n"),
@@ -910,6 +911,35 @@ impl MockDb {
             self.push(inst, "instTerms", V::Obj(it));
         }
         self.push(cv, "instances", V::Obj(inst));
+        // Leaked cell CDF values (leak_to_cell) become the new instance's own properties.
+        let leaked: Vec<(String, V)> = s(&self.a(master, "libName"))
+            .zip(s(&self.a(master, "cellName")))
+            .and_then(|(l, c)| self.dd_find(l, Some(c), None, None))
+            .and_then(|c| Self::obj(&self.a(c, "sfyCellCdf")))
+            .map(|cdf| {
+                self.a(cdf, "parameters")
+                    .items()
+                    .iter()
+                    .filter_map(Self::obj)
+                    .filter(|&p| !matches!(self.a(p, "sfyLive"), V::Nil))
+                    .map(|p| {
+                        (
+                            s(&self.a(p, "name")).unwrap_or("").to_owned(),
+                            self.a(p, "sfyLive"),
+                        )
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        for (n, v) in leaked {
+            let ty = if matches!(v, V::Int(_)) {
+                "int"
+            } else {
+                "string"
+            };
+            self.call_fn("dbReplaceProp", &[V::Obj(inst), V::str(&n), V::str(ty), v])
+                .ok();
+        }
         self.touch(cv);
         inst
     }
@@ -1105,7 +1135,8 @@ impl MockDb {
         );
         for p in self.a(base, "parameters").items().to_vec() {
             let Some(p) = Self::obj(&p) else { continue };
-            let o = self.objs[p as usize].clone();
+            let mut o = self.objs[p as usize].clone();
+            o.attrs.insert("sfyCellOf".into(), V::str("cell"));
             self.objs.push(o);
             let id = (self.objs.len() - 1) as u32;
             self.push(cdf, "parameters", V::Obj(id));
@@ -1142,7 +1173,11 @@ impl MockDb {
             if s(&self.a(bp, "paramType")) == Some("button") {
                 continue;
             }
-            let v = self.a(p, "defValue");
+            // What the callbacks left in the cell CDF: its live value, else its default.
+            let v = match self.a(p, "sfyLive") {
+                V::Nil => self.a(p, "defValue"),
+                live => live,
+            };
             self.set_inst_param(bp, inst, v)?;
         }
         Ok(V::T)
@@ -1161,6 +1196,26 @@ impl MockDb {
                 _ => v,
             },
             _ => v,
+        }
+    }
+
+    /// Live ICADVM20.1 (a foundry FD-SOI PDK, `cdfleak` probes): setting a parameter through an
+    /// instance's CDF also sets the in-memory cell CDF's `value` (`sfyLive` here; its
+    /// `defValue` and the base CDF stay), and every instance made afterwards stores that
+    /// value as a property of its own ([`MockDb::new_inst`]).
+    fn leak_to_cell(&mut self, inst: u32, p: u32, v: V) {
+        let (lib, cell) = (self.a(inst, "libName"), self.a(inst, "cellName"));
+        let Some(c) = s(&lib)
+            .zip(s(&cell))
+            .and_then(|(l, c)| self.dd_find(l, Some(c), None, None))
+        else {
+            return;
+        };
+        let name = s(&self.a(p, "name")).unwrap_or("").to_owned();
+        if let Some(cdf) = Self::obj(&self.cell_cdf(c))
+            && let Some(cp) = self.cdf_param(cdf, &name)
+        {
+            self.put(cp, "sfyLive", v);
         }
     }
 
@@ -1391,6 +1446,11 @@ impl MockDb {
                     ],
                 );
                 if let Some(f) = a.get(1).and_then(Self::obj) {
+                    // An instance that becomes a pin figure takes purpose "pin" (live
+                    // ICADVM20.1).
+                    if self.ty(f) == "inst" {
+                        self.put(f, "purpose", V::str("pin"));
+                    }
                     self.put(pin, "fig", V::Obj(f));
                     self.put(pin, "figs", V::list(vec![V::Obj(f)]));
                     self.put(f, "pin", V::Obj(pin));
@@ -1532,6 +1592,33 @@ impl MockDb {
                     || self.ty(master) != "cellView"
                     || cv == master
                 {
+                    return Ok(V::Nil);
+                }
+                let orient = st(4);
+                if !ORIENTS.contains(&orient.as_str()) {
+                    return Err(bad(name, 5, "an orientation"));
+                }
+                let iname = match &a[2] {
+                    V::Str(n) => n.to_string(),
+                    _ => self.auto_name(cv, "I"),
+                };
+                if !Self::inst_name_ok(&iname) || self.inst_named(cv, &iname) {
+                    return Ok(V::Nil);
+                }
+                V::Obj(self.new_inst(
+                    cv,
+                    master,
+                    &iname,
+                    pt(&a[3]).expect("checked"),
+                    &orient,
+                    "cell",
+                ))
+            }
+            // An instance in any cellview (live ICADVM20.1: a symbol's pin figure, an
+            // instance of basic/sympin, named I0, I1, … when the name is nil).
+            "dbCreateInst" => {
+                let (cv, master) = (o(0), o(1));
+                if !self.editable(cv) || self.ty(master) != "cellView" || cv == master {
                     return Ok(V::Nil);
                 }
                 let orient = st(4);
@@ -2104,6 +2191,9 @@ impl MockDb {
                         None => self.a(id, "defValue"),
                     };
                 }
+                if !matches!(self.a(id, "sfyLive"), V::Nil) {
+                    return self.a(id, "sfyLive");
+                }
                 return self.a(id, "defValue");
             }
             _ => {}
@@ -2164,9 +2254,25 @@ impl MockDb {
             }
             ("cdfParam", "value") => {
                 if let Some(inst) = Self::obj(&self.a(id, "sfyInst")) {
-                    return self.set_inst_param(id, inst, v);
+                    let r = self.set_inst_param(id, inst, v.clone())?;
+                    self.leak_to_cell(inst, id, v);
+                    return Ok(r);
                 }
-                self.put(id, "defValue", v.clone());
+                // A cell CDF (cdfGetCellCDF) holds a live value beside its default; a base
+                // CDF's value is its default.
+                if s(&self.a(id, "sfyCellOf")).is_some() {
+                    self.put(
+                        id,
+                        "sfyLive",
+                        if super::equal(&v, &self.a(id, "defValue")) {
+                            V::Nil
+                        } else {
+                            v.clone()
+                        },
+                    );
+                } else {
+                    self.put(id, "defValue", v.clone());
+                }
             }
             ("cdfParam", _) => {
                 self.put(id, attr, v.clone());

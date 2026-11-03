@@ -868,18 +868,29 @@
         (SfyCreated (schCreateInst sfyCv m (nth 1 f) (SfyPt (nth 5 f) (nth 6 f)) (nth 7 f))
           lr (sprintf nil "instance %s" (nth 1 f)))))))
 
-;; ("spin" ref term dir lib cell view x y orient): a schematic pin.
+;; ("spin" ref term dir lib cell view x y orient): a pin drawn as an instance. In a
+;; schematic, a schematic pin; in a symbol (older symbols, Cadence's sample library: an
+;; instance of basic/sympin), the instance as a pin figure of the terminal its term
+;; record made (dbCreatePin gives it purpose pin, live ICADVM20.1).
 (procedure (SfyLoadSpin lr)
-  (let ((f (cdr (cadr lr))) (m nil) (p nil))
-    (when (SfySchematicP lr)
-      (setq m (SfyMaster (nth 3 f) (nth 4 f) (nth 5 f)))
-      (if (null m)
-        (SfyRefuse (car lr) (sprintf nil "no master %s/%s/%s" (nth 3 f) (nth 4 f) (nth 5 f)))
-        (progn
-          (setq p (schCreatePin sfyCv m (nth 1 f) (nth 2 f) nil (SfyPt (nth 6 f) (nth 7 f)) (nth 8 f)))
-          ;; GUESS(G11): schCreatePin returns the pin instance; a pin object gives its fig.
-          (when (and p (equal (getSGq p objType) "pin")) (setq p (SfyPinFig p)))
-          (SfyCreated p lr (sprintf nil "schematic pin %s" (nth 1 f))))))))
+  (let ((f (cdr (cadr lr))) (m nil) (p nil) (term nil))
+    (setq m (SfyMaster (nth 3 f) (nth 4 f) (nth 5 f)))
+    (cond
+      ((null m)
+        (SfyRefuse (car lr) (sprintf nil "no master %s/%s/%s" (nth 3 f) (nth 4 f) (nth 5 f))))
+      ((equal (getSGq sfyCv cellViewType) "schematic")
+        (setq p (schCreatePin sfyCv m (nth 1 f) (nth 2 f) nil (SfyPt (nth 6 f) (nth 7 f)) (nth 8 f)))
+        ;; GUESS(G11): schCreatePin returns the pin instance; a pin object gives its fig.
+        (when (and p (equal (getSGq p objType) "pin")) (setq p (SfyPinFig p)))
+        (SfyCreated p lr (sprintf nil "schematic pin %s" (nth 1 f))))
+      (t
+        (setq term (arrayref sfyTerms (nth 1 f)))
+        (if (null term)
+          (SfyRefuse (car lr) (sprintf nil "pin instance of unknown terminal %s" (nth 1 f)))
+          (progn
+            (setq p (dbCreateInst sfyCv m nil (SfyPt (nth 6 f) (nth 7 f)) (nth 8 f)))
+            (when (and p (not (dbCreatePin (getSGq term net) p nil term))) (setq p nil))
+            (SfyCreated p lr (sprintf nil "symbol pin %s" (nth 1 f)))))))))
 
 ;; ("wire" ref points width): schCreateWire "draw", snapped to one database unit.
 (procedure (SfyLoadWire lr)
@@ -936,34 +947,22 @@
         ("ellipse" (dbCreateEllipse sfyCv lpp (SfyPts c)))
         ("arc"
           ;; coords (x1 y1 x2 y2 a0 a1): the ellipse box, then the angles in micro-radians.
-          ;; dbCreateArc takes the ellipse box and the arc's own box, and the arc is the part
-          ;; of the ellipse inside that box (a live run refused the ellipse box twice:
-          ;; DB-270000).
-          (dbCreateArc sfyCv lpp (SfyPts (list (nth 0 c) (nth 1 c) (nth 2 c) (nth 3 c)))
-            (SfyPts (SfyArcBox c))))
+          ;; Made as the ellipse's upper half, then given its own angles: dbCreateArc refuses
+          ;; the ellipse box and any arc box with an edge inside the ellipse (DB-270000, live
+          ;; ICADVM20.1), and takes the angles exactly as it reports them.
+          (SfyArcAngles
+            (dbCreateArc sfyCv lpp (SfyPts (list (nth 0 c) (nth 1 c) (nth 2 c) (nth 3 c)))
+              (SfyPts (list (nth 0 c) (quotient (plus (nth 1 c) (nth 3 c)) 2.0) (nth 2 c) (nth 3 c))))
+            c))
         (t nil)))
     (SfyCreated s lr (sprintf nil "%s shape" (nth 1 f)))))
 
-;; The box of an arc (x1 y1 x2 y2 a0 a1: its ellipse box in dump units, then its angles in
-;; micro-radians, counter-clockwise, y up): its two ends and every axis point of the ellipse
-;; between them.
-(procedure (SfyArcBox c)
-  (let ((cx (quotient (plus (nth 0 c) (nth 2 c)) 2.0)) (cy (quotient (plus (nth 1 c) (nth 3 c)) 2.0))
-        (rx (quotient (difference (nth 2 c) (nth 0 c)) 2.0))
-        (ry (quotient (difference (nth 3 c) (nth 1 c)) 2.0))
-        (a0 (quotient (float (nth 4 c)) 1000000.0)) (a1 (quotient (float (nth 5 c)) 1000000.0))
-        (twopi 6.283185307179586) (xs nil) (ys nil) (q 0.0))
-    (when (lessp a1 a0) (setq a1 (plus a1 twopi)))
-    (foreach a (list a0 a1)
-      (setq xs (cons (plus cx (times rx (cos a))) xs))
-      (setq ys (cons (plus cy (times ry (sin a))) ys)))
-    (for k 0 7
-      (setq q (times k 1.5707963267948966))
-      (when (and (greaterp q a0) (lessp q a1))
-        (setq xs (cons (plus cx (times rx (cos q))) xs))
-        (setq ys (cons (plus cy (times ry (sin q))) ys))))
-    (list (round (apply 'min xs)) (round (apply 'min ys))
-          (round (apply 'max xs)) (round (apply 'max ys)))))
+;; Arc a (nil passes through) with the angles of coords c (micro-radians), as dumped.
+(procedure (SfyArcAngles a c)
+  (when a
+    (setSGq a (quotient (float (nth 4 c)) 1000000.0) startAngle)
+    (setSGq a (quotient (float (nth 5 c)) 1000000.0) stopAngle))
+  a)
 
 ;; ---------------------------------------------------------------- properties
 
@@ -987,7 +986,9 @@
       (setq sfyCdf (cdfGetInstCDF sfyO)))
     (cond
       ((null sfyO) nil)
-      (sfyCdf (SfyLoadParams sfyO sfyCdf sfyG))
+      (sfyCdf
+        (let ((sfyKept (SfyCellKeep sfyO)))
+          (unwindProtect (SfyLoadParams sfyO sfyCdf sfyG) (SfyCellPut sfyKept))))
       (t (foreach sfyLr sfyG (SfyReplaceProp sfyO sfyLr))))))
 
 ;; ("prop" ref name type value) through dbReplaceProp.
@@ -1192,7 +1193,31 @@
 ;; (SfyCallbacks). Returns t, or a string naming the first failure: a parameter missing, one
 ;; the PDK locks (editable "nil": map the editable one, such as fingers rather than nf), or
 ;; "callback: ..." for a callback that failed (the values are set).
+;; The cell CDF's values are kept around it (SfyCellKeep).
 (procedure (SfySetParams sfyInst sfyParams sfyCallbacks)
+  (let ((sfyKept (SfyCellKeep sfyInst)))
+    (unwindProtect
+      (SfySetParams1 sfyInst sfyParams sfyCallbacks)
+      (SfyCellPut sfyKept))))
+
+;; Setting a parameter through an instance's CDF also sets the in-memory cell CDF's value,
+;; which every instance made afterwards in the session takes as its default (live
+;; ICADVM20.1, one PDK). So every write through an instance CDF is bracketed: the master's
+;; cell CDF values (param value) before it, put back after it, whatever happened; the
+;; instance keeps what was set, a property of its own.
+(procedure (SfyCellKeep sfyInst)
+  (let ((sfyCell (car (errset (cdfGetCellCDF (ddGetObj (getSGq sfyInst libName)
+                                                       (getSGq sfyInst cellName)))
+                              nil)))
+        (sfyKept nil))
+    (foreach sfyQ (and sfyCell (getSGq sfyCell parameters))
+      (setq sfyKept (cons (list sfyQ (getSGq sfyQ value)) sfyKept)))
+    sfyKept))
+
+(procedure (SfyCellPut sfyKept)
+  (foreach sfyX sfyKept (setSGq (car sfyX) (cadr sfyX) value)))
+
+(procedure (SfySetParams1 sfyInst sfyParams sfyCallbacks)
   (prog (sfyCdf sfyP sfyV sfyTy sfyWhy sfyNames)
     (setq sfyCdf (cdfGetInstCDF sfyInst))
     (unless sfyCdf (return "the instance has no CDF"))

@@ -293,7 +293,7 @@
     ddGetObj ddGetObjWritePath dbOpenCellViewByType dbSave dbClose dbPurge
     dbGetOpenCellViews dbDeleteObject dbFindTermByName dbTransformPoint dbTransformBBox
     dbGetTermNetExpr dbMakeNet dbCreateTerm dbCreatePin dbCreateTermNetExpr dbCreateRect
-    dbCreateLine dbCreatePath dbCreatePolygon dbCreateEllipse dbCreateArc dbCreateLabel
+    dbCreateLine dbCreatePath dbCreatePolygon dbCreateEllipse dbCreateArc dbCreateLabel dbCreateInst
     dbReplaceProp dbCreateProp dbProduceMemName schCreateInst schCreateWire
     schCreateWireLabel schCreateNetExpression schCreatePin schCreateNoteLabel schGlueLabel
     schCheck schSolder cdfGetBaseCellCDF cdfCreateBaseCellCDF cdfDeleteCDF cdfCreateParam

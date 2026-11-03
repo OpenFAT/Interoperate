@@ -521,6 +521,20 @@ pub fn merge(
             }
             continue;
         }
+        if k.0 == RecordKind::Inst
+            && !std::ptr::eq(src as *const _ as *const u8, fresh as *const _ as *const u8)
+        {
+            // Derived values are Virtuoso's (D20 as amended): the fresh dump's `cached`
+            // lines, never a kept unit's, which an edit since made stale and the callbacks
+            // have redone.
+            copy_skipping(&mut out, src, r, &[VIMG, "cached"]);
+            if let Some(fr) = find(&fkeys, &k) {
+                for a in fresh.attrs(fr).filter(|&a| fresh.attr_key(a) == "cached") {
+                    copy_attr(&mut out, fresh, a);
+                }
+            }
+            continue;
+        }
         copy_skipping(&mut out, src, r, &[VIMG]);
     }
     if let Some(b) = base {
@@ -759,6 +773,38 @@ mod tests {
     #[should_panic(expected = "is not a rank-1 record")]
     fn schemify_only_attributes_are_a_rank_1_question() {
         schemify_only_attr(RecordKind::Wire, "bus", None);
+    }
+
+    /// A kept instance (the Virtuoso side left it alone) still takes the fresh dump's
+    /// `cached` lines: the local ones went stale with an edit the callbacks redid.
+    #[test]
+    fn cached_values_come_from_the_dump_whatever_unit_is_kept() {
+        let inst = |c: &str| {
+            format!(
+                "schemify 1 shcomp\n\nimpl schematic schematic\n\ninst aaaaaa pdk:mos\n  at 0 0 R0\n  name M0\n  m 2\n{c}"
+            )
+        };
+        let local = doc(&inst("  cached ad 1f 0000000000000001\n"));
+        let fresh = doc(&inst("  cached ad 2f 0000000000000002\n"));
+        let mut notes = Notes::default();
+        let m = write(&merge(&fresh, Some(&local), None, false, "c", &mut notes));
+        assert!(m.contains("  cached ad 2f 0000000000000002\n"), "{m}");
+        assert!(!m.contains("1f"), "{m}");
+        // Kept through the stash (its digest is the fresh unit's): the same.
+        let st = stash(&local, Some(&fresh)).unwrap();
+        let s = parse_stash(&st, FileKind::Shcomp).unwrap();
+        let m = write(&merge(
+            &fresh,
+            Some(&local),
+            Some(&s),
+            false,
+            "c",
+            &mut notes,
+        ));
+        assert!(
+            m.contains("  cached ad 2f 0000000000000002\n") && !m.contains("1f"),
+            "{m}"
+        );
     }
 
     #[test]

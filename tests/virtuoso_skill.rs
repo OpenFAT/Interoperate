@@ -870,3 +870,36 @@ fn a_skill_error_costs_one_cellview_and_the_log_still_closes() {
         "{log}"
     );
 }
+
+/// Two shapes of Cadence's sample library the loader once refused (live ICADVM20.1,
+/// `--lib sample`): an arc whose stop angle is below its start (Virtuoso reports angles in
+/// (-π, π]), and a symbol pin drawn as an instance of basic/sympin. Each loads into a
+/// symbol and dumps back as the same record.
+#[test]
+fn a_negative_arc_and_a_symbol_pin_instance_load_and_dump_back() {
+    let mut i = fixtures();
+    let dump = "(\"sfyx\" 1 \"t\")\n(\"lib\" \"work\")\n(\"cell\" \"oldsym\" \"design\")\n\
+                (\"cv\" \"symbol\" \"schematicSymbol\" 160000)\n(\"term\" \"A\" \"input\" \"\")\n\
+                (\"spin\" 1 \"A\" \"input\" \"basic\" \"sympin\" \"symbolr\" 0 -20000 \"R0\")\n\
+                (\"shape\" 2 \"arc\" \"device\" \"drawing\" (14000 -1000 22000 7000 0 -2888913) 0)\n(\"end\")\n";
+    i.files.insert("/t/old.sfyx".into(), dump.into());
+    let ok = run(
+        &mut i,
+        r#"(SfyImport "/t/old.sfyx" ?lib "scratch" ?overwrite t)"#,
+    );
+    assert!(ok.truthy(), "{}", file(&i, "/t/old.sfyx.log"));
+    assert!(
+        run(
+            &mut i,
+            r#"(SfyExport "/t/back.sfyx" "scratch" (list "oldsym"))"#
+        )
+        .truthy()
+    );
+    let back = file(&i, "/t/back.sfyx");
+    for rec in [
+        "(\"spin\" 1 \"A\" \"input\" \"basic\" \"sympin\" \"symbolr\" 0 -20000 \"R0\")",
+        "\"arc\" \"device\" \"drawing\" (14000 -1000 22000 7000 0 -2888913) 0)",
+    ] {
+        assert!(back.contains(rec), "{rec} not in\n{back}");
+    }
+}
