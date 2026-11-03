@@ -59,6 +59,8 @@ schemify-interop virtuoso-import <project> <file.sfyx> [--lib L=V]... [--analogl
 schemify-interop xschem-export   <project> <cell-file>... -o <dir>
 schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec import.md)
 schemify-interop install-skill   <dir>
+schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
+schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
 ```
 
 Paths after `<project>` are relative to it. Each conversion writes a report next to its output
@@ -129,6 +131,25 @@ these cells export back to the real PDK cells by name, so geometry and parameter
 To simulate with ngspice in Schemify, give each mirror device a `format spice` template, or add
 `spice "…"` to its row in `interop.map`. Formats you add survive later re-imports. A commercial
 PDK's mirror holds its symbols and parameter names: keep that library out of public repositories.
+
+### Derived parameters (CDF callbacks)
+
+A PDK's CDF callbacks derive netlisted parameters (`ad`, `pd`, `nrd`, …) from the ones you
+set. Only Virtuoso runs them, so Schemify never computes these values: it keeps Virtuoso's.
+
+1. Find which parameters are derived, once per PDK: in Virtuoso,
+   `SfyCharacterize("/tmp/char.sfyx" "demopdk" list("nmos_demo" "pmos_demo") "scratchLib")`
+   (a few probes per device on a throwaway schematic; the file names the PDK's parameters,
+   so it stays on your machine). Then `schemify-interop pdk-derived <project> char.sfyx`
+   marks them on the mirror cells (`vderived`).
+2. Each instance then carries Virtuoso's values (`cached`) from the import. Resize it in
+   Schemify and they are stale: Run is blocked (`E039`) and an export leaves them to the
+   callbacks (`SfyImport ?callbacks t`), whose values the next import brings back.
+3. To refresh them without sending the design: `schemify-interop virtuoso-refresh
+   <project> --scratch scratchLib -o refresh/` writes `refresh/refresh.il`; load it in
+   Virtuoso after `schemify.il` (it measures the stale instances' sizes on a scratch
+   schematic and touches no design), then `schemify-interop virtuoso-refresh <project>
+   --apply refresh/`.
 
 ### Bring a design from Virtuoso
 
@@ -214,8 +235,8 @@ Every conversion lists its losses in the report. The main ones:
 
 - Virtuoso config views (hierarchy editor), and maestro Monte Carlo and optimizer setups. They
   are kept on the Schemify side.
-- PDK CDF callbacks inside Schemify. Derived parameters (`ad`, `as`, finger widths) are
-  computed by the PDK when you load with `?callbacks t`.
+- PDK CDF callbacks inside Schemify. Derived parameters (`ad`, `as`, finger widths) stay
+  Virtuoso's: see "Derived parameters" above.
 - Cosmetic Virtuoso fields on cellviews you redraw: label fonts, justification,
   `cdsName()` versus `[@instanceName]` labels.
 - xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers.

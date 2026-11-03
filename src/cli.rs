@@ -142,7 +142,8 @@ fn slash(p: &Path) -> String {
 pub fn run(args: &[String]) -> u8 {
     match args.split_first() {
         Some((cmd, rest)) if cmd == "xschem-import" => xschem_import(rest),
-        Some((cmd, rest)) if cmd == "pdk-rules" => pdk_rules(rest),
+        Some((cmd, rest)) if cmd == "pdk-derived" => pdk_derived(rest),
+        Some((cmd, rest)) if cmd == "virtuoso-refresh" => virtuoso_refresh(rest),
         Some((cmd, rest))
             if cmd == "virtuoso-export"
                 || cmd == "virtuoso-import"
@@ -169,7 +170,8 @@ usage: schemify-interop virtuoso-export <project-dir> <cell-file>... -o <file.sf
        schemify-interop virtuoso-import <project-dir> <file.sfyx> [--analoglib] [--lib L=V]...
        schemify-interop xschem-export <project-dir> <cell-file>... -o <out-dir>
        schemify-interop install-skill <dir>
-       schemify-interop pdk-rules <project-dir> <char.sfyx>
+       schemify-interop pdk-derived <project-dir> <char.sfyx>
+       schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
 (cell files, .sfyx paths and output paths are relative to <project-dir>)";
 
 /// Parses the arguments of a job subcommand into (project directory, command).
@@ -272,24 +274,19 @@ fn drive(project: &Path, command: crate::job::Command) -> u8 {
     }
 }
 
-/// `pdk-rules <project-dir> <char.sfyx>` (spec `interop.md` §8.3): applies the rules a
-/// characterization explains to the project's mirror cells (`computed`, `vderived`,
-/// `valid`) and drops the overrides of the now-computed params from every design instance
-/// of those cells. Prints what it did; 0 done, 1 nothing applied, 2 usage or I/O error.
-fn pdk_rules(args: &[String]) -> u8 {
+/// `pdk-derived <project-dir> <char.sfyx>` (spec `interop.md` §8.3): marks the params a
+/// characterization found derived on the project's mirror cells (`vderived`, header
+/// `vinputs`). Prints what it did; 0 done, 1 nothing marked, 2 usage or I/O error.
+fn pdk_derived(args: &[String]) -> u8 {
     use crate::virtuoso::characterize;
     let [project, char_file] = args else {
-        eprintln!("usage: schemify-interop pdk-rules <project-dir> <char.sfyx>");
+        eprintln!("usage: schemify-interop pdk-derived <project-dir> <char.sfyx>");
         return 2;
     };
     let project = Path::new(project);
-    let io = |p: &Path, e: std::io::Error| {
-        eprintln!("schemify-interop: {}: {e}", p.display());
-        2
-    };
     let text = match std::fs::read_to_string(char_file) {
         Ok(t) => t,
-        Err(e) => return io(Path::new(char_file), e),
+        Err(e) => return io_err(Path::new(char_file), e),
     };
     let devs = match characterize::read(&text) {
         Ok(d) => d,
@@ -301,13 +298,10 @@ fn pdk_rules(args: &[String]) -> u8 {
     let manifest = project.join("schemify.project");
     let libs = match std::fs::read(&manifest) {
         Ok(b) => crate::design::manifest_libs(&b).unwrap_or_default(),
-        Err(e) => return io(&manifest, e),
+        Err(e) => return io_err(&manifest, e),
     };
-    let mut designs = Vec::new();
-    walk_designs(project, &mut designs);
-    let mut applied = 0;
+    let mut marked = 0;
     for d in &devs {
-        let rules = d.rules();
         let dir = libs.get(&d.lib).map_or(d.lib.as_str(), String::as_str);
         let cell = project.join(dir).join(format!("{}.shprim", d.cell));
         let Ok(bytes) = std::fs::read(&cell) else {
@@ -319,7 +313,7 @@ fn pdk_rules(args: &[String]) -> u8 {
             );
             continue;
         };
-        let out = match characterize::apply_rules(&bytes, &rules) {
+        let out = match characterize::mark_derived(&bytes, d) {
             Ok(o) => o,
             Err(e) => {
                 eprintln!("schemify-interop: {}: {e}", cell.display());
@@ -327,48 +321,125 @@ fn pdk_rules(args: &[String]) -> u8 {
             }
         };
         if let Err(e) = std::fs::write(&cell, out) {
-            return io(&cell, e);
+            return io_err(&cell, e);
         }
-        applied += 1;
-        let names: Vec<&str> = rules.computed.iter().map(|c| c.0.as_str()).collect();
-        let cellref = format!("{}:{}", d.lib, d.cell);
-        let mut dropped = 0;
-        for f in &designs {
-            let Ok(b) = std::fs::read(f) else { continue };
-            if let Some((t, n)) = characterize::strip_overrides(&b, &cellref, &names) {
-                if let Err(e) = std::fs::write(f, t) {
-                    return io(f, e);
-                }
-                dropped += n;
-            }
-        }
+        marked += 1;
         println!(
-            "{}/{}: computed {} ({}), unexplained {}, valid on ({}), unruled ({}), checked at {} points; {} instance override(s) dropped",
+            "{}/{}: derived ({}) from inputs ({})",
             d.lib,
             d.cell,
-            names.len(),
-            names.join(" "),
-            if rules.unexplained.is_empty() {
-                "none".into()
-            } else {
-                rules.unexplained.join(" ")
-            },
-            rules
-                .legal
-                .iter()
-                .map(|l| l.0.as_str())
-                .collect::<Vec<_>>()
-                .join(" "),
-            rules.unruled.join(" "),
-            rules.points,
-            dropped
+            d.derived().join(" "),
+            d.inputs.join(" ")
         );
     }
-    if applied == 0 { 1 } else { 0 }
+    if marked == 0 { 1 } else { 0 }
 }
 
-/// Every `.shcomp`/`.shbench` under `dir`, recursively, sorted (`.schemify/` skipped).
-fn walk_designs(dir: &Path, out: &mut Vec<PathBuf>) {
+fn io_err(p: &Path, e: std::io::Error) -> u8 {
+    eprintln!("schemify-interop: {}: {e}", p.display());
+    2
+}
+
+/// `virtuoso-refresh <project-dir> --scratch <lib> -o <dir>` writes `<dir>/refresh.il`, the
+/// SKILL that measures the derived values of every instance whose cached ones are stale
+/// (spec §8.3); `virtuoso-refresh <project-dir> --apply <dir>` writes the measured values
+/// (`<dir>/refresh.*.sfyx`) back as fresh `cached` lines. 0 done, 1 something stays stale,
+/// 2 usage or I/O error.
+fn virtuoso_refresh(args: &[String]) -> u8 {
+    use crate::virtuoso::characterize;
+    const USAGE: &str = "usage: schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir>\n       schemify-interop virtuoso-refresh <project-dir> --apply <dir>";
+    // scratch: Some to write the request, None to apply the measurements.
+    let (project, dir, scratch) = match args {
+        [p, s, lib, o, d] | [p, o, d, s, lib] if s == "--scratch" && o == "-o" => (p, d, Some(lib)),
+        [p, a, d] if a == "--apply" => (p, d, None),
+        _ => {
+            eprintln!("{USAGE}");
+            return 2;
+        }
+    };
+    let project = Path::new(project);
+    let mut paths = Vec::new();
+    walk_cells(project, &mut paths);
+    let mut files = crate::design::Files::new();
+    for p in paths.iter().chain([&project.join("schemify.project")]) {
+        match std::fs::read(p) {
+            Ok(b) => {
+                let rel = slash(p.strip_prefix(project).unwrap_or(p));
+                files.insert(rel, b);
+            }
+            Err(e) => return io_err(p, e),
+        }
+    }
+    let dir = Path::new(dir);
+    if let Some(scratch) = scratch {
+        let (wants, notes) = characterize::refresh_wants(&files);
+        for n in &notes {
+            println!("{n}");
+        }
+        if wants.is_empty() {
+            println!("nothing to refresh: every cached derived value is fresh");
+            return u8::from(!notes.is_empty());
+        }
+        if let Err(e) = std::fs::create_dir_all(dir) {
+            return io_err(dir, e);
+        }
+        let abs = std::fs::canonicalize(dir).unwrap_or_else(|_| dir.to_path_buf());
+        let il = dir.join("refresh.il");
+        let text = characterize::refresh_skill(&wants, &slash(&abs), scratch);
+        if let Err(e) = std::fs::write(&il, text) {
+            return io_err(&il, e);
+        }
+        let n: usize = wants.iter().map(|w| w.points.len()).sum();
+        println!(
+            "{n} point(s) of {} cell(s) to measure: in Virtuoso, load(\"schemify.il\") then load(\"{}\"); then virtuoso-refresh {} --apply {}",
+            wants.len(),
+            slash(&abs.join("refresh.il")),
+            slash(project),
+            slash(dir)
+        );
+        return 0;
+    }
+    let mut measured = Vec::new();
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        eprintln!("schemify-interop: cannot read {}", dir.display());
+        return 2;
+    };
+    let mut found: Vec<PathBuf> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with("refresh.") && n.ends_with(".sfyx"))
+        })
+        .collect();
+    found.sort();
+    for f in &found {
+        match std::fs::read_to_string(f).map(|t| characterize::read(&t)) {
+            Ok(Ok(d)) => measured.extend(d),
+            Ok(Err(e)) => {
+                eprintln!("schemify-interop: {}: {e}", f.display());
+                return 2;
+            }
+            Err(e) => return io_err(f, e),
+        }
+    }
+    let (changed, notes) = characterize::refresh_apply(&files, &measured);
+    for (rel, bytes) in &changed {
+        let p = project.join(rel);
+        if let Err(e) = std::fs::write(&p, bytes) {
+            return io_err(&p, e);
+        }
+    }
+    for n in &notes {
+        println!("{n}");
+    }
+    println!("{} file(s) refreshed", changed.len());
+    u8::from(!notes.is_empty())
+}
+
+/// Every Schemify cell file under `dir`, recursively, sorted (`.schemify/` skipped).
+fn walk_cells(dir: &Path, out: &mut Vec<PathBuf>) {
     let Ok(entries) = std::fs::read_dir(dir) else {
         return;
     };
@@ -377,11 +448,11 @@ fn walk_designs(dir: &Path, out: &mut Vec<PathBuf>) {
     for p in v {
         if p.is_dir() {
             if p.file_name().is_some_and(|n| n != ".schemify") {
-                walk_designs(&p, out);
+                walk_cells(&p, out);
             }
         } else if p
             .extension()
-            .is_some_and(|x| x == "shcomp" || x == "shbench")
+            .is_some_and(|x| x == "shprim" || x == "shcomp" || x == "shbench")
         {
             out.push(p);
         }

@@ -2371,6 +2371,25 @@ fn derived_digest(c: &Cell, rec: u32, master: &Cell) -> Option<String> {
     })
 }
 
+/// A constant value of a param of Schemify `kind` as the CDF text [`override_prop`] sends
+/// for it (a boolean as `TRUE`/`FALSE`); `None` when it has no such form.
+pub(crate) fn constant_cdf_text(kind: &str, val: &str) -> Option<String> {
+    match kind {
+        "int" => val
+            .trim()
+            .parse::<i64>()
+            .is_ok()
+            .then(|| val.trim().to_owned()),
+        "bool" => match val.trim() {
+            "true" => Some("TRUE".into()),
+            "false" => Some("FALSE".into()),
+            _ => None,
+        },
+        "string" | "choice" => ael::template_to_literal(val),
+        _ => ael::to_ael(val, |_| Name::Unknown).ok().map(|t| t.text),
+    }
+}
+
 /// One instance override as a CDF property (§6.2, §3.4); `None` (reviewed) when it has
 /// no Virtuoso form, so the instance keeps the CDF default.
 fn override_prop(

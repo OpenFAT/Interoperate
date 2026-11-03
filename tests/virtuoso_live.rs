@@ -481,44 +481,33 @@ fn cell_roles(text: &str) -> Vec<(String, String)> {
         .collect()
 }
 
-/// INFO lines from a characterization file (`SfyCharacterize`, spec §8.3): per device, of
-/// the netlisted parameters, which change with the inputs (derived by the PDK's callbacks),
-/// which are inputs, which stay constant. Names and counts only: the values stay in the
-/// file, on the user's machine.
+/// INFO lines from a characterization file (`SfyCharacterize`, spec §8.3): per device,
+/// the inputs and the netlisted params their probes move (derived by the PDK's callbacks).
+/// Names and counts only: the values stay in the file, on the user's machine.
 fn characterization_summary(text: &str) -> Vec<String> {
     match interop::virtuoso::characterize::read(text) {
         Err(e) => vec![format!("FAIL pdk.derived the characterization does not read: {e}")],
         Ok(devs) => devs
             .iter()
-            .flat_map(|d| {
-                let s = d.summary();
-                [
-                    format!(
-                        "INFO pdk.derived {}/{}: {} points ({} with a failed callback); {} netlisted parameter(s) change with the inputs beyond the inputs themselves: {}",
-                        d.lib,
-                        d.cell,
-                        s.ok,
-                        s.failed,
-                        s.derived.len(),
-                        s.derived.join(" ")
-                    ),
-                    format!(
-                        "INFO pdk.constant {}/{}: {} netlisted parameter(s) keep one value; inputs: {}",
-                        d.lib,
-                        d.cell,
-                        s.constant.len(),
-                        s.inputs.join(" ")
-                    ),
-                ]
+            .map(|d| {
+                let derived = d.derived();
+                format!(
+                    "INFO pdk.derived {}/{}: {} probe(s); {} netlisted parameter(s) the callbacks derive: {}; inputs: {}",
+                    d.lib,
+                    d.cell,
+                    d.probes.len(),
+                    derived.len(),
+                    derived.join(" "),
+                    d.inputs.join(" ")
+                )
             })
             .collect(),
     }
 }
 
-/// Applies the characterization's rules to the mirror project at `proj` and grades them:
-/// PASS when every derived param has a rule that reproduces every point, WARN naming the
-/// params left to Virtuoso's values otherwise.
-fn apply_pdk_rules(proj: &Path, text: &str) -> Vec<String> {
+/// Marks the characterization's derived params on the mirror cells of project `proj`
+/// (`vderived`, header `vinputs`, §8.3): one `pdk.mark` line per device.
+fn mark_pdk(proj: &Path, text: &str) -> Vec<String> {
     use interop::virtuoso::characterize;
     let Ok(devs) = characterize::read(text) else {
         return Vec::new();
@@ -528,93 +517,126 @@ fn apply_pdk_rules(proj: &Path, text: &str) -> Vec<String> {
         .unwrap_or_default();
     devs.iter()
         .map(|d| {
-            let rules = d.rules();
-            let id = format!("pdk.rules.{}.{}", d.lib, d.cell);
+            let id = format!("pdk.mark.{}.{}", d.lib, d.cell);
             let dir = libs.get(&d.lib).map_or(d.lib.as_str(), String::as_str);
             let cell = proj.join(dir).join(format!("{}.shprim", d.cell));
             let Some(bytes) = std::fs::read(&cell).ok() else {
                 return format!("FAIL {id} no mirror cell {}", path_str(&cell));
             };
-            match characterize::apply_rules(&bytes, &rules) {
+            match characterize::mark_derived(&bytes, d) {
                 Err(e) => format!("FAIL {id} {e}"),
                 Ok(out) => {
                     write(&cell, out.as_bytes());
-                    let names: Vec<&str> = rules.computed.iter().map(|c| c.0.as_str()).collect();
-                    let legal: Vec<&str> = rules.legal.iter().map(|c| c.0.as_str()).collect();
-                    if rules.unexplained.is_empty() && rules.unruled.is_empty() {
-                        format!(
-                            "PASS {id} {} computed ({}) reproduce all {} points; valid on ({})",
-                            names.len(),
-                            names.join(" "),
-                            rules.points,
-                            legal.join(" ")
-                        )
-                    } else if rules.unexplained.is_empty() {
-                        format!(
-                            "WARN {id} {} computed ({}); the rewrites of {} follow no legality rule",
-                            names.len(),
-                            names.join(" "),
-                            rules.unruled.join(" ")
-                        )
-                    } else {
-                        let unruled = if rules.unruled.is_empty() {
-                            String::new()
-                        } else {
-                            format!(
-                                "; the rewrites of {} follow no legality rule",
-                                rules.unruled.join(" ")
-                            )
-                        };
-                        format!(
-                            "WARN {id} {} computed ({}); no rule for {}: they keep Virtuoso's values{unruled}",
-                            names.len(),
-                            names.join(" "),
-                            rules.unexplained.join(" ")
-                        )
-                    }
+                    format!(
+                        "PASS {id} {} derived ({}) marked, cached per instance against inputs ({})",
+                        d.derived().len(),
+                        d.derived().join(" "),
+                        d.inputs.join(" ")
+                    )
                 }
             }
         })
         .collect()
 }
 
-/// PASS/FAIL lines for the holdout check of every characterized device with rules: each
-/// computed param's worst relative error at the holdout points (errors only, no values).
-fn holdout_rows(out: &Path, char_text: &str) -> Vec<String> {
-    use interop::virtuoso::characterize;
-    let mut rows = Vec::new();
-    for d in characterize::read(char_text).unwrap_or_default() {
-        let rules = d.rules();
-        if rules.computed.is_empty() {
-            continue;
+/// The refresh edit (§8.3): in `files`, the first instance of a marked mirror cell with
+/// cached derived values gets its first number input doubled. Returns the files changed
+/// and (design file, instance name) of the edit; `None` when no instance qualifies.
+fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, String)> {
+    use schemify_format::{RecordKind, parse};
+    for (path, bytes) in files
+        .iter()
+        .filter(|f| f.0.ends_with(".shcomp") || f.0.ends_with(".shbench"))
+    {
+        let d = parse(bytes).ok()?;
+        for r in (1..d.record_count()).filter(|&r| d.record_kind(r) == RecordKind::Inst) {
+            if !d.attrs(r).any(|a| d.attr_key(a) == "cached") {
+                continue;
+            }
+            let (lib, cell) = d.field(r, 1)?.split_once(':')?;
+            let libs = interop::design::manifest_libs(files.get("schemify.project")?).ok()?;
+            let mirror = files.get(&format!("{}/{cell}.shprim", libs.get(lib)?))?;
+            let m = parse(mirror).ok()?;
+            let vinputs: Vec<&str> = m
+                .find_attr(0, "vinputs")
+                .map(|a| (0..).map_while(|i| m.attr_value(a, i)).collect())
+                .unwrap_or_default();
+            // The first number input with a constant value: doubled.
+            let pick = vinputs.iter().find_map(|n| {
+                let pr = (1..m.record_count())
+                    .find(|&q| m.record_kind(q) == RecordKind::Param && m.field(q, 0) == Some(n))?;
+                let kind = m.find_attr(pr, "kind").and_then(|a| m.attr_value(a, 0));
+                if kind.is_some_and(|k| k != "number") {
+                    return None;
+                }
+                let v = d
+                    .find_attr(r, n)
+                    .and_then(|a| d.attr_value(a, 0))
+                    .or_else(|| m.field(pr, 1))?;
+                let x =
+                    interop::virtuoso::characterize::canonical_value(&format!("({v})*2"), false)?;
+                Some(((*n).to_owned(), x))
+            })?;
+            // The instance's block in the canonical text: its override replaced, or added
+            // after its name line.
+            let name = d
+                .find_attr(r, "name")
+                .and_then(|a| d.attr_value(a, 0))?
+                .to_owned();
+            let text = String::from_utf8_lossy(bytes).into_owned();
+            let head = format!("inst {} {}\n", d.field(r, 0)?, d.field(r, 1)?);
+            let start = text.find(&head)?;
+            let end = text[start + head.len()..]
+                .find("\n\n")
+                .map_or(text.len(), |e| start + head.len() + e + 1);
+            let block = &text[start..end];
+            let key = format!("  {} ", pick.0);
+            let new_line = format!("  {} {}\n", pick.0, pick.1);
+            let edited = match block.lines().position(|l| l.starts_with(&key)) {
+                Some(i) => block
+                    .lines()
+                    .enumerate()
+                    .map(|(j, l)| {
+                        if j == i {
+                            new_line.clone()
+                        } else {
+                            format!("{l}\n")
+                        }
+                    })
+                    .collect::<String>(),
+                None => block.replacen(
+                    &format!("  name {name}\n"),
+                    &format!("  name {name}\n{new_line}"),
+                    1,
+                ),
+            };
+            let out = format!("{}{edited}{}", &text[..start], &text[end..]);
+            return Some((path.clone(), out.into_bytes(), name));
         }
-        let id = format!("pdk.rules.check.{}.{}", d.lib, d.cell);
-        let file = out.join(format!("pdk_check.{}.{}.sfyx", d.lib, d.cell));
-        let Some(h) = read(&file)
-            .and_then(|t| characterize::read(&t).ok())
-            .and_then(|v| v.into_iter().next())
-        else {
-            rows.push(format!(
-                "FAIL {id} no holdout measured ({})",
-                path_str(&file)
-            ));
-            continue;
-        };
-        let res = characterize::check(&rules, &h);
-        let ok_points = h.points.iter().filter(|p| p.status.is_ok()).count();
-        let worst: Vec<String> = res
-            .iter()
-            .map(|(n, e, _)| format!("{n} {:.3}%", e * 100.0))
-            .collect();
-        let pass = ok_points > 0 && res.iter().all(|x| x.2);
-        rows.push(format!(
-            "{} {id} {} rule(s) at {ok_points} holdout point(s), worst error: {}",
-            if pass { "PASS" } else { "FAIL" },
-            res.len(),
-            worst.join(", ")
-        ));
     }
-    rows
+    None
+}
+
+/// The `cached` lines of instance `name` in design file `bytes`.
+fn cached_of(bytes: &[u8], name: &str) -> Vec<String> {
+    let Ok(d) = schemify_format::parse(bytes) else {
+        return Vec::new();
+    };
+    (1..d.record_count())
+        .filter(|&r| d.record_kind(r) == schemify_format::RecordKind::Inst)
+        .filter(|&r| d.find_attr(r, "name").and_then(|a| d.attr_value(a, 0)) == Some(name))
+        .flat_map(|r| {
+            d.attrs(r)
+                .filter(|&a| d.attr_key(a) == "cached")
+                .map(|a| {
+                    (0..3)
+                        .filter_map(|i| d.attr_value(a, i))
+                        .collect::<Vec<_>>()
+                        .join(" ")
+                })
+                .collect::<Vec<_>>()
+        })
+        .collect()
 }
 
 /// CDL text without its `$[model]` tokens.
@@ -773,6 +795,9 @@ fn prepare(work: &Path, o: &Opts) {
         libs.insert(ulib('u', l, c));
         if o.callbacks {
             libs.insert(ulib('b', l, c));
+        }
+        if o.pdk.is_some() {
+            libs.insert(ulib('r', l, c));
         }
     }
     for l in &libs {
@@ -1201,30 +1226,133 @@ fn mid(work: &Path, o: &Opts) {
                 for (p, b) in &files {
                     write(&proj.join(p), b);
                 }
-                // The rules the characterization explains, applied to the mirror (§8.3):
-                // the mirror is then ready to use, its derived params computed.
+                // The derived params, marked on the mirror (§8.3): their values are
+                // Virtuoso's, cached per instance.
                 if let Some(text) = &characterization {
-                    lines.extend(apply_pdk_rules(&proj, text));
-                    // The holdout (§8.3): sizes the characterization never measured, run
-                    // through the PDK's callbacks in session 2 and checked in verify.
-                    for d in interop::virtuoso::characterize::read(text).unwrap_or_default() {
-                        let r = d.rules();
-                        if r.computed.is_empty() {
-                            continue;
-                        }
-                        let pts = interop::virtuoso::characterize::holdout_points(&d, &r);
+                    lines.extend(mark_pdk(&proj, text));
+                }
+            }
+        }
+    }
+
+    // The refresh (§8.3), per user cell with characterized devices: in a copy of its
+    // project, the mirrors marked and the dump imported again (cached derived values), one
+    // instance resized; Virtuoso measures its derived values (the refresh) and, as the
+    // truth, derives them for the resized design loaded with callbacks into a scratch
+    // library. Verify compares the two.
+    if let Some(text) = &characterization {
+        for (l, c) in &o.cells {
+            let k = ukey(l, c);
+            let id = format!("pdk.refresh.{k}");
+            let src = work.join(format!("projects/user_{k}"));
+            let proj = work.join(format!("projects/refresh_{k}"));
+            let _ = std::fs::remove_dir_all(&proj);
+            if !src.exists() {
+                continue;
+            }
+            for (p, b) in read_tree(&src) {
+                write(&proj.join(p), b);
+            }
+            if !mark_pdk(&proj, text).iter().any(|l| l.starts_with("PASS")) {
+                continue;
+            }
+            if let Err(e) = import_into(
+                &proj,
+                &out.join(format!("user_{k}.sfyx")),
+                ImportOptions::default(),
+            )
+            .map(|f| {
+                for (p, b) in f {
+                    write(&proj.join(p), b);
+                }
+            }) {
+                lines.push(format!(
+                    "FAIL {id} the import with derived params marked: {}",
+                    e.join("; ")
+                ));
+                continue;
+            }
+            let files = read_tree(&proj);
+            let Some((file, bytes, inst)) = refresh_edit(&files) else {
+                lines.push(format!(
+                    "INFO {id} no instance of a characterized device has cached derived values"
+                ));
+                continue;
+            };
+            write(&proj.join(&file), &bytes);
+            write(
+                &out.join(format!("refresh_{k}.edit")),
+                format!("{file}\t{inst}\n"),
+            );
+            let files = read_tree(&proj);
+            let (wants, notes) = interop::virtuoso::characterize::refresh_wants(&files);
+            if wants.is_empty() {
+                lines.push(format!(
+                    "FAIL {id} nothing stale after resizing {inst}: {}",
+                    notes.join("; ")
+                ));
+                continue;
+            }
+            let dir = out.join(format!("refresh_{k}"));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).unwrap();
+            // What `virtuoso-refresh -o` writes for a user to load, run here inline.
+            let ask =
+                interop::virtuoso::characterize::refresh_skill(&wants, &path_str(&dir), SCRATCH);
+            write(&inp.join(format!("refresh_{k}.il")), &ask);
+            let forms: Vec<&str> = ask.lines().filter(|l| !l.starts_with(";;")).collect();
+            s.call(format!(
+                "(SfyLiveCheck {} (car (errset (progn {}) t)) {})",
+                q(&format!("pdk.refresh.ask.{k}")),
+                forms.join(" "),
+                q(&format!("measured into {}", path_str(&dir)))
+            ));
+            let copy = ulib('r', l, c);
+            let tops: Vec<String> = files
+                .keys()
+                .filter(|p| is_cell(p) && p.starts_with(&format!("{l}/")))
+                .filter(|p| {
+                    !read(&proj.join(p))
+                        .unwrap_or_default()
+                        .contains("\n  provenance virtuoso")
+                })
+                .cloned()
+                .collect();
+            let opts = ExportOptions {
+                producer: "sfylive".into(),
+                lib_map: [(l.clone(), copy.clone())].into(),
+                ..ExportOptions::default()
+            };
+            match job(
+                &proj,
+                Command::VirtuosoExport {
+                    tops,
+                    out: "out.sfyx".into(),
+                    opts,
+                },
+            ) {
+                Ok(w) => {
+                    if let Some((_, b)) = w.iter().find(|(p, _)| p == "out.sfyx") {
+                        let f = inp.join(format!("refresh_{k}.truth.sfyx"));
+                        write(&f, b);
                         s.call(format!(
-                            "(SfyLiveCharacterizeCheck {} {} {} {} (list {}))",
-                            q(&d.lib),
-                            q(&d.cell),
-                            q(SCRATCH),
-                            q(&path_str(
-                                &out.join(format!("pdk_check.{}.{}.sfyx", d.lib, d.cell))
-                            )),
-                            pts.join(" ")
+                            "(SfyLiveImport {} {} t nil t t nil)",
+                            q(&format!("pdk.refresh.load.{k}")),
+                            q(&path_str(&f))
+                        ));
+                        s.call(format!(
+                            "(SfyLiveExport {} {} {} {})",
+                            q(&format!("pdk.refresh.dump.{k}")),
+                            q(&path_str(&out.join(format!("refresh_{k}.truth.sfyx")))),
+                            q(&copy),
+                            cell_list(c)
                         ));
                     }
                 }
+                Err(e) => lines.push(format!(
+                    "FAIL {id} the export of the resized design: {}",
+                    e.join("; ")
+                )),
             }
         }
     }
@@ -1712,13 +1840,6 @@ fn verify(work: &Path, o: &Opts) -> Report {
         }
         if n == 1 {
             r.take(&read(&out.join("mid.txt")).unwrap_or_default());
-            // The holdout of the PDK rules (§8.3): each rule against the callbacks at sizes
-            // the characterization never measured.
-            if let Some(text) = read(&out.join("pdk_char.sfyx")) {
-                for row in holdout_rows(&out, &text) {
-                    r.take(&row);
-                }
-            }
         }
     }
 
@@ -1957,6 +2078,95 @@ fn verify(work: &Path, o: &Opts) -> Report {
             }
         }
     }
+    // The refresh (§8.3): the derived values Virtuoso measured for the resized instance,
+    // written back as cached lines, against the ones its callbacks derived for the same
+    // design loaded into Virtuoso. Values compared, never printed.
+    for (l, c) in &o.cells {
+        let k = ukey(l, c);
+        let id = format!("pdk.refresh.{k}");
+        let Some(edit) = read(&out.join(format!("refresh_{k}.edit"))) else {
+            continue;
+        };
+        let Some((file, inst)) = edit.trim_end().split_once('\t') else {
+            continue;
+        };
+        let proj = work.join(format!("projects/refresh_{k}"));
+        let files = read_tree(&proj);
+        let mut measured = Vec::new();
+        for e in std::fs::read_dir(out.join(format!("refresh_{k}")))
+            .into_iter()
+            .flatten()
+            .flatten()
+        {
+            if let Some(t) = read(&e.path())
+                && let Ok(d) = interop::virtuoso::characterize::read(&t)
+            {
+                measured.extend(d);
+            }
+        }
+        let (changed, notes) = interop::virtuoso::characterize::refresh_apply(&files, &measured);
+        let mut refreshed = files.clone();
+        refreshed.extend(changed);
+        let got = cached_of(refreshed.get(file).map_or(&[][..], Vec::as_slice), inst);
+        let truth_dump = out.join(format!("refresh_{k}.truth.sfyx"));
+        let truth_proj = work.join(format!("projects/refresh_{k}_truth"));
+        let _ = std::fs::remove_dir_all(&truth_proj);
+        for (p, b) in &files {
+            write(&truth_proj.join(p), b);
+        }
+        let mut io = ImportOptions::default();
+        io.lib_map.insert(ulib('r', l, c), l.clone());
+        let want = match truth_dump
+            .exists()
+            .then(|| import_into(&truth_proj, &truth_dump, io))
+        {
+            Some(Ok(f)) => f
+                .iter()
+                .find(|(p, _)| p == file)
+                .map(|(_, b)| cached_of(b, inst))
+                .unwrap_or_default(),
+            _ => Vec::new(),
+        };
+        let same = !got.is_empty() && got == want;
+        let detail = if same {
+            format!(
+                "{inst} resized: {} derived value(s) measured equal what Virtuoso's callbacks derive in the design",
+                got.len()
+            )
+        } else if want.is_empty() {
+            format!(
+                "no truth: the resized design did not come back from Virtuoso ({})",
+                path_str(&truth_dump)
+            )
+        } else {
+            let names = |v: &[String]| {
+                v.iter()
+                    .map(|x| x.split(' ').next().unwrap_or("").to_owned())
+                    .collect::<Vec<_>>()
+            };
+            let differ: Vec<String> = names(&want)
+                .into_iter()
+                .filter(|n| {
+                    !got.iter()
+                        .zip(&want)
+                        .any(|(g, w)| g == w && g.starts_with(&format!("{n} ")))
+                })
+                .collect();
+            format!(
+                "{inst}: {} of {} derived value(s) differ ({}){}",
+                differ.len(),
+                want.len(),
+                differ.join(" "),
+                if notes.is_empty() {
+                    String::new()
+                } else {
+                    format!("; {}", notes.join("; "))
+                }
+            )
+        };
+        r.check(id, same, detail);
+    }
+
     // Netlists Virtuoso wrote (run.sh, si).
     let nl = out.join("netlist");
     if read(&nl.join("SKIPPED")).is_some() || !nl.exists() {
@@ -2321,10 +2531,10 @@ fn kit_lib_round_trip_on_the_mock() {
     );
 }
 
-/// The PDK sweep on the mock: the fixture PDK's `nch` swept over w and fingers with its
-/// callback running (SfyCharacterize, §8.3), and the file summarized by name.
+/// PDK discovery on the mock: the fixture PDK's `nch` probed with its callback running
+/// (SfyCharacterize, §8.3), and the file summarized by name.
 #[test]
-fn kit_pdk_sweep_on_the_mock() {
+fn kit_pdk_discovery_on_the_mock() {
     let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("virtuoso-live-mock-pdk");
     let _ = std::fs::remove_dir_all(&work);
     let o = Opts {
@@ -2347,51 +2557,51 @@ fn kit_pdk_sweep_on_the_mock() {
     assert_eq!(devs.len(), 1);
     let d = &devs[0];
     // nch's callbacks change nothing: every candidate was probed, none is an input, and
-    // there is nothing to sweep (discovery by experiment, spec §8.3).
+    // nothing else is measured (discovery by experiment, spec §8.3).
     assert!(d.inputs.is_empty(), "{:?}", d.inputs);
     assert!(d.probes.iter().any(|p| p.name == "w"), "{:?}", d.probes);
     assert!(d.points.is_empty());
     let summary = characterization_summary(&text);
     assert!(
-        summary[0].contains("0 netlisted parameter(s) change"),
+        summary[0].contains("0 netlisted parameter(s) the callbacks derive"),
         "{summary:?}"
     );
-    // Negative space: a parameter that changes with the inputs is reported as derived.
+    // Negative space: a parameter an input's probe moves is reported as derived.
     let mut derived = d.clone();
     derived.inputs = vec!["w".into()];
     derived.kinds = vec![interop::virtuoso::characterize::Kind::Num];
     derived.defaults = vec!["1u".into()];
     derived.outputs.push("ad".into());
-    for (k, w) in ["1u", "2u"].iter().enumerate() {
-        derived.points.push(interop::virtuoso::characterize::Point {
-            set: vec![(*w).into()],
-            status: Ok(()),
-            values: vec![(*w).into(), "1".into(), format!("{k}f")],
-            back: vec![(*w).into()],
-        });
-    }
-    assert_eq!(derived.summary().derived, ["ad"]);
+    derived.probes = vec![interop::virtuoso::characterize::Probe {
+        name: "w".into(),
+        kind: interop::virtuoso::characterize::Kind::Num,
+        set: "2e-06".into(),
+        status: Ok(()),
+        changed: vec!["ad".into()],
+    }];
+    assert_eq!(derived.derived(), ["ad"]);
     let log = read(&work.join("out/pdk_char.sfyx.log")).unwrap_or_default();
     assert!(log.contains("PASS"), "{log}");
-    // The mid step imports the mirror and applies the rules: nch derives nothing, so it
-    // passes with none computed.
+    // The mid step imports the mirror and marks it: nch derives nothing.
     mid(&work, &o);
     let mid_out = read(&work.join("out/mid.txt")).unwrap_or_default();
     assert!(
         mid_out
             .lines()
-            .any(|l| l.starts_with("PASS pdk.rules.pdk.nch 0 computed")),
+            .any(|l| l.starts_with("PASS pdk.mark.pdk.nch 0 derived")),
         "{mid_out}"
     );
 }
 
-/// The PDK rules end to end on the mock: a device whose callback derives `as`/`ad` from w,
-/// the finger count and a two-step extension over l, named by no option but instantiated
-/// by the user's cell, is characterized (session 1), its rules applied to the imported
-/// mirror (mid), measured again at holdout sizes (session 2) and checked (verify).
+/// Derived params end to end on the mock: a device whose callback derives `as`/`ad` from
+/// w, the finger count and a two-step extension over l, named by no option but
+/// instantiated by the user's cell, is characterized (session 1), its derived params marked
+/// on the mirror and the user's instance resized (mid), refreshed by measuring in Virtuoso
+/// and derived by its callbacks in the resized design (session 2), and the two compared
+/// (verify).
 #[test]
-fn kit_pdk_rules_on_the_mock() {
-    let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("virtuoso-live-mock-rules");
+fn kit_pdk_refresh_on_the_mock() {
+    let work = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("virtuoso-live-mock-refresh");
     let _ = std::fs::remove_dir_all(&work);
     let o = Opts {
         pdk: Some(("pdk".into(), Vec::new())),
@@ -2438,19 +2648,26 @@ fn kit_pdk_rules_on_the_mock() {
                 )
             })
     };
-    let rules = row("pdk.rules.pdk.mos");
-    assert!(rules.starts_with("Pass 2 computed (as ad)"), "{rules}");
-    let holdout = row("pdk.holdout.pdk.mos");
-    assert!(holdout.starts_with("Pass 3 point(s)"), "{holdout}");
-    let check = row("pdk.rules.check.pdk.mos");
+    let mark = row("pdk.mark.pdk.mos");
+    assert!(mark.starts_with("Pass 2 derived (as ad) marked"), "{mark}");
+    for id in [
+        "pdk.refresh.ask.work.top",
+        "pdk.refresh.load.work.top",
+        "pdk.refresh.dump.work.top",
+    ] {
+        assert!(row(id).starts_with("Pass"), "{}", row(id));
+    }
+    let refresh = row("pdk.refresh.work.top");
     assert!(
-        check.starts_with("Pass 2 rule(s) at 3 holdout point(s)"),
-        "{check}"
+        refresh.starts_with("Pass M0 resized: 2 derived value(s) measured equal"),
+        "{refresh}"
     );
-    // The mirror carries the rules.
+    // The mirror marks them; no formula is fitted.
     let mirror = std::fs::read_to_string(work.join("projects/pdk/pdk/mos.shprim")).unwrap();
     assert!(
-        mirror.contains("computed \"w*(floor(nf/2)+1)/nf*steps(l, 5e-9, 5e-8, 3e-8, 6e-8, "),
+        mirror.contains("param as 5f\n  doc AS\n  vderived true\n"),
         "{mirror}"
     );
+    assert!(mirror.contains("  vinputs w l nf\n"), "{mirror}");
+    assert!(!mirror.contains("computed"), "{mirror}");
 }

@@ -988,6 +988,18 @@ fn cached_lines(
         .collect()
 }
 
+/// A constant CDF value Virtuoso printed for a param of Schemify `kind`, as the import
+/// writes it (the instance-parameter translation below, without parameters or variables);
+/// `None` when it is not one.
+pub(crate) fn constant_from_cdf(kind: &str, value: &str) -> Option<String> {
+    match kind {
+        "bool" => ael::bool_from_cdf(value).map(str::to_owned),
+        "int" => Some(value.trim().to_owned()),
+        "string" | "choice" => Some(ael::literal_to_template(value)),
+        _ => ael::from_ael(value, |_| AelName::Unknown, |_| None).map(|t| si_text(&t.text)),
+    }
+}
+
 /// One import's lookup tables.
 struct Ctx<'a> {
     dump: &'a Dump,
