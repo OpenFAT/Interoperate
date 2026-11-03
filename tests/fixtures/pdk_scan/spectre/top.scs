@@ -2,3 +2,4 @@
 simulator lang=spectre
 include "devices.scs"
 include "corners.lib.scs" section=tt
+ahdl_include "va/varactor.va"

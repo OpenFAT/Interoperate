@@ -1,0 +1,22 @@
+// A made-up Verilog-A device for pdk-scan: no real PDK data.
+`include "disciplines.vams"
+/* A block comment
+   with module fake(x); inside */
+module varactor_va(inout electrical p, inout electrical n);
+  (* desc="area, m^2 (k=9)" *) parameter real area = 4.56e-12 from (0:inf);
+  parameter real c0 = 7.89e-15, vbi = 0.654
+     from [0:inf);
+  parameter integer lvl = 3;
+  localparam real hidden = 0.111;
+  analog begin
+    I(p, n) <+ ddt(c0 * area * V(p, n) / vbi);
+  end
+endmodule
+
+module twoport (a, b, c)
+  ; // header split across lines
+  inout a, b, c;
+  electrical a, b, c;
+  parameter real g = 1.23e-3;
+  analog I(a, b) <+ g * V(c);
+endmodule

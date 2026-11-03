@@ -373,8 +373,9 @@ fn scan_spectre() -> (String, u8) {
 }
 
 /// The card values of the Spectre fixture: none may leave the kit.
-const SPECTRE_CARDS: [&str; 8] = [
-    "0.4123", "1.17e-9", "-0.3876", "0.0123", "-0.0456", "0.031", "1k", "2k",
+const SPECTRE_CARDS: [&str; 14] = [
+    "0.4123", "1.17e-9", "-0.3876", "0.0123", "-0.0456", "0.031", "1k", "2k", "4.56e-12",
+    "7.89e-15", "0.654", "1.23e-3", "0.111", "hidden",
 ];
 
 /// A Spectre kit read with SpiceRack: subckt wrappers (an `inline subckt` and a `\`
@@ -395,11 +396,41 @@ fn a_spectre_kit_reads_through_spicerack() {
             "pch_core.shprim",
             "pfet_lvt.shprim",
             "rhigh.shprim",
-            "tt_only.shprim"
+            "tt_only.shprim",
+            "twoport.shprim",
+            "varactor_va.shprim"
         ],
         "{out}"
     );
     let cell = |n: &str| &files.iter().find(|f| f.0 == n).unwrap().1;
+    // Verilog-A modules: header ports in order, `parameter`s but no `localparam`.
+    let va = cell("varactor_va.shprim");
+    assert!(
+        va.contains("pin p inout") && va.contains("pin n inout"),
+        "{va}"
+    );
+    for p in [
+        "param area \"\"",
+        "param c0 \"\"",
+        "param vbi \"\"",
+        "param lvl \"\"",
+    ] {
+        assert!(va.contains(p), "{p}: {va}");
+    }
+    assert!(
+        va.contains("format spice \"N{name} {p} {n} varactor_va"),
+        "{va}"
+    );
+    assert!(
+        va.contains("format spectre \"{name} ({p} {n}) varactor_va"),
+        "{va}"
+    );
+    assert!(!out.contains("fake"), "a commented-out module: {out}");
+    let two = cell("twoport.shprim");
+    assert!(
+        two.contains("{name} ({a} {b} {c}) twoport") && two.contains("param g \"\""),
+        "{two}"
+    );
     assert!(cell("nfet_LVT.shprim").contains("pin d inout"), "{out}");
     for p in ["param w \"\"", "param l \"\"", "param nf \"\""] {
         assert!(cell("nfet_LVT.shprim").contains(p), "{p}: {out}");

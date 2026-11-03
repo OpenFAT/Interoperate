@@ -43,9 +43,10 @@ fn a_spectre_kit_goes_through_the_store_unchanged() {
         "devices.scs",
         "corners.lib.scs",
         "tt_devices.scs",
+        "va/varactor.va",
     ];
     // Every section is followed: ff's include is not in the kit, and is reported.
-    let want = "converted 4 file(s)\nmissing ff_missing.scs\nend\n";
+    let want = "converted 5 file(s)\nmissing ff_missing.scs\nend\n";
 
     let (out, code) = run(&kit, "top.scs", "spectre", "spectre", &direct);
     assert_eq!((out.as_str(), code), (want, 1));
@@ -91,13 +92,15 @@ fn a_spectre_kit_goes_through_the_store_unchanged() {
     ] {
         assert!(dev.contains(want), "{want} in\n{dev}");
     }
-    // ponytail: a `simulator lang=spice` region is still raw Spectre text in SpiceRack, so
-    // its file refuses to leave Spectre (never a silent drop); flip when it is IR.
+    // ponytail: the whole kit does not leave Spectre yet, and says why (never a silent drop):
+    // its `ahdl_include` needs OpenVAF for ngspice (SpiceRack's `backend` feature), and a
+    // `simulator lang=spice` region is still raw Spectre text. Flip when both are handled.
     let (out, code) = run(&store, "top.scs", "rack", "spice", &spice);
     assert_eq!(code, 2, "{out}");
+    assert!(out.contains("not written"), "{out}");
     assert!(
-        out.contains("corners.lib.scs") && out.contains("simulator lang=spice"),
-        "{out}"
+        !spice.join("top.scs").exists(),
+        "nothing written on failure"
     );
     for d in [direct, store, back, spice] {
         let _ = std::fs::remove_dir_all(d);

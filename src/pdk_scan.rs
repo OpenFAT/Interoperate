@@ -55,6 +55,8 @@ enum Kind {
     Subckt,
     /// A MOS `.model` (bins collapsed): `M` lines, `d g s b`.
     Mos,
+    /// A Verilog-A module (`ahdl_include`): `N` lines (ngspice OSDI), the ports in order.
+    Va,
 }
 
 /// One served device: what its cell needs, and nothing from the model cards.
@@ -313,7 +315,6 @@ fn rack_devices(
     let mut out: Vec<Device> = Vec::new();
     // Lines SpiceRack refused, and lines it kept as text, not IR, by keyword (never shown).
     let (mut unread, mut verbatim) = (BTreeMap::new(), BTreeMap::new());
-    let mut ahdl = 0usize;
     let mut parsed = std::collections::BTreeMap::new();
     while let Some((p, sec, depth)) = todo.pop_front() {
         if !seen.insert((p.clone(), sec.clone())) {
@@ -353,7 +354,6 @@ fn rack_devices(
             );
             for b in bodies {
                 tally(&mut verbatim, &b.raw_spice);
-                ahdl += b.osdi_loads.len();
             }
             parsed.insert(p.clone(), ir);
         }
@@ -392,9 +392,24 @@ fn rack_devices(
                 add(&mut out, issues, d);
             }
         }
+        let dir = p.parent().unwrap_or(Path::new(""));
+        for va in &body.osdi_loads {
+            let q = spice::normalize(&dir.join(va.trim_matches('"')));
+            if !seen.insert((q.clone(), None)) {
+                continue;
+            }
+            match load(&q) {
+                Ok(text) => va_modules(&text)
+                    .into_iter()
+                    .for_each(|d| add(&mut out, issues, d)),
+                Err(true) => {
+                    issues.push(format!("include outside the root refused: {}", shown(&q)));
+                }
+                Err(false) => issues.push(format!("{}: include not found", shown(&q))),
+            }
+        }
         let refs = body.includes.iter().map(|f| (f, None));
         let refs = refs.chain(body.libs.iter().map(|(f, s)| (f, Some(s.clone()))));
-        let dir = p.parent().unwrap_or(Path::new(""));
         for (f, s) in refs {
             if depth >= spice::MAX_INCLUDE_DEPTH {
                 issues.push(format!("{}: include chain too deep", shown(&p)));
@@ -417,10 +432,117 @@ fn rack_devices(
             issues.push(format!("{n} line(s) {what} (not shown): {}", by.join(", ")));
         }
     }
-    if ahdl > 0 {
-        issues.push(format!(
-            "{ahdl} ahdl_include(s): Verilog-A devices are not scanned"
-        ));
+    out
+}
+
+/// The modules a Verilog-A source defines: name, ports in header order, and the names of
+/// its `parameter`s (instance-overridable; `localparam`s are not), never their defaults.
+/// Comments, attributes `(* … *)`, strings and compiler directives are skipped.
+// ponytail: a token scan of module headers and parameter declarations, not a Verilog-A
+// parser; `include`d files are not followed.
+fn va_modules(text: &str) -> Vec<Device> {
+    let toks = va_tokens(text);
+    let at = |i: usize| toks.get(i).map_or("", String::as_str);
+    let mut out = Vec::new();
+    let mut cur: Option<Device> = None;
+    let mut i = 0;
+    while i < toks.len() {
+        match at(i) {
+            "module" | "macromodule" if is_ident(at(i + 1)) => {
+                let mut d = Device {
+                    target: toks[i + 1].clone(),
+                    kind: Kind::Va,
+                    ports: Vec::new(),
+                    params: Vec::new(),
+                };
+                i += 2;
+                if at(i) == "(" {
+                    // ANSI or not, a port is the last word before each `,` and the `)`.
+                    let mut last = None;
+                    i += 1;
+                    while i < toks.len() && at(i) != ")" {
+                        match at(i) {
+                            "," => d.ports.extend(last.take()),
+                            t if is_ident(t) => last = Some(t.to_owned()),
+                            _ => {}
+                        }
+                        i += 1;
+                    }
+                    d.ports.extend(last);
+                }
+                cur = Some(d);
+            }
+            // `parameter [type] name = value [from …] {, name = value} ;`
+            "parameter" => {
+                let (mut depth, mut want) = (0i32, true);
+                i += 1;
+                while i < toks.len() && !(depth == 0 && at(i) == ";") {
+                    match at(i) {
+                        "(" | "[" | "{" => depth += 1,
+                        ")" | "]" | "}" => depth -= 1,
+                        "," if depth == 0 => want = true,
+                        t if want && depth == 0 && is_ident(t) && at(i + 1) == "=" => {
+                            if let Some(d) = &mut cur {
+                                d.params.push(t.to_owned());
+                            }
+                            want = false;
+                        }
+                        _ => {}
+                    }
+                    i += 1;
+                }
+            }
+            "endmodule" => out.extend(cur.take()),
+            _ => {}
+        }
+        i += 1;
+    }
+    out
+}
+
+fn is_ident(t: &str) -> bool {
+    t.starts_with(|c: char| c.is_ascii_alphabetic() || c == '_' || c == '\\')
+}
+
+/// Verilog-A text as words and one-character punctuation, without comments, attributes,
+/// strings or compiler directives (a `` ` `` line).
+fn va_tokens(text: &str) -> Vec<String> {
+    let skip_to = |from: usize, end: &str| {
+        text.get(from..)
+            .and_then(|t| t.find(end))
+            .map_or(text.len(), |k| from + k + end.len())
+    };
+    let word = |c: char| c.is_ascii_alphanumeric() || c == '_' || c == '$';
+    let (mut out, mut i) = (Vec::new(), 0);
+    while let Some(c) = text[i..].chars().next() {
+        let rest = &text[i..];
+        if rest.starts_with("//") || c == '`' {
+            i = skip_to(i, "\n");
+        } else if rest.starts_with("/*") {
+            i = skip_to(i + 2, "*/");
+        } else if rest.starts_with("(*") && !rest.starts_with("(*)") {
+            i = skip_to(i + 2, "*)");
+        } else if c == '"' {
+            i = skip_to(i + 1, "\"");
+        } else if word(c) || c == '\\' {
+            // An escaped identifier runs to white space.
+            let end = rest[1..]
+                .find(|d: char| {
+                    if c == '\\' {
+                        d.is_whitespace()
+                    } else {
+                        !word(d)
+                    }
+                })
+                .map_or(rest.len(), |k| k + 1);
+            out.push(rest[..end].to_owned());
+            i += end;
+        } else {
+            if !c.is_whitespace() {
+                out.push(c.to_string());
+            }
+            i += c.len_utf8();
+        }
     }
     out
 }
@@ -535,6 +657,7 @@ fn cell(lib: &str, d: &Device) -> String {
     let letter = match d.kind {
         Kind::Subckt => "X",
         Kind::Mos => "M",
+        Kind::Va => "N",
     };
     let (pins, target) = (pins_template(&d.ports), &d.target);
     doc.begin_record(RecordKind::Impl);

@@ -10,7 +10,7 @@
 //!
 //! Every file the entries reach (`--entry` repeats: a kit with a file per corner) (includes, `.lib` calls, and those inside library sections)
 //! is converted on its own and written at the same relative path under `<outdir>`, so the
-//! references between files still resolve. Prints `converted <n> file(s)`, then one
+//! references between files still resolve; Verilog-A sources (`ahdl_include`) are copied. Prints `converted <n> file(s)`, then one
 //! `lost <relpath> <n>` line per file whose cards SpiceRack does not read (never the cards)
 //! and one `missing <relpath>` per referenced file the kit lacks, then `end`. Exit 0:
 //! lossless; 1: written, with losses or missing files; 2: nothing written.
@@ -59,15 +59,24 @@ fn write(ir: &CircuitIR, to: Option<Dialect>) -> Result<String, String> {
     }
 }
 
-/// The files `ir` names: includes and `.lib` calls, at the top and in every section.
-fn references(ir: &CircuitIR) -> Vec<&str> {
+/// The files `ir` names, at the top and in every section: includes and `.lib` calls
+/// (`false`: converted), and Verilog-A sources (`true`: copied as they are).
+fn references(ir: &CircuitIR) -> Vec<(&str, bool)> {
     let bodies = std::iter::once(&ir.top).chain(ir.sections.iter().map(|s| &s.body));
     bodies
         .flat_map(|b| {
-            let libs = b.libs.iter().map(|(f, _)| f.as_str());
-            b.includes.iter().map(String::as_str).chain(libs)
+            let libs = b.libs.iter().map(|(f, _)| (f.as_str(), false));
+            let va = b.osdi_loads.iter().map(String::as_str);
+            let va = va
+                .filter(|f| spicerack::veriloga::is_source(f))
+                .map(|f| (f, true));
+            b.includes
+                .iter()
+                .map(|f| (f.as_str(), false))
+                .chain(libs)
+                .chain(va)
         })
-        .map(|f| f.trim_matches(['"', '\'']))
+        .map(|(f, v)| (f.trim_matches(['"', '\'']), v))
         .collect()
 }
 
@@ -131,11 +140,14 @@ fn convert(
     out: &Path,
 ) -> Result<Converted, String> {
     let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
-    let mut todo: VecDeque<_> = entries.iter().map(|e| (spice::normalize(e), 0u8)).collect();
+    let mut todo: VecDeque<_> = entries
+        .iter()
+        .map(|e| (spice::normalize(e), 0u8, false))
+        .collect();
     let mut seen = BTreeSet::new();
     let mut done: Vec<(PathBuf, String)> = Vec::new();
     let (mut lost, mut missing) = (Vec::new(), Vec::new());
-    while let Some((p, depth)) = todo.pop_front() {
+    while let Some((p, depth, verbatim)) = todo.pop_front() {
         if !seen.insert(p.clone()) {
             continue;
         }
@@ -155,17 +167,21 @@ fn convert(
             return Err(format!("{shown}: outside the root, refused"));
         }
         let bytes = std::fs::read(&c).map_err(|e| format!("{shown}: {e}"))?;
+        if verbatim {
+            done.push((rel(&p), spicerack::import::decode(&bytes)));
+            continue;
+        }
         let (ir, n) = read(&spicerack::import::decode(&bytes), from)
             .map_err(|e| format!("{shown}: not read ({e})"))?;
         if n > 0 {
             lost.push((shown.clone(), n));
         }
         let dir = p.parent().unwrap_or(Path::new(""));
-        for f in references(&ir) {
+        for (f, v) in references(&ir) {
             if depth >= MAX_INCLUDE_DEPTH {
                 return Err(format!("{shown}: include chain too deep"));
             }
-            todo.push_back((spice::normalize(&dir.join(f)), depth + 1));
+            todo.push_back((spice::normalize(&dir.join(f)), depth + 1, v));
         }
         let text = write(&ir, to).map_err(|e| format!("{shown}: not written ({e})"))?;
         done.push((rel(&p), text));
