@@ -455,10 +455,11 @@ const KEYWORDS: [&str; 26] = [
     ".option",
 ];
 
-/// Counts `lines` by their first word when it is a [`KEYWORDS`] entry, else as `other`.
+/// Counts `lines` by their first word when it is a [`KEYWORDS`] entry, else by shape alone.
 fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
     for l in lines {
-        let w = l
+        let t = l.trim_start();
+        let w = t
             .split_whitespace()
             .next()
             .unwrap_or("")
@@ -467,7 +468,17 @@ fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
             .iter()
             .find(|k| **k == w)
             .copied()
-            .unwrap_or("other");
+            .unwrap_or_else(|| {
+                let (eq, paren) = (t.find('='), t.find('('));
+                match t.chars().next() {
+                    Some('+') => "continuation",
+                    Some('{' | '}') => "brace",
+                    Some('.') => "dotcard",
+                    _ if paren.is_some_and(|p| eq.is_none_or(|e| p < e)) => "instance",
+                    _ if eq.is_some() => "assignment",
+                    _ => "other",
+                }
+            });
         *into.entry(k).or_default() += 1;
     }
 }
