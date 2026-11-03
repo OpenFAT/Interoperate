@@ -312,6 +312,7 @@ fn rack_devices(
     let mut seen = BTreeSet::new();
     let mut out: Vec<Device> = Vec::new();
     let mut unread = 0usize;
+    let mut parsed = std::collections::BTreeMap::new();
     while let Some((p, sec, depth)) = todo.pop_front() {
         if !seen.insert((p.clone(), sec.clone())) {
             continue;
@@ -320,27 +321,32 @@ fn rack_devices(
             issues.push("too many files".into());
             break;
         }
-        let text = match load(&p) {
-            Ok(t) => t,
-            Err(true) => {
-                issues.push(format!("include outside the root refused: {}", shown(&p)));
-                continue;
-            }
-            Err(false) => {
-                issues.push(format!("{}: include not found", shown(&p)));
-                continue;
-            }
-        };
-        // Only the top-level netlist has a title line (Spectre UG §1.2): an included file
-        // gets an empty one.
-        let (ir, report) = match import::parse(&format!("\n{text}"), "pdk", Dialect::Spectre) {
-            Ok(x) => x,
-            Err(e) => {
-                issues.push(format!("{}: not read ({e})", shown(&p)));
-                continue;
-            }
-        };
-        unread += report.unparsed.len();
+        // A corner file is selected section by section: it is read once.
+        if !parsed.contains_key(&p) {
+            let text = match load(&p) {
+                Ok(t) => t,
+                Err(true) => {
+                    issues.push(format!("include outside the root refused: {}", shown(&p)));
+                    continue;
+                }
+                Err(false) => {
+                    issues.push(format!("{}: include not found", shown(&p)));
+                    continue;
+                }
+            };
+            // Only the top-level netlist has a title line (Spectre UG §1.2): an included file
+            // gets an empty one.
+            let (ir, report) = match import::parse(&format!("\n{text}"), "pdk", Dialect::Spectre) {
+                Ok(x) => x,
+                Err(e) => {
+                    issues.push(format!("{}: not read ({e})", shown(&p)));
+                    continue;
+                }
+            };
+            unread += report.unparsed.len();
+            parsed.insert(p.clone(), ir);
+        }
+        let ir = &parsed[&p];
         let (body, defs) = match &sec {
             None => (&ir.top, &ir.subcircuit_defs),
             Some(s) => match ir
