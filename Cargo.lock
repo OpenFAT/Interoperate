@@ -109,6 +109,7 @@ dependencies = [
  "schemify-plugin",
  "schemify-spicecmp",
  "schemify-wave",
+ "spicerack 0.1.2",
 ]
 
 [[package]]
@@ -255,7 +256,7 @@ source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4
 dependencies = [
  "schemify-elab",
  "schemify-expr",
- "spicerack",
+ "spicerack 0.1.0",
 ]
 
 [[package]]
@@ -315,6 +316,16 @@ dependencies = [
 name = "spicerack"
 version = "0.1.0"
 source = "git+https://github.com/OpenFAT/SpiceRack?rev=0fc42bda91a33cda3340e45ea1be1d182140ee2d#0fc42bda91a33cda3340e45ea1be1d182140ee2d"
+dependencies = [
+ "num-complex",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
+name = "spicerack"
+version = "0.1.2"
+source = "git+https://github.com/OpenFAT/SpiceRack?rev=87bc2738b286fc3a053aa8c99f081dbded36b2da#87bc2738b286fc3a053aa8c99f081dbded36b2da"
 dependencies = [
  "num-complex",
  "serde",

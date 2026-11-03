@@ -61,7 +61,7 @@ schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec im
 schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
-schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice [--section S]   (PDK scan below)
+schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
 ```
 
 Paths after `<project>` are relative to it; a directory stands for every cell file under it. Each conversion writes a report next to its output
@@ -245,8 +245,13 @@ Without the binary on the kit host, `pdk-scan --remote-script` prints a POSIX `s
 that frames only the structural lines of the files it is given (`.model name type`,
 `.subckt` ports and parameter names, sections, includes). Pipe its output into a local
 `pdk-scan --stdin --root <dir> --entry <file> …`: same cells, plus a `need <path>` line per
-include to fetch next. The output format is in `src/pdk_scan.rs`. Spectre kits are not read
-yet.
+include to fetch next. The output format is in `src/pdk_scan.rs`.
+
+Spectre kits (`--dialect spectre`) are read with [SpiceRack](https://github.com/OpenFAT/SpiceRack),
+the PDK store: every top-level `subckt` the entry reaches through `include` is a cell, names
+in their own case, and top-level compact models (BSIM, PSP, HiSIM, UTSOI) get `d g s b`.
+Lines SpiceRack does not read are counted, never shown. Includes inside a corner `section`
+are followed once SpiceRack holds sections as data (an `issue` line counts them until then).
 
 ## What does not cross
 

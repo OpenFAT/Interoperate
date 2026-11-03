@@ -1,0 +1,4 @@
+// A made-up Spectre kit for pdk-scan: no real PDK data.
+simulator lang=spectre
+include "devices.scs"
+include "corners.lib.scs" section=tt

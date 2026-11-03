@@ -4,6 +4,10 @@
 # .subckt .ends .model .lib .endl .include .inc .param .option(s) .prot(ect) .unprot(ect)
 # lines and the `+` lines continuing them; `.model` cut to `.model name type`; `.param` and
 # `.subckt` values dropped (`a=1` -> `a=`), ports kept. Nothing inside .prot is kept.
+# Spectre: subckt, inline subckt, ends, model (cut to `model name type`), parameters (values
+# replaced by 0, which its grammar reads), include, section, endsection, library,
+# endlibrary, simulator and ahdl_include lines, with their `\` continuations; `//` lines
+# are comments.
 # POSIX sh and awk only; writes nothing.
 LC_ALL=C
 export LC_ALL
@@ -26,7 +30,7 @@ for p in "$@"; do
       for (i = 1; i <= length(s); i++) {
         c = substr(s, i, 1)
         if (st == 0) { out = out c; if (c == "=") st = 1; continue }
-        if (st == 1) { if (c == " " || c == "\t") continue; st = 2 }
+        if (st == 1) { if (c == " " || c == "\t") continue; st = 2; if (zero) out = out "0" }
         if (q != "") { if (c == q) q = ""; continue }
         if (c == "\047" || c == "\"") { q = c; continue }
         if (c == "{" || c == "(") { depth++; continue }
@@ -38,9 +42,16 @@ for p in "$@"; do
     }
     {
       line = uncomment($0)
+      # A Spectre line continuing a kept one (the kept one ended in a backslash).
+      if (cont) {
+        cont = (line ~ /\\[ \t]*$/)
+        print (keep == 2 ? strip(line) : line)
+        next
+      }
       n = split(line, w, " ")
       if (n == 0) next
       k = tolower(w[1])
+      if (substr(k, 1, 2) == "//") next
       if (prot) {
         if (k == ".unprot" || k == ".unprotect") { prot = 0; print k }
         next
@@ -52,13 +63,22 @@ for p in "$@"; do
         if (keep == 2) print "+" strip(rest)
         next
       }
-      keep = 0; st = 0; depth = 0; q = ""
+      keep = 0; st = 0; depth = 0; q = ""; zero = 0
       if (k == ".prot" || k == ".protect") { prot = 1; print k; next }
       if (k == ".model") { m = w[3]; sub(/\(.*/, "", m); print w[1], w[2], m; next }
       if (k == ".param" || k == ".subckt") { keep = 2; print strip(line); next }
       if (k == ".ends" || k == ".lib" || k == ".endl" || k == ".include" || k == ".inc" ||
           k == ".option" || k == ".options" || k == ".unprot" || k == ".unprotect") {
-        keep = 1; print line
+        keep = 1; print line; next
+      }
+      # Spectre.
+      if (k == "model") { m = w[3]; sub(/[({].*/, "", m); print w[1], w[2], m; next }
+      if (k == "parameters" || k == "subckt" || (k == "inline" && tolower(w[2]) == "subckt")) {
+        keep = 2; zero = 1; print strip(line); cont = (line ~ /\\[ \t]*$/); next
+      }
+      if (k == "ends" || k == "include" || k == "section" || k == "endsection" ||
+          k == "library" || k == "endlibrary" || k == "simulator" || k == "ahdl_include") {
+        keep = 1; print line; cont = (line ~ /\\[ \t]*$/)
       }
     }' "$p" && printf x); then
     t=${t%x}

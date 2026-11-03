@@ -1,0 +1,16 @@
+// Devices: subckt wrappers around compact models.
+subckt nfet_LVT (d g s b)
+parameters w=1u l=20n nf=1
+m0 (d g s b) nch_core w=w l=l
+ends nfet_LVT
+model nch_core bsim4 type=n vth0=0.4123 toxe=1.17e-9
+inline subckt pfet_lvt (d g s b)
+parameters w=2u l=20n
+pfet_lvt (d g s b) pch_core w=w l=l
+ends pfet_lvt
+model pch_core bsim4 type=p vth0=-0.3876
+subckt rhigh (p n)
+parameters r=1k \
+    w=1u l=2u
+r0 (p n) resistor r=r
+ends rhigh

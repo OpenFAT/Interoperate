@@ -325,12 +325,12 @@ fn protocol_and_errors() {
                 "--entry",
                 "models/top.lib",
                 "--dialect",
-                "spectre"
+                "eldo"
             ],
             b""
         ),
         (
-            "pdkscan 1\nerror \"spectre dialect not supported yet\"\nend\n".into(),
+            "pdkscan 1\nerror \"unknown dialect eldo: spice, hspice or spectre\"\nend\n".into(),
             2
         )
     );
@@ -347,4 +347,145 @@ fn protocol_and_errors() {
     );
     let (out, code) = scan(&["--bogus"], b"");
     assert!(code == 2 && out.starts_with("pdkscan 1\nerror \"usage: "));
+}
+
+// ---------------------------------------------------------------------------- Spectre
+
+fn spectre_root() -> PathBuf {
+    std::fs::canonicalize(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/pdk_scan/spectre"
+    ))
+    .expect("fixture kit")
+}
+
+fn scan_spectre() -> (String, u8) {
+    let r = spectre_root();
+    let args = [
+        "--root",
+        r.to_str().unwrap(),
+        "--entry",
+        "top.scs",
+        "--dialect",
+        "spectre",
+    ];
+    scan(&args, b"")
+}
+
+/// The card values of the Spectre fixture: none may leave the kit.
+const SPECTRE_CARDS: [&str; 7] = [
+    "0.4123", "1.17e-9", "-0.3876", "0.0123", "-0.0456", "0.031", "1k",
+];
+
+/// A Spectre kit read with SpiceRack: subckt wrappers (an `inline subckt` and a `\`
+/// continuation included) and the top-level compact models are cells, names in their own
+/// case; corner sections are not cells; no card value appears.
+#[test]
+fn a_spectre_kit_reads_through_spicerack() {
+    let (out, code) = scan_spectre();
+    assert_eq!(code, 0, "{out}");
+    let (files, lines) = parse(&out);
+    let names: Vec<&str> = files.iter().map(|f| f.0.as_str()).collect();
+    assert_eq!(
+        names,
+        [
+            "nch_core.shprim",
+            "nfet_LVT.shprim",
+            "pch_core.shprim",
+            "pfet_lvt.shprim",
+            "rhigh.shprim"
+        ],
+        "{out}"
+    );
+    let cell = |n: &str| &files.iter().find(|f| f.0 == n).unwrap().1;
+    assert!(cell("nfet_LVT.shprim").contains("pin d inout"), "{out}");
+    for p in ["param w \"\"", "param l \"\"", "param nf \"\""] {
+        assert!(cell("nfet_LVT.shprim").contains(p), "{p}: {out}");
+    }
+    assert!(
+        cell("rhigh.shprim").contains("param r \"\"")
+            && cell("rhigh.shprim").contains("param l \"\""),
+        "{out}"
+    );
+    assert!(
+        cell("nfet_LVT.shprim").contains("format spectre \"{name} ({d} {g} {s} {b}) nfet_LVT"),
+        "{out}"
+    );
+    for card in SPECTRE_CARDS {
+        assert!(!out.contains(card), "{card} left the kit:\n{out}");
+    }
+    assert!(
+        lines.iter().any(|l| l.contains("section reference")),
+        "{lines:?}"
+    );
+    // Deterministic.
+    assert_eq!(scan_spectre().0, out);
+}
+
+/// The remote script on the Spectre kit through a real `sh`: only structure crosses (no card
+/// value), and `--stdin` on its frames, fetching includes round by round as PDK-Manager
+/// does, gives the same cells and version as the direct scan.
+#[test]
+fn the_remote_script_serves_a_spectre_kit() {
+    let (script, _) = scan(&["--remote-script"], b"");
+    let r = spectre_root();
+    let run_sh = |paths: &[String]| -> Vec<u8> {
+        use std::io::Write;
+        let mut child = std::process::Command::new("sh")
+            .args(["-s", "--"])
+            .args(paths)
+            .stdin(std::process::Stdio::piped())
+            .stdout(std::process::Stdio::piped())
+            .spawn()
+            .expect("sh");
+        child
+            .stdin
+            .take()
+            .unwrap()
+            .write_all(script.as_bytes())
+            .unwrap();
+        let o = child.wait_with_output().unwrap();
+        assert!(o.status.success());
+        o.stdout
+    };
+    let entry = r.join("top.scs").display().to_string();
+    let mut body = Vec::new();
+    let mut want = vec![entry.clone()];
+    let mut out = String::new();
+    for _ in 0..16 {
+        let framed = run_sh(&want);
+        let text = String::from_utf8(framed.clone()).unwrap();
+        for card in SPECTRE_CARDS {
+            assert!(!text.contains(card), "{card} left the host:\n{text}");
+        }
+        body.extend_from_slice(
+            text.strip_prefix("sfyframe 1\n")
+                .unwrap()
+                .strip_suffix("end\n")
+                .unwrap()
+                .as_bytes(),
+        );
+        let frames = [b"sfyframe 1\n".as_slice(), &body, b"end\n"].concat();
+        let args = [
+            "--stdin",
+            "--root",
+            r.to_str().unwrap(),
+            "--entry",
+            "top.scs",
+            "--dialect",
+            "spectre",
+        ];
+        out = scan(&args, &frames).0;
+        want = out
+            .lines()
+            .filter_map(|l| l.strip_prefix("need "))
+            .map(str::to_owned)
+            .collect();
+        if want.is_empty() {
+            break;
+        }
+    }
+    let (direct, _) = scan_spectre();
+    assert_eq!(parse(&out).0, parse(&direct).0, "{out}");
+    assert_eq!(out.lines().nth(1), direct.lines().nth(1), "same version");
 }

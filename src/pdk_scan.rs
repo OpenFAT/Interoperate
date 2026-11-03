@@ -7,8 +7,8 @@
 //! ```text
 //! pdk-scan --protocol
 //! pdk-scan --remote-script
-//! pdk-scan --root <dir> --entry <relpath> --dialect spice|hspice [--section <s>] [--lib <name>]
-//! pdk-scan --stdin [--root <dir>] --entry <path> --dialect spice|hspice [--section <s>] [--lib <name>]
+//! pdk-scan --root <dir> --entry <relpath> --dialect spice|hspice|spectre [--section <s>] [--lib <name>]
+//! pdk-scan --stdin [--root <dir>] --entry <path> --dialect spice|hspice|spectre [--section <s>] [--lib <name>]
 //! ```
 //!
 //! Output, protocol 1 (PDK-Manager parses it; keep it exact), files sorted by path:
@@ -46,7 +46,7 @@ pub const REMOTE_SCRIPT: &str = include_str!("pdk_frames.sh");
 const MOS_PARAMS: [&str; 4] = ["w", "l", "nf", "m"];
 
 const USAGE: &str = "usage: schemify-interop pdk-scan --protocol | --remote-script | \
-     [--stdin] --root <dir> --entry <path> --dialect spice|hspice [--section <s>] [--lib <name>]";
+     [--stdin] --root <dir> --entry <path> --dialect spice|hspice|spectre [--section <s>] [--lib <name>]";
 
 /// What a device is instantiated as.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -95,11 +95,11 @@ pub fn run(args: &[String], stdin: &[u8]) -> (Vec<u8>, u8) {
     let (Some(entry), Some(dialect)) = (opt.get("--entry"), opt.get("--dialect")) else {
         return fail(USAGE);
     };
-    match *dialect {
-        "spice" | "hspice" => {}
-        "spectre" => return fail("spectre dialect not supported yet"),
+    let spectre = match *dialect {
+        "spice" | "hspice" => false,
+        "spectre" => true,
         d => return fail(&format!("unknown dialect {d}: spice, hspice or spectre")),
-    }
+    };
     let section = opt.get("--section").copied();
     let mut issues = Vec::new();
     let mut needs: Vec<String> = Vec::new();
@@ -109,21 +109,28 @@ pub fn run(args: &[String], stdin: &[u8]) -> (Vec<u8>, u8) {
         };
         let root = opt.get("--root").map(|r| spice::normalize(Path::new(r)));
         let entry = spice::normalize(&root.as_deref().unwrap_or(Path::new("")).join(entry));
-        let devs = devices(&entry, section, root.as_deref(), &mut issues, |p: &Path| {
-            if root.as_ref().is_some_and(|r| !p.starts_with(r)) {
-                return Err(true);
-            }
-            match frames.get(p) {
-                Some(text) => text.clone().ok_or(false),
-                None => {
-                    let p = p.to_string_lossy().into_owned();
-                    if !needs.contains(&p) {
-                        needs.push(p);
-                    }
-                    Err(false)
+        let devs = devices(
+            &entry,
+            spectre,
+            section,
+            root.as_deref(),
+            &mut issues,
+            |p: &Path| {
+                if root.as_ref().is_some_and(|r| !p.starts_with(r)) {
+                    return Err(true);
                 }
-            }
-        });
+                match frames.get(p) {
+                    Some(text) => text.clone().ok_or(false),
+                    None => {
+                        let p = p.to_string_lossy().into_owned();
+                        if !needs.contains(&p) {
+                            needs.push(p);
+                        }
+                        Err(false)
+                    }
+                }
+            },
+        );
         let base = root.or_else(|| entry.parent().map(Path::to_path_buf));
         (base, devs)
     } else {
@@ -137,14 +144,21 @@ pub fn run(args: &[String], stdin: &[u8]) -> (Vec<u8>, u8) {
         if !std::fs::canonicalize(&path).is_ok_and(|p| p.starts_with(&root) && p.is_file()) {
             return fail(&format!("cannot read entry {entry} under the root"));
         }
-        let devs = devices(&path, section, Some(&root), &mut issues, |p: &Path| {
-            let c = std::fs::canonicalize(p).map_err(|_| false)?;
-            if !c.starts_with(&root) {
-                return Err(true);
-            }
-            let bytes = std::fs::read(&c).map_err(|_| false)?;
-            Ok(String::from_utf8_lossy(&bytes).into_owned())
-        });
+        let devs = devices(
+            &path,
+            spectre,
+            section,
+            Some(&root),
+            &mut issues,
+            |p: &Path| {
+                let c = std::fs::canonicalize(p).map_err(|_| false)?;
+                if !c.starts_with(&root) {
+                    return Err(true);
+                }
+                let bytes = std::fs::read(&c).map_err(|_| false)?;
+                Ok(String::from_utf8_lossy(&bytes).into_owned())
+            },
+        );
         (Some(root), devs)
     };
     let lib = opt.get("--lib").map_or_else(
@@ -169,11 +183,15 @@ pub fn run(args: &[String], stdin: &[u8]) -> (Vec<u8>, u8) {
 // ponytail: the one reader seam; swap `spice::scan` for SpiceRack's IR here, nothing else changes.
 fn devices(
     entry: &Path,
+    spectre: bool,
     section: Option<&str>,
     base: Option<&Path>,
     issues: &mut Vec<String>,
     mut load: impl FnMut(&Path) -> Result<String, bool>,
 ) -> Vec<Device> {
+    if spectre {
+        return rack_devices(entry, section, base, issues, load);
+    }
     let shown = |p: &Path| {
         base.and_then(|b| p.strip_prefix(b).ok())
             .unwrap_or(p)
@@ -256,6 +274,120 @@ fn devices(
         issues.push(format!(
             "models not served (no cell kind): {}",
             counts.join(", ")
+        ));
+    }
+    out
+}
+
+/// Whether a model of type `kind` (lowercased) is a MOS transistor: SPICE `nmos`/`pmos`, or
+/// a Spectre compact-model family.
+fn mos_kind(kind: &str) -> bool {
+    matches!(kind, "nmos" | "pmos")
+        || ["bsim", "psp", "hisim", "utsoi", "mos"]
+            .iter()
+            .any(|f| kind.starts_with(f))
+}
+
+/// The devices of a Spectre kit, read with SpiceRack (its IR is the PDK store): every
+/// top-level `subckt` of the files `entry` reaches through `include` (`section=`: that
+/// section of the file), and every MOS `model` not already a subckt, names in their own
+/// case (Spectre is case-sensitive). Lines SpiceRack does not read are counted, never shown:
+/// they may be card data.
+// ponytail: SpiceRack keeps a section's body as raw text until its section support lands
+// (branch pdk-sections); until then a section's own includes are not followed, and an issue
+// line counts the sections read that way.
+fn rack_devices(
+    entry: &Path,
+    section: Option<&str>,
+    base: Option<&Path>,
+    issues: &mut Vec<String>,
+    mut load: impl FnMut(&Path) -> Result<String, bool>,
+) -> Vec<Device> {
+    use spicerack::{import, ir::Dialect};
+    let shown = |p: &Path| {
+        base.and_then(|b| p.strip_prefix(b).ok())
+            .unwrap_or(p)
+            .to_string_lossy()
+            .replace('\\', "/")
+    };
+    let mut todo =
+        std::collections::VecDeque::from([(entry.to_path_buf(), section.map(str::to_owned), 0u8)]);
+    let mut seen = BTreeSet::new();
+    let mut out: Vec<Device> = Vec::new();
+    let (mut unread, mut sections) = (0usize, 0usize);
+    while let Some((p, sec, depth)) = todo.pop_front() {
+        if !seen.insert((p.clone(), sec.clone())) {
+            continue;
+        }
+        if seen.len() > spice::MAX_FILES {
+            issues.push("too many files".into());
+            break;
+        }
+        let text = match load(&p) {
+            Ok(t) => t,
+            Err(true) => {
+                issues.push(format!("include outside the root refused: {}", shown(&p)));
+                continue;
+            }
+            Err(false) => {
+                issues.push(format!("{}: include not found", shown(&p)));
+                continue;
+            }
+        };
+        // Only the top-level netlist has a title line (Spectre UG §1.2): an included file
+        // gets an empty one.
+        let (ir, report) = match import::parse(&format!("\n{text}"), "pdk", Dialect::Spectre) {
+            Ok(x) => x,
+            Err(e) => {
+                issues.push(format!("{}: not read ({e})", shown(&p)));
+                continue;
+            }
+        };
+        unread += report.unparsed.len();
+        sections += usize::from(sec.is_some());
+        for sc in &ir.subcircuit_defs {
+            let d = Device {
+                target: sc.name.clone(),
+                kind: Kind::Subckt,
+                ports: sc.ports.iter().map(|q| q.name.clone()).collect(),
+                params: sc.parameters.iter().map(|q| q.name.clone()).collect(),
+            };
+            add(&mut out, issues, d);
+        }
+        for m in &ir.top.models {
+            if mos_kind(&m.kind.to_ascii_lowercase()) && !out.iter().any(|d| d.target == m.name) {
+                let d = Device {
+                    target: m.name.clone(),
+                    kind: Kind::Mos,
+                    ports: ["d", "g", "s", "b"].map(String::from).to_vec(),
+                    params: MOS_PARAMS.map(String::from).to_vec(),
+                };
+                add(&mut out, issues, d);
+            }
+        }
+        let refs = ir.top.includes.iter().map(|f| (f, None));
+        let refs = refs.chain(ir.top.libs.iter().map(|(f, s)| (f, Some(s.clone()))));
+        let dir = p.parent().unwrap_or(Path::new(""));
+        for (f, s) in refs {
+            if depth >= spice::MAX_INCLUDE_DEPTH {
+                issues.push(format!("{}: include chain too deep", shown(&p)));
+                break;
+            }
+            todo.push_back((
+                spice::normalize(&dir.join(f.trim_matches('"'))),
+                s,
+                depth + 1,
+            ));
+        }
+    }
+    if unread > 0 {
+        issues.push(format!(
+            "{unread} line(s) SpiceRack does not read (not shown)"
+        ));
+    }
+    if sections > 0 {
+        issues.push(format!(
+            "{sections} section reference(s): their own includes are not followed yet"
         ));
     }
     out
