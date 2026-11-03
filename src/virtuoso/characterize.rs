@@ -663,16 +663,31 @@ pub fn refresh_skill(wants: &[Want], dir: &str, scratch: &str) -> String {
     out
 }
 
-/// `files` with the measured derived values written as fresh `cached` lines on every stale
-/// instance a point of `measured` matches (its inputs set exactly to the instance's
-/// values, every callback run): the changed files, and a line per stale instance left
-/// stale (no point, or a failed callback).
-pub fn refresh_apply(files: &Files, measured: &[Device]) -> (Vec<(String, Vec<u8>)>, Vec<String>) {
-    let mut changed = Vec::new();
+/// What [`refresh_apply`] did.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Refreshed {
+    /// The changed design files, `(path, bytes)`.
+    pub files: Vec<(String, Vec<u8>)>,
+    /// One line per stale instance left stale (no point, a failed callback).
+    pub stale: Vec<String>,
+    /// One line per input the callbacks rewrote (the instance now holds Virtuoso's value,
+    /// as an import would bring it back).
+    pub rewritten: Vec<String>,
+}
+
+/// `files` with every stale instance a point of `measured` matches (its overrides set
+/// exactly, every callback run) brought to what Virtuoso holds: the inputs the callbacks
+/// rewrote as overrides (`wf` after a `w` edit), and the derived values as fresh `cached`
+/// lines with the digest of those inputs.
+pub fn refresh_apply(files: &Files, measured: &[Device]) -> Refreshed {
+    let mut out_files = Vec::new();
     let mut notes = Vec::new();
+    let mut rewritten = Vec::new();
     for (path, insts) in mirror_instances(files) {
         let d = parse(&files[path]).expect("parsed above");
-        let mut lines: BTreeMap<u32, Vec<[String; 3]>> = BTreeMap::new();
+        // Per record: the rewritten inputs and the cached lines.
+        type Update = (Vec<(String, String)>, Vec<[String; 3]>);
+        let mut lines: BTreeMap<u32, Update> = BTreeMap::new();
         for (r, lib, cell) in insts {
             let Some(m) = mirror_of(files, &lib, &cell) else {
                 continue;
@@ -680,9 +695,9 @@ pub fn refresh_apply(files: &Files, measured: &[Device]) -> (Vec<(String, Vec<u8
             let Some(i) = inst_of(&d, r, &m) else {
                 continue;
             };
-            let Some(digest) = i.digest.as_ref().filter(|_| !i.fresh) else {
+            if i.digest.is_none() || i.fresh {
                 continue;
-            };
+            }
             let name = d
                 .find_attr(r, "name")
                 .and_then(|a| d.attr_value(a, 0))
@@ -712,7 +727,32 @@ pub fn refresh_apply(files: &Files, measured: &[Device]) -> (Vec<(String, Vec<u8
                 ));
                 continue;
             }
-            let values: Option<Vec<[String; 3]>> = m
+            // The inputs as Virtuoso holds them after the callbacks.
+            let mut values = i.values.clone();
+            let mut rewrites = Vec::new();
+            for (j, n) in m.vinputs.iter().enumerate() {
+                let Some(k) = dev.inputs.iter().position(|x| x == n) else {
+                    continue;
+                };
+                let kind = &m.param(n).expect("a vinput param").1;
+                let Some(back) = super::read::constant_from_cdf(kind, &p.back[k]) else {
+                    continue;
+                };
+                let canon = |v: &str| canonical_value(v, m.template(n));
+                if canon(&back).is_some() && canon(&back) != canon(&values[j]) {
+                    rewritten.push(format!(
+                        "{path}: {name}: Virtuoso's callbacks set {n} to {back} (was {})",
+                        values[j]
+                    ));
+                    rewrites.push((n.clone(), back.clone()));
+                    values[j] = back;
+                }
+            }
+            let digest = inputs_digest(&m.vinputs, |n| {
+                let j = m.vinputs.iter().position(|v| v == n)?;
+                Some((values[j].as_str(), m.template(n)))
+            });
+            let cached: Option<Vec<[String; 3]>> = m
                 .vderived
                 .iter()
                 .map(|q| {
@@ -722,13 +762,13 @@ pub fn refresh_apply(files: &Files, measured: &[Device]) -> (Vec<(String, Vec<u8
                     Some([
                         q.clone(),
                         canonical_value(&v, m.template(q))?,
-                        digest.clone(),
+                        digest.clone()?,
                     ])
                 })
                 .collect();
-            match values {
+            match cached {
                 Some(v) => {
-                    lines.insert(r, v);
+                    lines.insert(r, (rewrites, v));
                 }
                 None => notes.push(format!(
                     "{path}: {name}: a derived value of {lib}:{cell} was not measured as a constant; still stale"
@@ -741,18 +781,41 @@ pub fn refresh_apply(files: &Files, measured: &[Device]) -> (Vec<(String, Vec<u8
         let mut out = Document::new(d.kind());
         copy_header(&mut out, &d, &[]);
         for r in 1..d.record_count() {
-            if let Some(v) = lines.get(&r) {
-                copy_without(&mut out, &d, r, &["cached"]);
-                for [p, val, h] in v {
-                    push_attr(&mut out, "cached", &[p, val, h]);
-                }
-            } else {
+            let Some((rewrites, cached)) = lines.get(&r) else {
                 out.copy_record(&d, r);
+                continue;
+            };
+            // Overrides in place, a new one after them, then the cached lines.
+            out.begin_record(d.record_kind(r));
+            for f in d.fields(r) {
+                out.push_field(f);
+            }
+            for a in d.attrs(r) {
+                match (
+                    d.attr_key(a),
+                    rewrites.iter().find(|w| w.0 == d.attr_key(a)),
+                ) {
+                    ("cached", _) => {}
+                    (_, Some((n, v))) => push_attr(&mut out, n, &[v]),
+                    _ => copy_attr(&mut out, &d, a),
+                }
+            }
+            for (n, v) in rewrites {
+                if d.find_attr(r, n).is_none() {
+                    push_attr(&mut out, n, &[v]);
+                }
+            }
+            for [p, val, h] in cached {
+                push_attr(&mut out, "cached", &[p, val, h]);
             }
         }
-        changed.push((path.clone(), write(&out).into_bytes()));
+        out_files.push((path.clone(), write(&out).into_bytes()));
     }
-    (changed, notes)
+    Refreshed {
+        files: out_files,
+        stale: notes,
+        rewritten,
+    }
 }
 
 #[cfg(test)]
@@ -836,6 +899,51 @@ mod tests {
             !out.contains("vderived") && !out.contains("vinputs"),
             "{out}"
         );
+    }
+
+    /// The live PDK case: `w` edited, the stored finger width `wf` stale; the callbacks
+    /// set `wf` from `w`. The refresh brings both back as Virtuoso holds them, the cached
+    /// value with the digest of those inputs.
+    #[test]
+    fn a_refresh_takes_the_inputs_the_callbacks_rewrote() {
+        let mirror = b"schemify 1 shprim\n  vinputs w wf\n\npin d inout 0 0\n\nparam w 80n\nparam wf 80n\nparam ad 1f\n  vderived true\n\nimpl spice spice\n  format spice \"M{name} {d} x w={w}\"\n";
+        let design = b"schemify 1 shcomp\n\nimpl schematic schematic\n\ninst aaaaaa pdk:mos\n  at 0 0 R0\n  name M0\n  w 4e-7\n  wf 200n\n  cached ad 1.68e-14 0000000000000000\n";
+        let files: Files = [
+            (
+                "schemify.project".to_owned(),
+                b"schemify 1 project\n\nlib pdk path pdk\n".to_vec(),
+            ),
+            ("pdk/mos.shprim".to_owned(), mirror.to_vec()),
+            ("top.shcomp".to_owned(), design.to_vec()),
+        ]
+        .into_iter()
+        .collect();
+        let (wants, _) = refresh_wants(&files);
+        assert_eq!(
+            wants[0].points,
+            [[Some("4e-7".to_owned()), Some("200n".to_owned())]]
+        );
+        let dev = read(concat!(
+            "(\"sfyx\" 1 \"t\")\n",
+            "(\"char\" \"pdk\" \"mos\" (\"w\" \"wf\") (\"w\" \"wf\" \"ad\") (\"num\" \"num\") (\"8e-08\" \"8e-08\"))\n",
+            "(\"pt\" (\"4e-7\" \"200n\") \"ok\" (\"400n\" \"400n\" \"33.6f\") (\"400n\" \"400n\"))\n",
+            "(\"end\")\n"
+        ))
+        .unwrap();
+        let done = refresh_apply(&files, &dev);
+        assert!(done.stale.is_empty(), "{done:?}");
+        assert_eq!(done.rewritten.len(), 1, "{done:?}");
+        let text = String::from_utf8(done.files[0].1.clone()).unwrap();
+        let digest = inputs_digest(&["w".into(), "wf".into()], |_| Some(("4e-7", false))).unwrap();
+        assert!(text.contains("  w 4e-7\n  wf 400n\n"), "{text}");
+        assert!(
+            text.contains(&format!("  cached ad 3.36e-14 {digest}\n")),
+            "{text}"
+        );
+        // Fresh now: nothing left to ask.
+        let mut after = files.clone();
+        after.extend(done.files);
+        assert!(refresh_wants(&after).0.is_empty());
     }
 
     #[test]

@@ -424,18 +424,18 @@ fn virtuoso_refresh(args: &[String]) -> u8 {
             Err(e) => return io_err(f, e),
         }
     }
-    let (changed, notes) = characterize::refresh_apply(&files, &measured);
-    for (rel, bytes) in &changed {
+    let done = characterize::refresh_apply(&files, &measured);
+    for (rel, bytes) in &done.files {
         let p = project.join(rel);
         if let Err(e) = std::fs::write(&p, bytes) {
             return io_err(&p, e);
         }
     }
-    for n in &notes {
+    for n in done.rewritten.iter().chain(&done.stale) {
         println!("{n}");
     }
-    println!("{} file(s) refreshed", changed.len());
-    u8::from(!notes.is_empty())
+    println!("{} file(s) refreshed", done.files.len());
+    u8::from(!done.stale.is_empty())
 }
 
 /// Every Schemify cell file under `dir`, recursively, sorted (`.schemify/` skipped).

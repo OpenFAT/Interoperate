@@ -881,7 +881,8 @@ fn a_negative_arc_and_a_symbol_pin_instance_load_and_dump_back() {
     let dump = "(\"sfyx\" 1 \"t\")\n(\"lib\" \"work\")\n(\"cell\" \"oldsym\" \"design\")\n\
                 (\"cv\" \"symbol\" \"schematicSymbol\" 160000)\n(\"term\" \"A\" \"input\" \"\")\n\
                 (\"spin\" 1 \"A\" \"input\" \"basic\" \"sympin\" \"symbolr\" 0 -20000 \"R0\")\n\
-                (\"shape\" 2 \"arc\" \"device\" \"drawing\" (14000 -1000 22000 7000 0 -2888913) 0)\n(\"end\")\n";
+                (\"shape\" 2 \"arc\" \"device\" \"drawing\" (14000 -1000 22000 7000 0 -2888913) 0)\n\
+                (\"shape\" 3 \"arc\" \"device\" \"drawing\" (-43000 -130000 43000 -25000 1092457 2057167) 0)\n(\"end\")\n";
     i.files.insert("/t/old.sfyx".into(), dump.into());
     let ok = run(
         &mut i,
@@ -899,6 +900,8 @@ fn a_negative_arc_and_a_symbol_pin_instance_load_and_dump_back() {
     for rec in [
         "(\"spin\" 1 \"A\" \"input\" \"basic\" \"sympin\" \"symbolr\" 0 -20000 \"R0\")",
         "\"arc\" \"device\" \"drawing\" (14000 -1000 22000 7000 0 -2888913) 0)",
+        // An ellipse 105 DBU tall: its centre is between grid points.
+        "\"arc\" \"device\" \"drawing\" (-43000 -130000 43000 -25000 1092457 2057167) 0)",
     ] {
         assert!(back.contains(rec), "{rec} not in\n{back}");
     }

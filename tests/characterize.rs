@@ -237,10 +237,13 @@ fn a_derived_value_goes_stale_in_schemify_and_comes_back_fresh() {
     assert!(i.load(&ask).unwrap().truthy(), "{ask}");
     let measured = characterize::read(&i.files["/t/refresh.zpdk.chaos.sfyx"]).unwrap();
     assert!(measured[0].probes.is_empty(), "named inputs are not probed");
-    let (changed, notes) = characterize::refresh_apply(&refreshed, &measured);
-    assert!(notes.is_empty(), "{notes:?}");
-    assert_eq!(changed.len(), 1);
-    refreshed.extend(changed);
+    let done = characterize::refresh_apply(&refreshed, &measured);
+    assert!(
+        done.stale.is_empty() && done.rewritten.is_empty(),
+        "{done:?}"
+    );
+    assert_eq!(done.files.len(), 1);
+    refreshed.extend(done.files);
     let (rv, rd) = cached_zz(&refreshed).expect("a refreshed cached zz");
     assert_eq!(rv, zz(3500, 1));
     assert!(findings(&refreshed, "top.shcomp").is_empty());

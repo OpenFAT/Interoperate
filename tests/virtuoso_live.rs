@@ -2104,9 +2104,10 @@ fn verify(work: &Path, o: &Opts) -> Report {
                 measured.extend(d);
             }
         }
-        let (changed, notes) = interop::virtuoso::characterize::refresh_apply(&files, &measured);
+        let done = interop::virtuoso::characterize::refresh_apply(&files, &measured);
+        let notes = done.stale;
         let mut refreshed = files.clone();
-        refreshed.extend(changed);
+        refreshed.extend(done.files);
         let got = cached_of(refreshed.get(file).map_or(&[][..], Vec::as_slice), inst);
         let truth_dump = out.join(format!("refresh_{k}.truth.sfyx"));
         let truth_proj = work.join(format!("projects/refresh_{k}_truth"));

@@ -947,19 +947,24 @@
         ("ellipse" (dbCreateEllipse sfyCv lpp (SfyPts c)))
         ("arc"
           ;; coords (x1 y1 x2 y2 a0 a1): the ellipse box, then the angles in micro-radians.
-          ;; Made as the ellipse's upper half, then given its own angles: dbCreateArc refuses
-          ;; the ellipse box and any arc box with an edge inside the ellipse (DB-270000, live
-          ;; ICADVM20.1), and takes the angles exactly as it reports them.
+          ;; dbCreateArc refuses the ellipse box, an arc box with an edge inside the ellipse,
+          ;; and one off the grid (DB-270000, live ICADVM20.1: an ellipse an odd number of
+          ;; DBU tall has its centre between grid points). So the arc is made as the upper
+          ;; half of an ellipse centred on the box's lower edge (every edge on the grid),
+          ;; then given its own ellipse box and angles, both of which Virtuoso takes exactly.
           (SfyArcAngles
-            (dbCreateArc sfyCv lpp (SfyPts (list (nth 0 c) (nth 1 c) (nth 2 c) (nth 3 c)))
-              (SfyPts (list (nth 0 c) (quotient (plus (nth 1 c) (nth 3 c)) 2.0) (nth 2 c) (nth 3 c))))
+            (dbCreateArc sfyCv lpp
+              (SfyPts (list (nth 0 c) (difference (times 2 (nth 1 c)) (nth 3 c)) (nth 2 c) (nth 3 c)))
+              (SfyPts (list (nth 0 c) (nth 1 c) (nth 2 c) (nth 3 c))))
             c))
         (t nil)))
     (SfyCreated s lr (sprintf nil "%s shape" (nth 1 f)))))
 
-;; Arc a (nil passes through) with the angles of coords c (micro-radians), as dumped.
+;; Arc a (nil passes through) with the ellipse box and angles of coords c (dump units,
+;; micro-radians), as dumped.
 (procedure (SfyArcAngles a c)
   (when a
+    (setSGq a (SfyPts (list (nth 0 c) (nth 1 c) (nth 2 c) (nth 3 c))) ellipseBBox)
     (setSGq a (quotient (float (nth 4 c)) 1000000.0) startAngle)
     (setSGq a (quotient (float (nth 5 c)) 1000000.0) stopAngle))
   a)
