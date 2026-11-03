@@ -4,11 +4,11 @@
 //! `rack` and writes the dialect a simulator wants from it on demand.
 //!
 //! ```text
-//! pdk-models --root <dir> --entry <relpath> --from <d> --to <d> -o <outdir>
+//! pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>
 //!   d: spice (ngspice) | hspice | spectre | vacask | xyce | rack
 //! ```
 //!
-//! Every file the entry reaches (includes, `.lib` calls, and those inside library sections)
+//! Every file the entries reach (`--entry` repeats: a kit with a file per corner) (includes, `.lib` calls, and those inside library sections)
 //! is converted on its own and written at the same relative path under `<outdir>`, so the
 //! references between files still resolve. Prints `converted <n> file(s)`, then one
 //! `lost <relpath> <n>` line per file whose cards SpiceRack does not read (never the cards)
@@ -24,7 +24,7 @@ use spicerack::ir::{CircuitIR, Dialect};
 
 use crate::spice::{self, MAX_FILES, MAX_INCLUDE_DEPTH};
 
-const USAGE: &str = "usage: schemify-interop pdk-models --root <dir> --entry <relpath> \
+const USAGE: &str = "usage: schemify-interop pdk-models --root <dir> --entry <relpath>... \
      --from <d> --to <d> -o <outdir>   (d: spice | hspice | spectre | vacask | xyce | rack)";
 
 /// A model file form: a SpiceRack dialect, or `None` for the IR itself (`rack`).
@@ -74,20 +74,25 @@ fn references(ir: &CircuitIR) -> Vec<&str> {
 /// Runs `pdk-models` on `args` (after the subcommand): stdout's text and the exit status.
 pub fn run(args: &[String]) -> (String, u8) {
     let mut opt = std::collections::BTreeMap::new();
+    let mut entries = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match (a.as_str(), it.next()) {
-            (k @ ("--root" | "--entry" | "--from" | "--to" | "-o"), Some(v)) => {
+            ("--entry", Some(v)) => entries.push(v.as_str()),
+            (k @ ("--root" | "--from" | "--to" | "-o"), Some(v)) => {
                 opt.insert(k, v.as_str());
             }
             _ => return (format!("{USAGE}\n"), 2),
         }
     }
-    let [Some(root), Some(entry), Some(from), Some(to), Some(out)] =
-        ["--root", "--entry", "--from", "--to", "-o"].map(|k| opt.get(k).copied())
+    let [Some(root), Some(from), Some(to), Some(out)] =
+        ["--root", "--from", "--to", "-o"].map(|k| opt.get(k).copied())
     else {
         return (format!("{USAGE}\n"), 2);
     };
+    if entries.is_empty() {
+        return (format!("{USAGE}\n"), 2);
+    }
     let (from, to) = match (form(from), form(to)) {
         (Ok(f), Ok(t)) => (f, t),
         (Err(e), _) | (_, Err(e)) => return (format!("{e}\n"), 2),
@@ -95,7 +100,8 @@ pub fn run(args: &[String]) -> (String, u8) {
     let Ok(root) = std::fs::canonicalize(root).map(|r| spice::normalize(&r)) else {
         return (format!("cannot open root {root}\n"), 2);
     };
-    match convert(&root, &root.join(entry), from, to, Path::new(out)) {
+    let entries: Vec<PathBuf> = entries.iter().map(|e| root.join(e)).collect();
+    match convert(&root, &entries, from, to, Path::new(out)) {
         Ok((n, lost, missing)) => {
             let mut s = format!("converted {n} file(s)\n");
             for (p, k) in &lost {
@@ -114,18 +120,18 @@ pub fn run(args: &[String]) -> (String, u8) {
 /// Files written, files with lost lines (relative path, count), missing files.
 type Converted = (usize, Vec<(String, usize)>, Vec<String>);
 
-/// Converts every file `entry` reaches under `root` into `out`. All files are read and
+/// Converts every file the `entries` reach under `root` into `out`. All files are read and
 /// converted before any is written, so a failure leaves `out` untouched. Returns the count
 /// written, the files with lost lines (relative path, count) and the missing ones.
 fn convert(
     root: &Path,
-    entry: &Path,
+    entries: &[PathBuf],
     from: Option<Dialect>,
     to: Option<Dialect>,
     out: &Path,
 ) -> Result<Converted, String> {
     let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
-    let mut todo = VecDeque::from([(spice::normalize(entry), 0u8)]);
+    let mut todo: VecDeque<_> = entries.iter().map(|e| (spice::normalize(e), 0u8)).collect();
     let mut seen = BTreeSet::new();
     let mut done: Vec<(PathBuf, String)> = Vec::new();
     let (mut lost, mut missing) = (Vec::new(), Vec::new());
