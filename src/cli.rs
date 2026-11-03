@@ -185,14 +185,15 @@ pub fn run(args: &[String]) -> u8 {
 }
 
 const JOB_USAGE: &str = "\
-usage: schemify-interop virtuoso-export <project-dir> <cell-file>... -o <file.sfyx> [--core-cells] [--lib L=V]...
+usage: schemify-interop virtuoso-export <project-dir> <cell-file|dir>... -o <file.sfyx> [--core-cells] [--lib L=V]...
        schemify-interop virtuoso-import <project-dir> <file.sfyx> [--analoglib] [--lib L=V]...
-       schemify-interop xschem-export <project-dir> <cell-file>... -o <out-dir>
+       schemify-interop xschem-export <project-dir> <cell-file|dir>... -o <out-dir>
        schemify-interop install-skill <dir>
        schemify-interop pdk-derived <project-dir> <char.sfyx>
        schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
        schemify-interop pdk-scan --protocol | --remote-script | [--stdin] --root <dir> --entry <path> --dialect spice|hspice [--section <s>] [--lib <name>]
-(cell files, .sfyx paths and output paths are relative to <project-dir>)";
+(cell files, .sfyx paths and output paths are relative to <project-dir>; a directory names every
+cell file under it)";
 
 /// Parses the arguments of a job subcommand into (project directory, command).
 fn job_command(cmd: &str, args: &[String]) -> Option<(PathBuf, crate::job::Command)> {
@@ -234,6 +235,27 @@ fn job_command(cmd: &str, args: &[String]) -> Option<(PathBuf, crate::job::Comma
             f if f.starts_with("--") => return None,
             p => paths.push(p.replace('\\', "/")),
         }
+    }
+    // A directory names every cell file under it (a whole library: PDK-Manager exports an
+    // install whose cells it cannot list).
+    if cmd.ends_with("-export") {
+        let root = Path::new(project);
+        let mut all = Vec::new();
+        for p in paths {
+            let dir = root.join(&p);
+            if dir.is_dir() {
+                let mut found = Vec::new();
+                walk_cells(&dir, &mut found);
+                all.extend(
+                    found
+                        .iter()
+                        .map(|f| slash(f.strip_prefix(root).unwrap_or(f))),
+                );
+            } else {
+                all.push(p);
+            }
+        }
+        paths = all;
     }
     let c = match cmd {
         "virtuoso-export" if !paths.is_empty() => Command::VirtuosoExport {
@@ -680,4 +702,44 @@ fn summarize(
         }
     }
     println!("  params with min/max: {limits}");
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_export_directory_names_every_cell_under_it() {
+        let root = std::env::temp_dir().join(format!("sfy-cli-dir-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        for f in [
+            "lib/b.shprim",
+            "lib/a.shprim",
+            "lib/sub/c.shcomp",
+            "lib/notes.txt",
+            "top.shbench",
+        ] {
+            let p = root.join(f);
+            std::fs::create_dir_all(p.parent().unwrap()).unwrap();
+            std::fs::write(&p, "").unwrap();
+        }
+        let args: Vec<String> = [root.to_str().unwrap(), "lib", "top.shbench", "-o", "x"]
+            .map(String::from)
+            .to_vec();
+        let Some((_, crate::job::Command::XschemExport { tops, .. })) =
+            job_command("xschem-export", &args)
+        else {
+            panic!("not an xschem export");
+        };
+        assert_eq!(
+            tops,
+            [
+                "lib/a.shprim",
+                "lib/b.shprim",
+                "lib/sub/c.shcomp",
+                "top.shbench"
+            ]
+        );
+        let _ = std::fs::remove_dir_all(&root);
+    }
 }

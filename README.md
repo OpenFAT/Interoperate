@@ -54,9 +54,9 @@ the editor, the same conversions run from the command line:
 ```
 cargo install --git https://github.com/OpenFAT/Interoperate --features cli   # or a release binary, or `nix run github:OpenFAT/Interoperate --`
 
-schemify-interop virtuoso-export <project> <cell-file>... -o <file.sfyx> [--lib L=V]... [--core-cells]
+schemify-interop virtuoso-export <project> <cell-file|dir>... -o <file.sfyx> [--lib L=V]... [--core-cells]
 schemify-interop virtuoso-import <project> <file.sfyx> [--lib L=V]... [--analoglib]
-schemify-interop xschem-export   <project> <cell-file>... -o <dir>
+schemify-interop xschem-export   <project> <cell-file|dir>... -o <dir>
 schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec import.md)
 schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
@@ -64,7 +64,7 @@ schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <
 schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice [--section S]   (PDK scan below)
 ```
 
-Paths after `<project>` are relative to it. Each conversion writes a report next to its output
+Paths after `<project>` are relative to it; a directory stands for every cell file under it. Each conversion writes a report next to its output
 (`<name>.report.md`, `.report.txt`): everything that did not cross one to one, with a reason.
 
 ## First time with Virtuoso
