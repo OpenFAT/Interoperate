@@ -38,6 +38,7 @@ pub const SIGNATURES: &[(&str, &str)] = &[
     ("dbOpenCellViewByType", "g t g [T t D]"),
     ("dbSave", "d [g t t]"),
     ("dbClose", "d"),
+    ("dbReopen", "d t"),
     ("dbPurge", "d"),
     ("dbGetOpenCellViews", ""),
     ("dbDeleteObject", "d"),
@@ -1318,6 +1319,16 @@ impl MockDb {
                 self.backups.remove(&cv);
                 self.put(cv, "sfySaved", V::T);
                 self.put(cv, "modifiedButNotSaved", V::Nil);
+                V::T
+            }
+            // The open cellview in another mode (the same object, its references kept).
+            "dbReopen" => {
+                let cv = o(0);
+                let mode = st(1);
+                if self.ty(cv) != "cellView" || !["r", "a", "w"].contains(&mode.as_str()) {
+                    return Ok(V::Nil);
+                }
+                self.put(cv, "mode", V::str(&mode));
                 V::T
             }
             "dbClose" | "dbPurge" => {

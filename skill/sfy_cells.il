@@ -762,6 +762,11 @@
         (dbPurge sfyCv))
       ((dbSave sfyCv)
         (SfyCount (strcat "saved " (getSGq sfyCv cellViewType)))
+        ;; Back to read-only first: another open cellview may hold a reference to this one
+        ;; (a schematic instantiating a symbol), and the "w" open upgraded that shared
+        ;; object, so after the close it would stay open for editing and refuse the next
+        ;; import (live ICADVM20.1).
+        (errset (dbReopen sfyCv "r") t)
         (dbClose sfyCv))
       (t
         (SfyRefuse line (sprintf nil "cannot save %s/%s/%s" tlib cell view))
