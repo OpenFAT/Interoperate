@@ -311,7 +311,9 @@ fn rack_devices(
         std::collections::VecDeque::from([(entry.to_path_buf(), section.map(str::to_owned), 0u8)]);
     let mut seen = BTreeSet::new();
     let mut out: Vec<Device> = Vec::new();
-    let mut unread = 0usize;
+    // Lines SpiceRack refused, and lines it kept as text, not IR, by keyword (never shown).
+    let (mut unread, mut verbatim) = (BTreeMap::new(), BTreeMap::new());
+    let mut ahdl = 0usize;
     let mut parsed = std::collections::BTreeMap::new();
     while let Some((p, sec, depth)) = todo.pop_front() {
         if !seen.insert((p.clone(), sec.clone())) {
@@ -343,7 +345,16 @@ fn rack_devices(
                     continue;
                 }
             };
-            unread += report.unparsed.len();
+            tally(&mut unread, &report.unparsed);
+            let bodies = std::iter::once(&ir.top).chain(&ir.subcircuit_defs).chain(
+                ir.sections
+                    .iter()
+                    .flat_map(|x| std::iter::once(&x.body).chain(&x.subcircuit_defs)),
+            );
+            for b in bodies {
+                tally(&mut verbatim, &b.raw_spice);
+                ahdl += b.osdi_loads.len();
+            }
             parsed.insert(p.clone(), ir);
         }
         let ir = &parsed[&p];
@@ -396,12 +407,69 @@ fn rack_devices(
             ));
         }
     }
-    if unread > 0 {
+    for (what, kinds) in [
+        ("SpiceRack does not read", &unread),
+        ("kept as text, not read as devices", &verbatim),
+    ] {
+        let n: usize = kinds.values().sum();
+        if n > 0 {
+            let by: Vec<String> = kinds.iter().map(|(k, c)| format!("{c} {k}")).collect();
+            issues.push(format!("{n} line(s) {what} (not shown): {}", by.join(", ")));
+        }
+    }
+    if ahdl > 0 {
         issues.push(format!(
-            "{unread} line(s) SpiceRack does not read (not shown)"
+            "{ahdl} ahdl_include(s): Verilog-A devices are not scanned"
         ));
     }
     out
+}
+
+/// Spectre and SPICE statement keywords: the only part of an unread line a scan may show.
+const KEYWORDS: [&str; 26] = [
+    "statistics",
+    "process",
+    "mismatch",
+    "vary",
+    "correlate",
+    "truncate",
+    "simulator",
+    "ahdl_include",
+    "model",
+    "subckt",
+    "inline",
+    "parameters",
+    "include",
+    "section",
+    "library",
+    "if",
+    "else",
+    "real",
+    "global",
+    "options",
+    ".param",
+    ".model",
+    ".subckt",
+    ".lib",
+    ".include",
+    ".option",
+];
+
+/// Counts `lines` by their first word when it is a [`KEYWORDS`] entry, else as `other`.
+fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
+    for l in lines {
+        let w = l
+            .split_whitespace()
+            .next()
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let k = KEYWORDS
+            .iter()
+            .find(|k| **k == w)
+            .copied()
+            .unwrap_or("other");
+        *into.entry(k).or_default() += 1;
+    }
 }
 
 /// Appends `d` to `out` unless its name cannot be a cell file, a port repeats, or a device of

@@ -417,6 +417,14 @@ fn a_spectre_kit_reads_through_spicerack() {
         assert!(!out.contains(card), "{card} left the kit:\n{out}");
     }
     assert!(!out.contains("ff_missing"), "{lines:?}");
+    // The `simulator lang=spice` region is kept as text: counted by keyword, never shown.
+    assert!(
+        lines.contains(
+            &"issue 3 line(s) kept as text, not read as devices (not shown): 1 .param, 2 simulator"
+                .to_owned()
+        ),
+        "{lines:?}"
+    );
     // Deterministic.
     assert_eq!(scan_spectre().0, out);
 }
