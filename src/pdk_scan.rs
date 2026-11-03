@@ -290,11 +290,14 @@ fn mos_kind(kind: &str) -> bool {
             .any(|f| kind.starts_with(f))
 }
 
-/// The devices of a Spectre kit, read with SpiceRack (its IR is the PDK store): every
-/// top-level `subckt` of the files `entry` reaches through `include` (`section=`: that
-/// section of the file), and every MOS `model` not already a subckt, names in their own
-/// case (Spectre is case-sensitive). Lines SpiceRack does not read are counted, never shown:
-/// they may be card data. A file read with a section (`.lib f s`, `include "f" section=s`) is that section only.
+/// The devices of a Spectre kit, read through SpiceRack's [`Kit`]: every subcircuit visible at
+/// the top of a file the entry reaches (`include`, and `include … section=` for the section it
+/// selects; `section` read as that section of the entry), every MOS model not already a
+/// subcircuit, and every Verilog-A module (`ahdl_include`). Names keep their case (Spectre is
+/// case-sensitive). Lines SpiceRack does not read are counted by keyword, never shown: they
+/// may be card data.
+///
+/// [`Kit`]: spicerack::syntax::resolve::Kit
 fn rack_devices(
     entry: &Path,
     section: Option<&str>,
@@ -302,135 +305,162 @@ fn rack_devices(
     issues: &mut Vec<String>,
     mut load: impl FnMut(&Path) -> Result<String, bool>,
 ) -> Vec<Device> {
-    use spicerack::{import, ir::Dialect};
+    use spicerack::codegen::Dialect;
+    use spicerack::syntax::ast::Node;
+    use spicerack::syntax::device::Primitive;
+    use spicerack::syntax::diag::Code;
+    use spicerack::syntax::resolve::{DefKind, FileId, Form, Kit, LoadError, Role, Scope};
+    use spicerack::syntax::{lexicon, tokenize};
     let shown = |p: &Path| {
         base.and_then(|b| p.strip_prefix(b).ok())
             .unwrap_or(p)
             .to_string_lossy()
             .replace('\\', "/")
     };
-    let mut todo =
-        std::collections::VecDeque::from([(entry.to_path_buf(), section.map(str::to_owned), 0u8)]);
-    let mut seen = BTreeSet::new();
-    let mut out: Vec<Device> = Vec::new();
-    // Lines SpiceRack refused, and lines it kept as text, not IR, by keyword (never shown).
-    let (mut unread, mut verbatim) = (BTreeMap::new(), BTreeMap::new());
-    let mut parsed = std::collections::BTreeMap::new();
-    while let Some((p, sec, depth)) = todo.pop_front() {
-        if !seen.insert((p.clone(), sec.clone())) {
-            continue;
-        }
-        if seen.len() > spice::MAX_FILES {
-            issues.push("too many files".into());
-            break;
-        }
-        // A corner file is selected section by section: it is read once.
-        if !parsed.contains_key(&p) {
-            let text = match load(&p) {
-                Ok(t) => t,
-                Err(true) => {
-                    issues.push(format!("include outside the root refused: {}", shown(&p)));
-                    continue;
-                }
-                Err(false) => {
-                    issues.push(format!("{}: include not found", shown(&p)));
-                    continue;
-                }
-            };
-            // Only the top-level netlist has a title line (Spectre UG §1.2): an included file
-            // gets an empty one.
-            let (ir, report) = match import::parse(&format!("\n{text}"), "pdk", Dialect::Spectre) {
-                Ok(x) => x,
-                Err(e) => {
-                    issues.push(format!("{}: not read ({e})", shown(&p)));
-                    continue;
-                }
-            };
-            tally(&mut unread, &report.unparsed);
-            let bodies = std::iter::once(&ir.top).chain(&ir.subcircuit_defs).chain(
-                ir.sections
-                    .iter()
-                    .flat_map(|x| std::iter::once(&x.body).chain(&x.subcircuit_defs)),
-            );
-            for b in bodies {
-                tally(&mut verbatim, &b.raw_spice);
+    let mut loader = |p: &Path| {
+        load(p).map_err(|refused| {
+            if refused {
+                LoadError::Refused
+            } else {
+                LoadError::NotFound
             }
-            parsed.insert(p.clone(), ir);
+        })
+    };
+    let kit = Kit::load(
+        &[entry.to_path_buf()],
+        Form::Library,
+        Dialect::Spectre,
+        &mut loader,
+    );
+    // The sections something selects: every `include … section=`, plus `section` on the entry.
+    let mut selected: BTreeSet<(FileId, u32)> = BTreeSet::new();
+    for (f, _) in kit.files().iter().enumerate() {
+        let f = FileId(f as u32);
+        for n in 0..kit.node_count(f) {
+            if let Some(t) = kit.target(f, Node(n as u32)) {
+                selected.extend(t.section.map(|s| (t.file, s.0)));
+            }
         }
-        let ir = &parsed[&p];
-        let (body, defs) = match &sec {
-            None => (&ir.top, &ir.subcircuit_defs),
-            Some(s) => match ir
-                .sections
-                .iter()
-                .find(|x| x.body.name.eq_ignore_ascii_case(s))
-            {
-                Some(x) => (&x.body, &x.subcircuit_defs),
-                None => {
-                    issues.push(format!("{}: no section {s}", shown(&p)));
-                    continue;
-                }
+    }
+    if let Some(sec) = section {
+        let entry_section = kit.definitions().iter().find(|d| {
+            d.file == FileId(0) && d.kind == DefKind::Section && d.name.eq_ignore_ascii_case(sec)
+        });
+        match entry_section {
+            Some(d) => {
+                selected.insert((d.file, d.node.0));
+            }
+            None => issues.push(format!("{}: no section {sec}", shown(entry))),
+        }
+    }
+    // A declaration is a cell when it is visible at a file's top: not inside a subcircuit, and
+    // inside a section only when the section is selected. `if` branches are looked through.
+    let visible = |file: FileId, mut scope: Scope| loop {
+        match scope {
+            Scope::Top => return true,
+            Scope::Subckt(_) => return false,
+            Scope::Section(s) => return selected.contains(&(file, s.0)),
+            Scope::Branch(b) => match kit.scope(file, b) {
+                Some(outer) => scope = outer,
+                None => return true,
             },
-        };
-        for sc in defs {
-            let d = Device {
-                target: sc.name.clone(),
-                kind: Kind::Subckt,
-                ports: sc.ports.iter().map(|q| q.name.clone()).collect(),
-                params: sc.parameters.iter().map(|q| q.name.clone()).collect(),
-            };
-            add(&mut out, issues, d);
         }
-        for m in &body.models {
-            if mos_kind(&m.kind.to_ascii_lowercase()) && !out.iter().any(|d| d.target == m.name) {
-                let d = Device {
-                    target: m.name.clone(),
+    };
+    let mut out: Vec<Device> = Vec::new();
+    let (mut unread, mut unknown) = (BTreeMap::new(), 0usize);
+    for (i, file) in kit.files().iter().enumerate() {
+        let id = FileId(i as u32);
+        match file.role {
+            Role::Unread(LoadError::Refused) => {
+                issues.push(format!(
+                    "include outside the root refused: {}",
+                    shown(&file.path)
+                ));
+            }
+            Role::Unread(LoadError::NotFound) => {
+                issues.push(format!("{}: include not found", shown(&file.path)));
+            }
+            Role::VerilogA => va_modules(&file.text)
+                .into_iter()
+                .for_each(|d| add(&mut out, issues, d)),
+            Role::Deck | Role::Library => {}
+        }
+        // The statement each `P` diagnostic sits on, counted by its first word's keyword.
+        let lex = lexicon::of(kit.dialect()).expect("Spectre has a reader");
+        let toks = tokenize(&file.text, lex);
+        let mut lines = Vec::new();
+        for d in &file.diags {
+            match d.code {
+                Code::R0001 => unknown += 1,
+                Code::R0008 => {
+                    issues.push(format!("{}: include chain too deep", shown(&file.path)))
+                }
+                Code::R0009 => issues.push("too many files".into()),
+                // ponytail: the parse codes by name until SpiceRack's catalogue gives a stage class.
+                Code::P0001
+                | Code::P0002
+                | Code::P0003
+                | Code::P0004
+                | Code::P0005
+                | Code::P0006
+                | Code::P0007
+                | Code::P0008
+                | Code::P0009 => {
+                    let at = toks.start(d.token.min(toks.len().saturating_sub(1) as u32)) as usize;
+                    let line = file.text[at..].lines().next().unwrap_or("");
+                    lines.push(line.to_owned());
+                }
+                _ => {}
+            }
+        }
+        tally(&mut unread, &lines);
+        let defs = kit
+            .definitions()
+            .iter()
+            .filter(|d| d.file == id && visible(id, d.scope));
+        let (subckts, models): (Vec<_>, Vec<_>) =
+            defs.partition(|d| matches!(d.kind, DefKind::Subckt { .. }));
+        for d in subckts {
+            if let DefKind::Subckt { ports, params } = &d.kind {
+                let dev = Device {
+                    target: d.name.clone(),
+                    kind: Kind::Subckt,
+                    ports: ports.clone(),
+                    params: params.clone(),
+                };
+                add(&mut out, issues, dev);
+            }
+        }
+        for d in models {
+            let DefKind::Model { word, kind, .. } = &d.kind else {
+                continue;
+            };
+            let mos = *kind == Some(Primitive::Mosfet) || mos_kind(&word.to_ascii_lowercase());
+            // A binned model is one cell, by its base name (`nch` for `nch.1`).
+            let name = d.base().to_owned();
+            if mos && !out.iter().any(|x| x.target == name) {
+                let dev = Device {
+                    target: name,
                     kind: Kind::Mos,
                     ports: ["d", "g", "s", "b"].map(String::from).to_vec(),
                     params: MOS_PARAMS.map(String::from).to_vec(),
                 };
-                add(&mut out, issues, d);
+                add(&mut out, issues, dev);
             }
-        }
-        let dir = p.parent().unwrap_or(Path::new(""));
-        for va in &body.osdi_loads {
-            let q = spice::normalize(&dir.join(va.trim_matches('"')));
-            if !seen.insert((q.clone(), None)) {
-                continue;
-            }
-            match load(&q) {
-                Ok(text) => va_modules(&text)
-                    .into_iter()
-                    .for_each(|d| add(&mut out, issues, d)),
-                Err(true) => {
-                    issues.push(format!("include outside the root refused: {}", shown(&q)));
-                }
-                Err(false) => issues.push(format!("{}: include not found", shown(&q))),
-            }
-        }
-        let refs = body.includes.iter().map(|f| (f, None));
-        let refs = refs.chain(body.libs.iter().map(|(f, s)| (f, Some(s.clone()))));
-        for (f, s) in refs {
-            if depth >= spice::MAX_INCLUDE_DEPTH {
-                issues.push(format!("{}: include chain too deep", shown(&p)));
-                break;
-            }
-            todo.push_back((
-                spice::normalize(&dir.join(f.trim_matches('"'))),
-                s,
-                depth + 1,
-            ));
         }
     }
-    for (what, kinds) in [
-        ("SpiceRack does not read", &unread),
-        ("kept as text, not read as devices", &verbatim),
-    ] {
-        let n: usize = kinds.values().sum();
-        if n > 0 {
-            let by: Vec<String> = kinds.iter().map(|(k, c)| format!("{c} {k}")).collect();
-            issues.push(format!("{n} line(s) {what} (not shown): {}", by.join(", ")));
-        }
+    let n: usize = unread.values().sum();
+    if n > 0 {
+        let by: Vec<String> = unread.iter().map(|(k, c)| format!("{c} {k}")).collect();
+        issues.push(format!(
+            "{n} line(s) SpiceRack does not read (not shown): {}",
+            by.join(", ")
+        ));
+    }
+    if unknown > 0 {
+        issues.push(format!(
+            "{unknown} instance(s) whose master the kit does not declare (not shown)"
+        ));
     }
     out
 }

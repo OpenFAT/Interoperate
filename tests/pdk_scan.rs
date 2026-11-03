@@ -380,8 +380,8 @@ const SPECTRE_CARDS: [&str; 14] = [
 
 /// A Spectre kit read with SpiceRack: subckt wrappers (an `inline subckt` and a `\`
 /// continuation included) and the top-level compact models are cells, names in their own
-/// case; corner sections are not cells, but the selected one's include is followed and the
-/// other's is not; no card value appears.
+/// case; corner sections are not cells, and only the selected one's include gives cells; no card
+/// value appears.
 #[test]
 fn a_spectre_kit_reads_through_spicerack() {
     let (out, code) = scan_spectre();
@@ -447,13 +447,19 @@ fn a_spectre_kit_reads_through_spicerack() {
     for card in SPECTRE_CARDS {
         assert!(!out.contains(card), "{card} left the kit:\n{out}");
     }
-    assert!(!out.contains("ff_missing"), "{lines:?}");
-    // The `simulator lang=spice` region is kept as text: counted by keyword, never shown.
+    // The kit reads every include, an unselected corner's too: the ff corner's missing file is
+    // reported, though nothing in that section can be a cell.
+    assert_eq!(
+        lines
+            .iter()
+            .filter(|l| l.starts_with("issue "))
+            .collect::<Vec<_>>(),
+        ["issue ff_missing.scs: include not found"],
+        "{lines:?}"
+    );
+    // The `simulator lang=spice` region is read as SPICE now: nothing is left unread.
     assert!(
-        lines.contains(
-            &"issue 3 line(s) kept as text, not read as devices (not shown): 1 .param, 2 simulator"
-                .to_owned()
-        ),
+        !lines.iter().any(|l| l.contains("does not read")),
         "{lines:?}"
     );
     // Deterministic.
