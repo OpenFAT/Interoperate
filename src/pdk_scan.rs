@@ -577,6 +577,35 @@ const KEYWORDS: [&str; 26] = [
     ".option",
 ];
 
+/// Spectre's built-in device masters: language keywords, so a scan may name them.
+const PRIMITIVES: [&str; 20] = [
+    "resistor",
+    "capacitor",
+    "inductor",
+    "vsource",
+    "isource",
+    "vcvs",
+    "vccs",
+    "ccvs",
+    "cccs",
+    "bsource",
+    "mutual_inductor",
+    "diode",
+    "bjt",
+    "mosfet",
+    "switch",
+    "port",
+    "tline",
+    "pvcvs",
+    "pvccs",
+    "relay",
+];
+
+fn primitive(w: Option<&str>) -> Option<&'static str> {
+    let w = w?.to_ascii_lowercase();
+    PRIMITIVES.iter().find(|p| **p == w).copied()
+}
+
 /// Counts `lines` by their first word when it is a [`KEYWORDS`] entry, else by shape alone.
 fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
     for l in lines {
@@ -592,12 +621,28 @@ fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
             .copied()
             .unwrap_or_else(|| {
                 let (eq, paren) = (t.find('='), t.find('('));
+                let words: Vec<&str> = t.split_whitespace().collect();
                 match t.chars().next() {
                     Some('+') => "continuation",
                     Some('{' | '}') => "brace",
                     Some('.') => "dotcard",
-                    _ if paren.is_some_and(|p| eq.is_none_or(|e| p < e)) => "instance",
-                    _ if eq.is_some() => "assignment",
+                    _ if paren.is_some_and(|p| eq.is_none_or(|e| p < e)) => {
+                        // `name (nodes) master …`: the master, when it is a Spectre primitive.
+                        let after = t.find(')').map_or("", |c| &t[c + 1..]);
+                        primitive(after.split_whitespace().next()).unwrap_or("subckt_instance")
+                    }
+                    _ if words.first().is_some_and(|w| w.contains('='))
+                        || words.get(1) == Some(&"=") =>
+                    {
+                        "assignment"
+                    }
+                    // `name n1 n2 master k=v …`: the word before the first `k=v`.
+                    _ if eq.is_some() => {
+                        let at = words.iter().position(|w| w.contains('=')).unwrap_or(0);
+                        let master = at.checked_sub(1).map(|i| words[i]);
+                        primitive(master)
+                            .map_or("unparenthesized_instance", |_| "unparenthesized_primitive")
+                    }
                     _ => "other",
                 }
             });
