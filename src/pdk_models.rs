@@ -1,88 +1,61 @@
 //! `schemify-interop pdk-models` (feature `cli`): a local kit's model files converted from one
-//! simulator dialect to another through SpiceRack's IR, which is also the store form
-//! (`--to rack`: each file's `CircuitIR` as JSON). PDK-Manager keeps a local install as
-//! `rack` and writes the dialect a simulator wants from it on demand.
+//! simulator dialect to another through SpiceRack's transpiler (`import::kit` reads the kit,
+//! `render::render_kit` writes each file). The store is the kit's own source files and their
+//! read order; PDK-Manager writes the dialect a simulator wants from them on demand.
 //!
 //! ```text
 //! pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>
-//!   d: spice (ngspice) | hspice | spectre | vacask | xyce | rack
+//!   d: spice (ngspice) | hspice | spectre | vacask | xyce
 //! ```
 //!
-//! Every file the entries reach (`--entry` repeats: a kit with a file per corner) (includes, `.lib` calls, and those inside library sections)
+//! Every file the entries reach (`--entry` repeats: a kit with a file per corner; includes,
+//! `.lib` calls and `include … section=`, at the top, in sections, subcircuits and branches)
 //! is converted on its own and written at the same relative path under `<outdir>`, so the
-//! references between files still resolve; Verilog-A sources (`ahdl_include`) are copied. Prints `converted <n> file(s)`, then one
-//! `lost <relpath> <n>` line per file whose cards SpiceRack does not read (never the cards)
-//! and one `missing <relpath>` per referenced file the kit lacks, then `end`. Exit 0:
-//! lossless; 1: written, with losses or missing files; 2: nothing written.
+//! references between files still resolve; Verilog-A sources (`ahdl_include`) are copied.
+//! Output, files in the kit's read order:
+//!
+//! ```text
+//! converted <n> file(s)           exit 0 or 1; on exit 2 `not written` instead
+//! diag <relpath> <code> <count>   per file, per SpiceRack diagnostic code (never the cards)
+//! end
+//! ```
+//!
+//! A file the kit lacks is `diag <its relpath> R0006 1` (not repeated on its includer).
+//! `diag::info(code)` in SpiceRack is a code's title and explanation. Exit 0: lossless (no
+//! `diag` line); 1: written, with notes or missing files; 2: nothing written, either a file
+//! the target refuses (its `W` codes among its `diag` lines) or a path outside the root
+//! (`R0007`, also printed as `<relpath>: outside the root, refused`). Usage errors print the
+//! usage and exit 2.
 //!
 //! Remote kits never come here: they stay where they are (pdk-scan serves their interface).
 
-use std::collections::{BTreeSet, VecDeque};
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 
-use spicerack::ir::{CircuitIR, Dialect};
+use spicerack::syntax::Dialect;
+use spicerack::syntax::diag::Code;
+use spicerack::syntax::render::{self, Diags};
+use spicerack::syntax::resolve::{FileId, Form, Kit, LoadError, Role};
 
-use crate::spice::{self, MAX_FILES, MAX_INCLUDE_DEPTH};
+use crate::spice;
 
 const USAGE: &str = "usage: schemify-interop pdk-models --root <dir> --entry <relpath>... \
-     --from <d> --to <d> -o <outdir>   (d: spice | hspice | spectre | vacask | xyce | rack)";
+     --from <d> --to <d> -o <outdir>   (d: spice | hspice | spectre | vacask | xyce)";
 
-/// A model file form: a SpiceRack dialect, or `None` for the IR itself (`rack`).
-fn form(name: &str) -> Result<Option<Dialect>, String> {
-    Ok(Some(match name {
+fn dialect(name: &str) -> Result<Dialect, String> {
+    Ok(match name {
         "spice" | "ngspice" => Dialect::Ngspice,
         "hspice" => Dialect::Hspice,
         "spectre" => Dialect::Spectre,
         "vacask" => Dialect::Vacask,
         "xyce" => Dialect::Xyce,
-        "rack" => return Ok(None),
         d => return Err(format!("unknown dialect {d}\n{USAGE}")),
-    }))
-}
-
-/// One file read into IR, and how many of its lines did not make it.
-fn read(text: &str, from: Option<Dialect>) -> Result<(CircuitIR, usize), String> {
-    match from {
-        None => serde_json::from_str(text)
-            .map(|ir| (ir, 0))
-            .map_err(|e| e.to_string()),
-        // Only a top-level netlist has a title line: an included file gets an empty one.
-        Some(d) => spicerack::import::parse(&format!("\n{text}"), "pdk", d)
-            .map(|(ir, r)| (ir, r.unparsed.len())),
-    }
-}
-
-fn write(ir: &CircuitIR, to: Option<Dialect>) -> Result<String, String> {
-    match to {
-        None => serde_json::to_string_pretty(ir).map_err(|e| e.to_string()),
-        Some(d) => spicerack::codegen::netlist(ir, d).map_err(|e| e.to_string()),
-    }
-}
-
-/// The files `ir` names, at the top and in every section: includes and `.lib` calls
-/// (`false`: converted), and Verilog-A sources (`true`: copied as they are).
-fn references(ir: &CircuitIR) -> Vec<(&str, bool)> {
-    let bodies = std::iter::once(&ir.top).chain(ir.sections.iter().map(|s| &s.body));
-    bodies
-        .flat_map(|b| {
-            let libs = b.libs.iter().map(|(f, _)| (f.as_str(), false));
-            let va = b.osdi_loads.iter().map(String::as_str);
-            let va = va
-                .filter(|f| spicerack::veriloga::is_source(f))
-                .map(|f| (f, true));
-            b.includes
-                .iter()
-                .map(|f| (f.as_str(), false))
-                .chain(libs)
-                .chain(va)
-        })
-        .map(|(f, v)| (f.trim_matches(['"', '\'']), v))
-        .collect()
+    })
 }
 
 /// Runs `pdk-models` on `args` (after the subcommand): stdout's text and the exit status.
 pub fn run(args: &[String]) -> (String, u8) {
-    let mut opt = std::collections::BTreeMap::new();
+    let mut opt = BTreeMap::new();
     let mut entries = Vec::new();
     let mut it = args.iter();
     while let Some(a) = it.next() {
@@ -102,7 +75,7 @@ pub fn run(args: &[String]) -> (String, u8) {
     if entries.is_empty() {
         return (format!("{USAGE}\n"), 2);
     }
-    let (from, to) = match (form(from), form(to)) {
+    let (from, to) = match (dialect(from), dialect(to)) {
         (Ok(f), Ok(t)) => (f, t),
         (Err(e), _) | (_, Err(e)) => return (format!("{e}\n"), 2),
     };
@@ -110,88 +83,96 @@ pub fn run(args: &[String]) -> (String, u8) {
         return (format!("cannot open root {root}\n"), 2);
     };
     let entries: Vec<PathBuf> = entries.iter().map(|e| root.join(e)).collect();
-    match convert(&root, &entries, from, to, Path::new(out)) {
-        Ok((n, lost, missing)) => {
-            let mut s = format!("converted {n} file(s)\n");
-            for (p, k) in &lost {
-                s += &format!("lost {p} {k}\n");
-            }
-            for p in &missing {
-                s += &format!("missing {p}\n");
-            }
-            s += "end\n";
-            (s, u8::from(!lost.is_empty() || !missing.is_empty()))
-        }
-        Err(e) => (format!("{e}\n"), 2),
-    }
+    convert(&root, &entries, from, to, Path::new(out))
 }
 
-/// Files written, files with lost lines (relative path, count), missing files.
-type Converted = (usize, Vec<(String, usize)>, Vec<String>);
-
-/// Converts every file the `entries` reach under `root` into `out`. All files are read and
-/// converted before any is written, so a failure leaves `out` untouched. Returns the count
-/// written, the files with lost lines (relative path, count) and the missing ones.
+/// Converts every file the `entries` reach under `root` into `out`: the report and the exit
+/// status. Every file is read and written to text before any is stored, so a refusal leaves
+/// `out` untouched.
 fn convert(
     root: &Path,
     entries: &[PathBuf],
-    from: Option<Dialect>,
-    to: Option<Dialect>,
+    from: Dialect,
+    to: Dialect,
     out: &Path,
-) -> Result<Converted, String> {
-    let rel = |p: &Path| p.strip_prefix(root).unwrap_or(p).to_path_buf();
-    let mut todo: VecDeque<_> = entries
-        .iter()
-        .map(|e| (spice::normalize(e), 0u8, false))
-        .collect();
-    let mut seen = BTreeSet::new();
-    let mut done: Vec<(PathBuf, String)> = Vec::new();
-    let (mut lost, mut missing) = (Vec::new(), Vec::new());
-    while let Some((p, depth, verbatim)) = todo.pop_front() {
-        if !seen.insert(p.clone()) {
-            continue;
-        }
-        if seen.len() > MAX_FILES {
-            return Err("too many files".into());
-        }
-        let shown = rel(&p).to_string_lossy().replace('\\', "/");
+) -> (String, u8) {
+    // A lexical path under the root whose real path (symlinks resolved) is also under it.
+    let mut load = |p: &Path| {
         if !p.starts_with(root) {
-            return Err(format!("{shown}: outside the root, refused"));
+            return Err(LoadError::Refused);
         }
-        let Ok(c) = std::fs::canonicalize(&p) else {
-            missing.push(shown);
-            continue;
-        };
-        // The root is canonical; a symlink may not lead out of it.
-        if !c.starts_with(root) {
-            return Err(format!("{shown}: outside the root, refused"));
+        let real = std::fs::canonicalize(p).map_err(|_| LoadError::NotFound)?;
+        if !real.starts_with(root) {
+            return Err(LoadError::Refused);
         }
-        let bytes = std::fs::read(&c).map_err(|e| format!("{shown}: {e}"))?;
-        if verbatim {
-            done.push((rel(&p), spicerack::import::decode(&bytes)));
-            continue;
-        }
-        let (ir, n) = read(&spicerack::import::decode(&bytes), from)
-            .map_err(|e| format!("{shown}: not read ({e})"))?;
-        if n > 0 {
-            lost.push((shown.clone(), n));
-        }
-        let dir = p.parent().unwrap_or(Path::new(""));
-        for (f, v) in references(&ir) {
-            if depth >= MAX_INCLUDE_DEPTH {
-                return Err(format!("{shown}: include chain too deep"));
+        let bytes = std::fs::read(&real).map_err(|_| LoadError::NotFound)?;
+        Ok(spicerack::import::decode(&bytes))
+    };
+    let kit = Kit::load(entries, Form::Library, from, &mut load);
+    let rel = |p: &Path| {
+        let p = p.strip_prefix(root).unwrap_or(p);
+        p.to_string_lossy().replace('\\', "/")
+    };
+    let (mut report, mut done) = (String::new(), Vec::new());
+    let (mut refused, mut outside) = (false, String::new());
+    for (i, file) in kit.files().iter().enumerate() {
+        let shown = rel(&file.path);
+        let codes = match file.role {
+            Role::Unread(LoadError::Refused) => {
+                refused = true;
+                outside += &format!("{shown}: outside the root, refused\n");
+                vec![Code::R0007]
             }
-            todo.push_back((spice::normalize(&dir.join(f)), depth + 1, v));
+            Role::Unread(LoadError::NotFound) => vec![Code::R0006],
+            Role::VerilogA => {
+                done.push((&file.path, file.text.clone()));
+                Vec::new()
+            }
+            Role::Deck | Role::Library => {
+                match render::render_kit(&kit, FileId(i as u32), &shown, to) {
+                    Ok(w) => {
+                        done.push((&file.path, w.text));
+                        codes(&w.notes)
+                    }
+                    Err(d) => {
+                        refused = true;
+                        codes(&d)
+                    }
+                }
+            }
+        };
+        let mut counts: BTreeMap<Code, usize> = BTreeMap::new();
+        // An unread include is reported at its own path, not again on its includer's statement.
+        let own = matches!(file.role, Role::Unread(_));
+        for c in codes {
+            if own || !matches!(c, Code::R0006 | Code::R0007) {
+                *counts.entry(c).or_default() += 1;
+            }
         }
-        let text = write(&ir, to).map_err(|e| format!("{shown}: not written ({e})"))?;
-        done.push((rel(&p), text));
+        for (c, n) in counts {
+            report += &format!("diag {shown} {c:?} {n}\n");
+        }
+    }
+    if refused {
+        return (format!("not written\n{outside}{report}end\n"), 2);
     }
     for (p, text) in &done {
-        let to = out.join(p);
-        if let Some(d) = to.parent() {
-            std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
+        let to = out.join(p.strip_prefix(root).unwrap_or(p));
+        let wrote = to
+            .parent()
+            .map_or(Ok(()), std::fs::create_dir_all)
+            .and_then(|()| std::fs::write(&to, text));
+        if let Err(e) = wrote {
+            return (format!("{}: {e}\n", to.display()), 2);
         }
-        std::fs::write(&to, text).map_err(|e| format!("{}: {e}", to.display()))?;
     }
-    Ok((done.len(), lost, missing))
+    let lossy = !report.is_empty();
+    (
+        format!("converted {} file(s)\n{report}end\n", done.len()),
+        u8::from(lossy),
+    )
+}
+
+fn codes(d: &Diags) -> Vec<Code> {
+    d.diags.iter().map(|d| d.code).collect()
 }

@@ -305,7 +305,7 @@ fn rack_devices(
     issues: &mut Vec<String>,
     mut load: impl FnMut(&Path) -> Result<String, bool>,
 ) -> Vec<Device> {
-    use spicerack::codegen::Dialect;
+    use spicerack::syntax::Dialect;
     use spicerack::syntax::ast::Node;
     use spicerack::syntax::device::Primitive;
     use spicerack::syntax::diag::Code;

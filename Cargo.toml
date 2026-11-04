@@ -16,7 +16,7 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # The native command line (`src/cli/`, `schemify-interop`): file system access, so never
 # part of the wasm guest. SpiceRack reads the PDK model files `pdk-scan` serves.
-cli = ["dep:spicerack", "dep:serde_json"]
+cli = ["dep:spicerack"]
 
 [[bin]]
 name = "schemify-interop"
@@ -31,8 +31,6 @@ schemify-expr.workspace = true
 # SpiceRack's IR, readers and writers (no simulator backends): the PDK store and model
 # conversion (CLI only). Pinned like the Schemify crates.
 spicerack = { git = "https://github.com/OpenFAT/SpiceRack", rev = "9d1d6bb8ce5bcd7886392b5c57a407deb8a2ae15", default-features = false, optional = true }
-# `pdk-models --to rack`: the IR as JSON; float_roundtrip, or reading it back moves values by an ULP.
-serde_json = { version = "1", features = ["float_roundtrip"], optional = true }
 
 [dev-dependencies]
 # The xschem differential (tests/xschem_differential.rs): import → elaborate → netlist →
