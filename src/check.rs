@@ -235,7 +235,9 @@ fn check_expressions(
                     }
                 }
             }
-            _ => {}
+            // No converter writes either (a maestro test maps to the bench's own records).
+            RecordKind::Test | RecordKind::BenchParam => {}
+            _ => {} // no expression of its own
         }
     }
 }

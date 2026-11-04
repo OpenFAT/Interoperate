@@ -172,7 +172,7 @@ pub fn fingerprint(doc: &Document<'_>, part: Part) -> String {
                 // Only the format: an impl's `model file ignore` stay in the fingerprint, which
                 // is stored in files and so never changes meaning.
                 K::Impl => key == "format" && !merge::virtuoso_format(doc.attr_value(a, 0)),
-                _ => false,
+                _ => false, // graphics and drawn objects: every attribute is Virtuoso's
             };
             if schemify_only {
                 continue;

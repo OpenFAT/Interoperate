@@ -311,7 +311,9 @@ pub fn schemify_owned(k: RecordKind, fk: FileKind, maestro: bool) -> bool {
         RecordKind::Code => fk != FileKind::Shbench || !maestro,
         RecordKind::Corner | RecordKind::Sweep | RecordKind::Output | RecordKind::Spec => !maestro,
         RecordKind::Body => true,
-        _ => false,
+        // Neither maps to maestro (ade.rs reports them), so a re-import keeps them.
+        RecordKind::Test | RecordKind::BenchParam => true,
+        _ => false, // the header, rank 1 to 3: the cellviews'
     }
 }
 
@@ -491,7 +493,9 @@ pub fn merge(
                 .filter(|a| src.attr_key(*a) == "member")
                 .all(|a| src.attr_value(a, 0).is_some_and(|m| ids.contains(m))),
             RecordKind::Body => impls.contains(src.field(r, 0).unwrap_or("")),
-            _ => true,
+            // ponytail: a bench param whose instance is gone stays; elab reports its path.
+            RecordKind::Test | RecordKind::BenchParam => true,
+            _ => true, // no subject
         };
         if !alive {
             notes.dropped(
@@ -649,7 +653,7 @@ fn enrich_rank1(
                     && base.field(x, 1) == fresh.field(r, 1)
                     && !used_impls.contains(&x)
             }),
-            _ => find(kind, name),
+            _ => find(kind, name), // rank 1: a pin or param, by name
         };
         let Some(b) = b else {
             out.copy_record(fresh, r);
@@ -696,7 +700,7 @@ fn enrich_rank1(
                 .into_iter()
                 .any(|x| fresh.record_kind(x) == kind && fresh.field(x, 0) == Some(name)),
             RecordKind::Impl => !used_impls.contains(&r),
-            _ => false,
+            _ => false, // rank 1: a pin is the cellview's
         };
         if !gone {
             continue;

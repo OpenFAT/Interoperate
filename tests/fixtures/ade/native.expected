@@ -7,6 +7,7 @@ var X foo*2
 corner fast
   lib /pdk/models/toplevel.scs ff
   temp -40
+  enable false
 
 output vavg avg(v(OUT))
 
@@ -27,7 +28,6 @@ code stimuli spectre
 --- report
 needs_review:code	tb	analysis noise is disabled in maestro: dropped
 needs_review:code	tb	analysis pss has no SPICE form: kept in the spectre block
-needs_review:config	tb	corner fast is disabled in maestro
 needs_review:config	tb	maestro test TRAN2: only the first test of a view maps
 needs_review:design-variable	tb	`foo*2` → `foo*2`
 needs_review:expression	tb	corner fast var VDD: a sweep list

@@ -1237,7 +1237,7 @@ impl<'a> Ctx<'a> {
                     i.params
                         .push((name, kind.to_owned(), d.field(r, 1)?.to_owned()));
                 }
-                _ => {}
+                _ => {} // the interface is the pins and params
             }
         }
         Some(i)

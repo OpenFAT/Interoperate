@@ -1609,7 +1609,7 @@ fn graphic_out(
         RecordKind::Arc => "arc",
         RecordKind::Circle => "circle",
         RecordKind::Poly => "poly",
-        _ => c.field(r, 1),
+        _ => c.field(r, 1), // a rank-3 shape: its form is field 1
     };
     let first = if kind == RecordKind::Shape {
         from + 1

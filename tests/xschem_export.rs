@@ -526,7 +526,7 @@ fn untranslatable_constructs_are_reviewed_and_left_default() {
     );
     files.insert(
         "tb.shbench".into(),
-        b"schemify 1 shbench\n  corner tt\n\ninst 000001 ./dev\n  at 0 0 R0\n  name X1\n  v \"a ? 1 : 2\"\n  s {v*2}\n  f gmid.w(1)\n  nope 3\n\nlabel 000002 0 -30 R0 n1\n\nvar k \"if(1 > 0, 1, 2)\"\nvar ok 2\n\ncorner tt\n  temp 27\ncorner ff\n  temp 85\n\nsweep s1\n  var ok\n  values 1 2\n\noutput o \"v(n1)\"\n\nspec o\n  max 1\n\ncode x xyce\n  | .print tran v(n1)\n"
+        b"schemify 1 shbench\n  corner tt\n\ninst 000001 ./dev\n  at 0 0 R0\n  name X1\n  v \"a ? 1 : 2\"\n  s {v*2}\n  f gmid.w(1)\n  nope 3\n\nlabel 000002 0 -30 R0 n1\n\nvar k \"if(1 > 0, 1, 2)\"\nvar ok 2\n  enable false\n\ncorner tt\n  temp 27\ncorner ff\n  temp 85\n\nsweep s1\n  var ok\n  values 1 2\n\noutput o \"v(n1)\"\n\nspec o\n  max 1\n\ntest t1\n  output o\n\nparam X1/v 3\n\ncode x xyce\n  | .print tran v(n1)\n"
             .to_vec(),
     );
     let d = load_design(&files, "tb.shbench");
@@ -565,6 +565,9 @@ fn untranslatable_constructs_are_reviewed_and_left_default() {
         "needs_review:sweep\troot/tb.shbench\tsweep s1",
         "needs_review:output\troot/tb.shbench\toutput o",
         "needs_review:spec\troot/tb.shbench\tspec o",
+        "needs_review:test\troot/tb.shbench\ttest t1",
+        "needs_review:param\troot/tb.shbench\tparam X1/v",
+        "needs_review:var\troot/tb.shbench\tvar ok enable false",
         "needs_review:code\troot/tb.shbench\tcode x xyce",
         "needs_review:format\tdev.shprim\tformat xyce",
         "needs_review:template\tdev.shprim\tformat spice: {params}",

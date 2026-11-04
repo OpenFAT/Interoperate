@@ -444,7 +444,7 @@ fn iface_of_cell_bytes(bytes: &[u8]) -> Iface {
                 f.params
                     .push((field(0).to_owned(), field(1).to_owned(), kind));
             }
-            _ => {}
+            _ => {} // the frame is the pins and params
         }
     }
     assert!(!f.pins.is_empty(), "core cells have pins");

@@ -228,21 +228,21 @@ checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
 name = "schemify-abi"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 
 [[package]]
 name = "schemify-doc"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "schemify-format",
 ]
 
 [[package]]
 name = "schemify-elab"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "schemify-doc",
  "schemify-expr",
@@ -251,21 +251,21 @@ dependencies = [
 
 [[package]]
 name = "schemify-expr"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "libm",
 ]
 
 [[package]]
 name = "schemify-format"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 
 [[package]]
 name = "schemify-netlist"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "schemify-elab",
  "schemify-expr",
@@ -274,8 +274,8 @@ dependencies = [
 
 [[package]]
 name = "schemify-plugin"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "schemify-abi",
  "schemify-format",
@@ -284,13 +284,13 @@ dependencies = [
 
 [[package]]
 name = "schemify-spicecmp"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 
 [[package]]
 name = "schemify-wave"
-version = "1.0.0"
-source = "git+https://github.com/OpenFAT/Schemify?rev=ac889419aae98f5ad9d180d7d4354efc7231bcf9#ac889419aae98f5ad9d180d7d4354efc7231bcf9"
+version = "1.0.1"
+source = "git+https://github.com/OpenFAT/Schemify?rev=cd03d0c104633ec69721e62b7610e3290c8c3a88#cd03d0c104633ec69721e62b7610e3290c8c3a88"
 dependencies = [
  "schemify-expr",
 ]

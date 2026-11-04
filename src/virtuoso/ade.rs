@@ -188,6 +188,8 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         RecordKind::Montecarlo,
         RecordKind::Optimize,
         RecordKind::Config,
+        RecordKind::Test,
+        RecordKind::BenchParam,
     ];
     if !setup.iter().any(|k| c.records(*k).next().is_some()) {
         return BenchExport::default();
@@ -264,6 +266,13 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
     }
     for r in c.records(RecordKind::Var) {
         let name = c.field(r, 0);
+        if c.attr(r, "enable") == Some("false") {
+            notes.review(
+                "var",
+                cell,
+                format!("var {name} enable false: exported enabled"),
+            );
+        }
         if t.vars.iter().any(|v| v.0 == name && v.2.is_empty()) {
             notes.review(
                 "code",
@@ -283,7 +292,8 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
     // Corners.
     for r in c.records(RecordKind::Corner) {
         let corner = c.field(r, 0).to_owned();
-        t.corners.push((corner.clone(), true));
+        t.corners
+            .push((corner.clone(), c.attr(r, "enable") != Some("false")));
         for a in c.doc.attrs(r) {
             let vals: Vec<&str> = c.doc.attr_values(a).collect();
             match (c.doc.attr_key(a), vals.as_slice()) {
@@ -303,6 +313,7 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
                         t.vars.push(("temperature".into(), v, corner.clone()));
                     }
                 }
+                ("enable", _) => {}
                 (k, _) => notes.review(
                     "code",
                     cell,
@@ -321,6 +332,13 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
     let mut ocean_outs: Vec<(String, String)> = Vec::new();
     for r in c.records(RecordKind::Output) {
         let (name, e) = (c.field(r, 0), c.field(r, 1));
+        if c.attr(r, "enable") == Some("false") {
+            notes.review(
+                "output",
+                cell,
+                format!("output {name} enable false: exported enabled"),
+            );
+        }
         // `analysis <a>` picks the dataset (format.md rank 6), else the test's default.
         scope.letter = match c.attr(r, "analysis") {
             None => letter,
@@ -413,6 +431,8 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         (RecordKind::Montecarlo, "montecarlo"),
         (RecordKind::Optimize, "optimize"),
         (RecordKind::Config, "config"),
+        (RecordKind::Test, "test"),
+        (RecordKind::BenchParam, "param"),
     ] {
         for r in c.records(k) {
             notes.review(
@@ -2176,7 +2196,7 @@ const BENCH_KINDS: [RecordKind; 6] = [
 /// `records` (one maestro test and its records, in file order) describe to `bench` (§9.2).
 /// What cannot come back is reported in `notes` under `cell`: an analysis without a SPICE
 /// form (the block is then Spectre), an output whose ADE expression does not translate (a
-/// comment in the analysis block), a disabled corner or analysis, a value without a
+/// comment in the analysis block), a disabled analysis, a value without a
 /// Schemify form, a second test of the same view (only the first maps).
 ///
 /// Records [`check`] refuses are reported (`needs_review:code`) and nothing is added; the
@@ -2268,9 +2288,6 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
     }
     // Corners.
     for (c, en) in &t.corners {
-        if !en {
-            notes.review("config", cell, format!("corner {c} is disabled in maestro"));
-        }
         push_record(bench, RecordKind::Corner, &[c]);
         for (_, f, sec) in t.models.iter().filter(|m| &m.0 == c) {
             let sec = sec
@@ -2302,6 +2319,9 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
         }
         if let Some(x) = temp {
             push_attr(bench, "temp", &[&x]);
+        }
+        if !en {
+            push_attr(bench, "enable", &["false"]);
         }
     }
     // The analysis block: SPICE when every analysis has a SPICE form, else Spectre.

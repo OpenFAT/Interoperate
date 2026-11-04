@@ -241,6 +241,11 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
         t.push_str("montecarlo mc\n  samples 10\n");
         lost.push("montecarlo mc".into());
     }
+    // A maestro test of its own and an instance override: Schemify's, reported, kept.
+    if g.coin() {
+        t.push_str("test t1\n  output vmax\nparam x1/w 2u\n");
+        lost.extend(["test t1".into(), "param x1/w".into()]);
+    }
     Bench {
         text: canonical(&t),
         exact,
@@ -281,6 +286,10 @@ fn generated_benches_round_trip_through_maestro_records() {
         );
         if b.text.contains("montecarlo") {
             assert!(classes.contains("needs_review:montecarlo"));
+        }
+        if b.text.contains("test t1") {
+            assert!(classes.contains("needs_review:test"), "{}", notes.text());
+            assert!(classes.contains("needs_review:param"), "{}", notes.text());
         }
         if b.text.contains("sweep s2") {
             assert!(classes.contains("needs_review:sweep"));

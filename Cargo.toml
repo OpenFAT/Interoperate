@@ -55,15 +55,15 @@ exclude = ["fuzz"]
 # Schemify's crates, pinned to one core revision. `nightly.yml` builds against `main` too, so
 # core drift shows up within a day; bump the rev here and in every entry together.
 [workspace.dependencies]
-schemify-abi = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9", features = ["guest"] }
-schemify-format = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-doc = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-expr = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-elab = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-netlist = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-wave = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
-schemify-spicecmp = { git = "https://github.com/OpenFAT/Schemify", rev = "ac889419aae98f5ad9d180d7d4354efc7231bcf9" }
+schemify-abi = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88", features = ["guest"] }
+schemify-format = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-doc = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-expr = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-elab = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-netlist = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-wave = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-spicecmp = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
 
 # Small module: size over speed, no unwinding (a panic is a trap the host reports).
 [profile.release]

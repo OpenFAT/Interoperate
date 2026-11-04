@@ -676,14 +676,39 @@ fn write_schematic(
             | RecordKind::Optimize
             | RecordKind::Output
             | RecordKind::Spec
-            | RecordKind::Config => {
+            | RecordKind::Config
+            | RecordKind::Test
+            | RecordKind::BenchParam => {
                 let word = c.doc.record_word(r);
                 notes.review(word, &c.path, format!("{word} {}", c.field(r, 0)));
             }
             RecordKind::Var if c.attr(r, "dist").is_some() => {
                 notes.review("montecarlo", &c.path, format!("var {} dist", c.field(r, 0)));
             }
-            _ => {}
+            // Written below: vars and the default corner as netlist text (bench_text), code
+            // as blocks, the default impl's body.
+            RecordKind::Var | RecordKind::Corner | RecordKind::Code | RecordKind::Body => {}
+            // The symbol's (its own .sym) and the header.
+            RecordKind::Header
+            | RecordKind::Pin
+            | RecordKind::Param
+            | RecordKind::Impl
+            | RecordKind::Line
+            | RecordKind::Rect
+            | RecordKind::Arc
+            | RecordKind::Circle
+            | RecordKind::Poly
+            | RecordKind::Stext => {}
+            // Project and lock records are not cell records; an unknown one has no form.
+            RecordKind::Lib
+            | RecordKind::Plugin
+            | RecordKind::Set
+            | RecordKind::Locked
+            | RecordKind::Key
+            | RecordKind::Sim
+            | RecordKind::PluginOrder
+            | RecordKind::Class
+            | RecordKind::Unknown => {}
         }
     }
     // Netlist text: code_shown instances in a column under the drawing.
@@ -783,6 +808,13 @@ fn bench_text(c: &Cell, sc: &Scope, notes: &mut Notes) -> (String, String) {
     let mut vars = String::new();
     for r in c.records(RecordKind::Var) {
         let name = c.field(r, 0);
+        if c.attr(r, "enable") == Some("false") {
+            notes.review(
+                "var",
+                &c.path,
+                format!("var {name} enable false: written anyway"),
+            );
+        }
         let expr = sets
             .iter()
             .rev()
@@ -1024,6 +1056,7 @@ fn shape(
             ('A', v)
         }
         _ => {
+            // Poly: the callers pass only graphic kinds
             let mut v = vals.to_vec();
             // xschem closes a polygon whose last point is its first.
             let open = v.len() >= 4 && v[..2] != v[v.len() - 2..];
