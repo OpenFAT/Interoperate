@@ -264,9 +264,14 @@ Every conversion lists its losses in the report. The main ones:
   `prop.cfg`, and the library names inside the text when `SfyImport ?lib` renames a library.
 - Maestro setups now round-trip in full: the view's own setup rides in the bench, and a
   re-export updates the tests in place with only what you changed, instead of recreating
-  them. What is not yet mapped into Schemify records (pending lanes L5 to L7): Monte Carlo,
-  optimizer, multi-test setups and ADE L. They come back to Virtuoso unchanged but cannot be
+  them. What is not yet mapped into Schemify records (pending lanes L5 and L6): Monte Carlo,
+  optimizer and multi-test setups. They come back to Virtuoso unchanged but cannot be
   edited in Schemify.
+- ADE L states (`SfyAdeLExport`, `SfyAdeLImport`) map onto the bench like a Maestro test:
+  design, variables, temperature, analyses, model files and outputs (no corners or specs).
+  An unedited bench gives the state back byte for byte; an edited one becomes a Maestro
+  test, never an ADE L state (Interop writes no ADE L SKILL). A component it cannot read,
+  such as the `convergence` archive, is kept and reported.
 - CDF callbacks: a design library's callbacks of the plain assignment form
   (`cdfgData->w->value = …` over numbers, params and arithmetic) now cross as Schemify
   `computed` math. The rest stay Virtuoso's, each with its reason in the report, and so do a
