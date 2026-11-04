@@ -257,7 +257,11 @@ are followed once SpiceRack holds sections as data (an `issue` line counts them 
 
 Every conversion lists its losses in the report. The main ones:
 
-- Virtuoso config views (hierarchy editor). They are kept on the Schemify side.
+- Config views (hierarchy editor) now round-trip: their rules become the bench's `config`
+  record, a Maestro test bound to one keeps that binding, and an unedited config goes back
+  byte for byte. Lost after you edit one in Schemify: views with no Schemify impl, duplicate
+  views and comments. Not carried at all: a config view on a cell that is not a bench,
+  `prop.cfg`, and the library names inside the text when `SfyImport ?lib` renames a library.
 - Maestro setups now round-trip in full: the view's own setup rides in the bench, and a
   re-export updates the tests in place with only what you changed, instead of recreating
   them. What is not yet mapped into Schemify records (pending lanes L5 to L7): Monte Carlo,
