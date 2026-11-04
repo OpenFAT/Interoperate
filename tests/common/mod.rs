@@ -17,6 +17,23 @@ pub fn root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/schemify")
 }
 
+/// `tests/fixtures/cadence/<rel>`, the Cadence probe fixtures, or `None` when this checkout
+/// lacks it. Those fixtures are local-only (listed in `.git/info/exclude`, never committed),
+/// so a test that needs one returns early on `None`: it skips where they were never copied.
+pub fn cadence_fixture(rel: &str) -> Option<PathBuf> {
+    let p = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/cadence")
+        .join(rel);
+    if p.exists() {
+        return Some(p);
+    }
+    eprintln!(
+        "{}: absent (local-only Cadence fixtures); skipped",
+        p.display()
+    );
+    None
+}
+
 /// Every file under `dir`, keyed by its `/`-separated path relative to `dir`. A directory
 /// that does not exist (or cannot be read) contributes nothing: the live kit reads work
 /// directories a step may not have written yet.

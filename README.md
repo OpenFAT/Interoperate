@@ -292,12 +292,12 @@ No Cadence tool runs here, so:
 |---|---|
 | `src/design.rs`, `src/nets.rs`, `src/profile.rs` | Schemify files as tables, connectivity, coordinate/orientation/name rules |
 | `src/sfyx.rs` | the exchange-file codec |
-| `src/virtuoso/` | `write` (export), `read` (import), `ael` (values), `devices` (analogLib table), `ade` (maestro) |
+| `src/virtuoso/` | `write/` (export), `read/` (import), `kinds` (the record kinds), `ael` (values), `devices` (analogLib table), `ade/` (maestro) |
 | `src/merge.rs`, `src/remap.rs`, `src/map.rs` | keeping Schemify-only data, re-mastering, `interop.map` |
 | `src/xschem_out.rs`, `src/translate.rs` … | xschem export and import |
 | `src/job.rs` | one conversion as pure steps, driven by `src/plugin.rs` (editor) and `src/cli/` (one module per subcommand) |
 | `skill/*.il` | the parts of `schemify.il` |
-| `tests/` | `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, and the xschem import suites |
+| `tests/` | `skill/` (the SKILL interpreter and `mockdb/`, the mock Virtuoso), `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, and the xschem import suites |
 
 ## Development
 
@@ -319,6 +319,41 @@ CI (`.github/workflows/`): `ci.yml` runs the suite on Linux, macOS and Windows, 
 import across them and WASI, rebuilds the guest and fails when the committed module differs;
 `nightly.yml` runs the corpus ratchet, the fuzzers, and the suite against Schemify `main`;
 `release.yml` builds the CLI for every platform into a draft release on a `v*` tag.
+
+### Parallel lanes
+
+Interop's remaining Cadence work runs in parallel lanes, each owning disjoint files. Every
+registration point already lists each lane's slot, so a lane adds code to its own files and
+edits no shared list:
+
+| Lane | Owns |
+|---|---|
+| L1 Maestro XML dump/load | `src/virtuoso/ade/import.rs`, `skill/sfy_ade.il`, `tests/skill/mockdb/mae.rs` |
+| L2 label cosmetics | `src/virtuoso/read/labels.rs`, `src/virtuoso/write/labels.rs`, the label parts of `skill/sfy_cells.il` |
+| L3 config views | `src/virtuoso/config.rs`, `skill/sfy_cfg.il`, `tests/skill/mockdb/hdb.rs` |
+| L4 results to waves | `src/virtuoso/results.rs`, `skill/sfy_results.il`, `src/cli/maestro_results.rs` |
+| L5 Monte Carlo and optimizer | `src/virtuoso/ade/runmode.rs` |
+| L6 multi-test and run plans | `src/virtuoso/ade/export.rs` |
+| L7 ADE L | `skill/sfy_adel.il`, `tests/skill/mockdb/asi.rs` |
+| L8 layout through KLayout | `src/klayout.rs`, `skill/sfy_layout.il`, `src/cli/layout.rs` |
+| L9 design-library CDF callbacks | `src/virtuoso/read/cdf.rs`, `skill/sfy_cdfcb.il` |
+| L10 the PDK side | `src/pdk_models.rs`, `src/pdk_scan.rs` |
+
+Each of L1 to L9 also owns its live check, `live/checks/l<N>_*.il` (`live/checks/run.sh`).
+The registration points: a new `.sfyx` record kind is a row in its lane's section of
+`src/virtuoso/kinds.rs`; mock Cadence functions are rows in the area's `ROWS` and bodies in
+its `call` (`tests/skill/mockdb/`); the SKILL parts are already in `src/skill.rs`'s `PARTS`
+(load order, `schemify.il` and the lint), and the CLI subcommands in `src/cli/mod.rs`.
+
+Rules for every lane:
+
+- Never commit `interop.wasm` or `Cargo.lock`: the integration rebuilds both.
+- The spec text (`docs/spec/interop.md`, in the Schemify repository) and "What does not
+  cross" above are edited only at integration.
+- Build with a `CARGO_TARGET_DIR` of the lane's own.
+- The Cadence probe fixtures in `tests/fixtures/cadence/` are local-only (listed in
+  `.git/info/exclude`): a test that reads them gets its path from `common::cadence_fixture`
+  and returns when it gets `None`, so it skips where they are absent.
 
 To move to a newer Schemify: set every `rev` in `Cargo.toml` to the new commit,
 `cargo update -p schemify-abi` (and the other Schemify crates), `./build.sh`, test, and commit
