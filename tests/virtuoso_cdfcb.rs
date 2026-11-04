@@ -46,6 +46,9 @@ fn mock() -> Interp<MockDb> {
              (setq cv (dbOpenCellViewByType "work" "top" "schematic" "schematic" "a"))
              (schCreateInst cv (dbOpenCellViewByType "pdk" "dev" "symbol" nil "r") "P0"
                (SfyFixP -200 0) "R0")
+             ;; An ILList property: the loader must take linereadstring's first form.
+             (dbReplaceProp (car (setof x (getSGq cv instances) (equal (getSGq x name) "I0")))
+               "pts" "ILList" (list 1 "a"))
              (dbSave cv) (dbClose cv))"#,
     );
     i
@@ -93,6 +96,17 @@ fn params<'a>(text: &'a str, cell: &str) -> Vec<&'a str> {
         .take_while(|l| !l.starts_with("(\"cell\"") && !l.starts_with("(\"cv\""))
         .filter(|l| l.starts_with("(\"param\""))
         .collect()
+}
+
+#[test]
+fn a_float_cdf_value_reads_its_scale_factor() {
+    // atof("500n") is 500.0 (live ICADVM20.1); cdfParseFloatString reads 5e-07.
+    let mut i = mock();
+    let v = run(&mut i, r#"(SfyCdfValue "float" "500n")"#);
+    assert!(
+        matches!(v, V::Float(f) if (f - 5e-7).abs() < 1e-18),
+        "{v:?}"
+    );
 }
 
 #[test]

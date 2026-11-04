@@ -130,6 +130,11 @@ fn interpreter_core_semantics() {
     let mut s = String::new();
     skill::print(&r, &mut s);
     assert_eq!(s, "(((\"a\" -5)) nil)");
+    // linereadstring answers every form of the first line, as lineread does (live ICADVM20.1).
+    let r = i.load(r#"(linereadstring "(a 1) (b 2)\n(c 3)")"#).unwrap();
+    let mut s = String::new();
+    skill::print(&r, &mut s);
+    assert_eq!(s, "((a 1) (b 2))");
     assert!(matches!(
         i.load("(errset (error \"boom\"))").unwrap(),
         V::Nil
