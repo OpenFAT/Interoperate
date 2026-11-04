@@ -146,8 +146,8 @@ fn lcv(s: &str) -> Option<Lcv> {
 }
 
 /// `(L.C:V).(L.C:V)I.J`: the cellviews and the instance names, each in order.
-// GUESS(G40): below two levels hdb prints `(top).(m1)I1.(m2)I2.I3` (probe `config` printed
-// only `(top).(m1)I1.J`); this reads any interleaving of the two.
+// G41 settled (live check l3): hdb prints each level's master before its instance,
+// `(top).(m1)I1.(m2)I2.R0`, and the last instance bare; `generate` writes the same.
 fn obj_path(s: &str) -> Option<(Vec<Lcv>, Vec<String>)> {
     let (mut cvs, mut insts) = (Vec::new(), Vec::new());
     let mut rest = s;
