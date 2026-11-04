@@ -62,6 +62,7 @@ schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
 schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
+schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (PDK models below)
 ```
 
 Paths after `<project>` are relative to it; a directory stands for every cell file under it. Each conversion writes a report next to its output
@@ -252,7 +253,14 @@ Spectre kits (`--dialect spectre`) are read with [SpiceRack](https://github.com/
 the PDK store: every top-level `subckt` the entry reaches through `include` is a cell, names
 in their own case, and top-level compact models (BSIM, PSP, HiSIM, UTSOI) get `d g s b`.
 Lines SpiceRack does not read are counted, never shown. Includes inside a corner `section`
-are followed once SpiceRack holds sections as data (an `issue` line counts them until then).
+are followed for the selected section.
+
+### PDK models (local kits)
+
+`schemify-interop pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>`
+converts each model file a kit reaches into another dialect at the same relative path,
+reporting losses by SpiceRack diagnostic code (`diag <relpath> <code> <count>`, never the
+cards). The root must contain every file the kit includes (sky130: `--root sky130A`).
 
 ## What does not cross
 
