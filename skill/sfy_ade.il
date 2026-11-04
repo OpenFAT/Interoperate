@@ -60,6 +60,13 @@
 (procedure (SfyAdeTmp)
   (sprintf nil "/tmp/sfy_%s_maesdb.sdb" (or (getShellEnvVar "USER") "user")))
 
+;; The path of maestro view lib/cell's active.state (it need not exist), or nil without the
+;; view. Through the view's directory: ddGetObj of the file in mode "a" answers nil (live
+;; ICADVM20.1).
+(procedure (SfyAdeStatePath lib cell)
+  (let ((v (ddGetObj lib cell "maestro")))
+    (and v (stringp (getSGq v readPath)) (strcat (getSGq v readPath) "/active.state"))))
+
 ;; The lines of file path, or nil when it cannot be read or is not absolute (infile would
 ;; search the SKILL path for a relative one).
 (procedure (SfyAdeLines path)
@@ -70,28 +77,36 @@
       (close p))
     (reverse out)))
 
+;; Maestro's default run mode.
+(procedure (SfyAdeSingleRun) "Single Run, Sweeps and Corners")
+
 ;; The view's own setup, kept for the way back (spec 9.7): the records ("maesdb" xml nil)
 ;; and ("maestate" test xml) per <Test> element of the view's active.state, by test name.
 ;; The XML is axlExportSetup's, its root text (the export file's base name) set to
-;; "maesdb" so that a dump does not depend on the scratch path. axlExportSetup reports a
+;; "maesdb" so that a dump does not depend on the scratch path, with the current run mode
+;; (not the default) as a <currentmode> element of <active>, as maestro.sdb holds it. axlExportSetup reports a
 ;; failure in the CIW rather than signalling: the file is emptied first and read back.
 (procedure (SfyAdeStored lib cell sess sdb)
-  (let ((path (SfyAdeTmp)) (p nil) (segs nil) (out nil) (cur nil) (name nil) (f nil))
+  (let ((path (SfyAdeTmp)) (p nil) (segs nil) (out nil) (cur nil) (name nil) (mode nil))
     (setq p (outfile path "w"))
     (when p (close p))
     (errset (axlExportSetup sess sdb path (SfyAdeTags)))
+    (setq mode (car (errset (maeGetCurrentRunMode ?session sess))))
     (foreach line (SfyAdeLines path)
       (setq segs (cons (if (and (geqp (strlen line) 8) (equal (substring line 1 8) "<setupdb"))
                          (strcat (car (parseString line ">")) ">maesdb\n")
                          line)
-                   segs)))
+                   segs))
+      ;; The current run mode, which an export leaves out, as maestro.sdb holds it.
+      (when (and (stringp mode) (nequal mode (SfyAdeSingleRun))
+                 (equal (car (parseString line " \t\n")) "<active>Active"))
+        (setq segs (cons (sprintf nil "\t\t<currentmode>%s</currentmode>\n" mode) segs))))
     (if (null segs)
       (SfyLog (sprintf nil "%s/%s/maestro: axlExportSetup wrote nothing: its unmapped settings are not kept"
                 lib cell))
       (setq out (list (list "maesdb" (SfyText (reverse segs)) nil))))
-    (setq f (ddGetObj lib cell "maestro" "active.state"))
     (setq segs nil)
-    (foreach line (SfyAdeLines (and f (getSGq f readPath)))
+    (foreach line (SfyAdeLines (SfyAdeStatePath lib cell))
       (cond
         (cur
           (setq cur (cons line cur))
@@ -384,8 +399,8 @@
       (when sess
         (errset (maeSaveSetup ?lib tlib ?cell cell ?view "maestro" ?session sess))
         (SfyAdeClose sess)))
-    (setq f (ddGetObj tlib cell "maestro" "active.state" nil "a"))
-    (setq old (SfyAdeLines (and f (getSGq f readPath))))
+    (setq f (SfyAdeStatePath tlib cell))
+    (setq old (SfyAdeLines f))
     ;; The declaration and <statedb> lines of the file, else Maestro's own.
     (setq head (setof l old (member (car (parseString l " \t\n>")) (list "<?xml" "<statedb"))))
     (unless (equal (length head) 2)
@@ -399,7 +414,7 @@
           (setq name (cadr (parseString l "\"")))
           (setq cur t)
           (unless (member name ours) (setq keep (cons l keep))))))
-    (setq p (and f (outfile (ddGetObjWritePath f) "w")))
+    (setq p (and f (outfile f "w")))
     (when p
       (foreach l head (fprintf p "%s" l))
       (foreach l (reverse keep) (fprintf p "%s" l))
@@ -415,14 +430,19 @@
 ;; every test, corner, var, parameter, spec and run option once). Its errors print to the
 ;; CIW without signalling, so success is read back: t when the session then lists a test.
 (procedure (SfyAdeRestore sess rec from to)
-  (let ((path (SfyAdeTmp)) (p nil))
+  (let ((path (SfyAdeTmp)) (p nil) (mode (SfyAdeSingleRun)) (w nil))
     (setq p (outfile path "w"))
     (when p
       (foreach l (SfyAdeRelib (SfyAdeTextLines (nth 1 rec)) from to)
+        (setq w (car (parseString l "<>\t\n")))
+        (when (equal w "currentmode") (setq mode (cadr (parseString l "<>\t\n"))))
         (fprintf p "%s" l))
       (close p)
       (and (car (errset (axlImportSetup sess path (SfyAdeTags) "" 'overwrite)))
            (car (errset (maeGetSetup ?session sess)))
+           (or (car (errset (maeSetCurrentRunMode ?runMode mode ?session sess)))
+               (SfyLog (sprintf nil "run mode %s did not land" mode))
+               t)
            t))))
 
 ;; The parameter names the parameters statements (and .param lines) of the model files
@@ -583,13 +603,16 @@
             ("maesdb" t)
             ("maestate" t)
             ("defn"
-              (setq id (ddGetObj tlib cell "maestro" (nth 0 f) nil "a"))
-              (setq p (and id (outfile (ddGetObjWritePath id) "w")))
+              ;; Into the view's directory: ddGetObj of a new file in mode "a" answers nil
+              ;; (live ICADVM20.1).
+              (setq id (SfyAdeStatePath tlib cell))
+              (setq id (and id (strcat (substring id 1 (difference (strlen id) 12)) (nth 0 f))))
+              (setq p (and id (outfile id "w")))
               (when p
                 (foreach chunk (if (stringp (nth 1 f)) (list (nth 1 f)) (nth 1 f))
                   (fprintf p "%s" chunk))
                 (close p)
-                (setq defs (cons (ddGetObjWritePath id) defs))))
+                (setq defs (cons id defs))))
             (t nil)))))
         (cond
           ((eq ok 'refused) nil)

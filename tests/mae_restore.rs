@@ -199,12 +199,21 @@ fn probe_view(xml: &str, state: &str) -> Interp<MockDb> {
         &format!(
             r#"(let ((s (maeOpenSetup "{LIB}" "rc" "maestro" ?mode "a")))
                  (axlImportSetup s "/fix/setup.sdb" (list "vars" "tests" "parameters" "corners" "runoptions" "specs") "" 'overwrite)
+                 (maeSetCurrentRunMode ?runMode "Monte Carlo Sampling" ?session s)
                  (maeSaveSetup ?lib "{LIB}" ?cell "rc" ?view "maestro" ?session s)
                  (maeCloseSession ?session s ?forceClose t))"#
         ),
     );
     assert!(ok.truthy());
     i
+}
+
+/// The dump's setup XML without the run mode the dumper adds (an export leaves it out).
+fn without_mode(xml: &str) -> String {
+    xml.lines()
+        .filter(|l| l.trim() != "<currentmode>Monte Carlo Sampling</currentmode>")
+        .map(|l| format!("{l}\n"))
+        .collect()
 }
 
 /// The view's current setup XML and `active.state`, as `axlExportSetup` and the file give
@@ -243,7 +252,8 @@ fn the_probe_setup_survives_dump_schemify_and_load() {
     assert_eq!(sdb.len(), 1);
     let dumped = sdb[0].text(0).unwrap();
     assert!(dumped.contains("<setupdb version=\"6\">maesdb\n"));
-    assert_eq!(normalized(&dumped), normalized(&xml));
+    assert!(dumped.contains("\t\t<currentmode>Monte Carlo Sampling</currentmode>\n"));
+    assert_eq!(normalized(&without_mode(&dumped)), normalized(&xml));
     let states: Vec<(String, String)> = records(&first, "maestate")
         .iter()
         .map(|r| (r.str(0).unwrap().to_owned(), r.text(1).unwrap()))
@@ -312,6 +322,8 @@ fn the_probe_setup_survives_dump_schemify_and_load() {
         mae_xml::state_tests(&st).unwrap(),
         mae_xml::state_tests(&state).unwrap()
     );
+    let su = &j.host.mae.saved[&(LIB.to_owned(), "rc".to_owned())];
+    assert_eq!(su.run_mode.as_deref(), Some("Monte Carlo Sampling"));
 }
 
 #[test]
@@ -539,4 +551,33 @@ fn the_mock_getters_take_live_argument_shapes() {
         i.load(r#"(axlImportSetup "fnxSession0" "/x.sdb" (list "vars") "" 'append)"#)
             .is_err()
     );
+}
+
+/// The live check's files (`live/checks/l1_mae_xml.il` copies them to its out directory):
+/// `SFY_L1_LIVE=<dir> cargo test --test mae_restore live_outputs -- --ignored`. The setup
+/// XML after each load equals the one before modulo `normalize`. The test states reach a
+/// fixed point after the first load: Maestro fills in defaults of a state it reads once
+/// (severities `"None"`, an output's `uniqueName`, a `devCheckingSetup` component, an
+/// `allcap` info option, live ICADVM20.1), and every later restore gives the same states.
+#[test]
+#[ignore]
+fn live_outputs_compare_modulo_normalisation() {
+    let dir = std::path::PathBuf::from(std::env::var("SFY_L1_LIVE").expect("SFY_L1_LIVE"));
+    let read = |f: &str| std::fs::read_to_string(dir.join(f)).unwrap();
+    let before = normalized(&read("l1_before.sdb"));
+    let first = mae_xml::state_tests(&read("l1_after1.state")).unwrap();
+    let names = |v: &[(String, String)]| v.iter().map(|x| x.0.clone()).collect::<Vec<_>>();
+    assert_eq!(
+        names(&first),
+        names(&mae_xml::state_tests(&read("l1_before.state")).unwrap())
+    );
+    for k in 1..=3 {
+        let mut after = normalized(&read(&format!("l1_after{k}.sdb")));
+        if k == 3 {
+            after = after.replace("<var>K\n\t\t\t\t<value>8<", "<var>K\n\t\t\t\t<value>7<");
+        }
+        assert_eq!(after, before, "after{k}.sdb");
+        let now = mae_xml::state_tests(&read(&format!("l1_after{k}.state"))).unwrap();
+        assert_eq!(now, first, "after{k}.state");
+    }
 }

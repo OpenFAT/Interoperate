@@ -307,7 +307,7 @@
     maeGetSimOption axlGetTest axlGetMainSetupDB axlGetCorner axlGetEnabled axlGetModels
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
-    axlImportSetup axlGetSpec axlGetSpecWeight))
+    axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.

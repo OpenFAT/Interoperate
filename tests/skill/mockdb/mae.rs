@@ -84,6 +84,8 @@ pub const ROWS: &[(&str, &str)] = &[
     ("axlImportSetup", "t t l t S"),
     ("axlGetSpec", "x t"),
     ("axlGetSpecWeight", "x"),
+    ("maeGetCurrentRunMode", "?session"),
+    ("maeSetCurrentRunMode", "?runMode ?session"),
 ];
 
 /// First `axl*` handle number (handles look like the reference's `7918`).
@@ -105,6 +107,9 @@ pub struct Setup {
     pub sdb: Option<mae_xml::Node>,
     /// Spec weights by `<test>.<output>` (`maeSetSpec ?weight`, `<specWeight>`).
     pub weights: BTreeMap<String, String>,
+    /// The current run mode, `None` for the default (`maeSetCurrentRunMode`); no export
+    /// holds it (live: maestro.sdb's `<currentmode>` only).
+    pub run_mode: Option<String>,
 }
 
 /// An analysis `(name, enabled, options)`, options in the order set.
@@ -326,8 +331,11 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 return Some(Ok(V::Nil));
             }
             // "If the given cellview does not exist, the function creates a new cellview."
-            db.dd_get(&lib, Some(&cell), Some(&view), None, "a")
+            let v = db
+                .dd_get(&lib, Some(&cell), Some(&view), None, "a")
                 .expect("library exists");
+            // The view's directory (live: ddGetObj(lib cell "maestro")~>readPath).
+            db.put(v, "readPath", V::str(&format!("/mock/{lib}/{cell}/{view}")));
             let m = &mut db.mae;
             let setup = m
                 .saved
@@ -962,6 +970,27 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 Err("*Error* axlGetSpecData: argument #1 should be a setup database handle".into())
             }
         },
+        "maeGetCurrentRunMode" => {
+            let Some(k) = m.session(&kw) else {
+                return Some(Ok(V::Nil));
+            };
+            let mode = m.setup(k).run_mode.clone();
+            Ok(V::str(
+                mode.as_deref().unwrap_or("Single Run, Sweeps and Corners"),
+            ))
+        }
+        "maeSetCurrentRunMode" => {
+            let Some(k) = m.session(&kw) else {
+                return Some(Ok(V::Nil));
+            };
+            let Some(mode) = st(key(&kw, "runMode")) else {
+                return Some(Err(
+                    "*Error* maeSetCurrentRunMode: ?runMode is a string".into()
+                ));
+            };
+            m.setup(k).run_mode = (mode != "Single Run, Sweeps and Corners").then_some(mode);
+            Ok(V::T)
+        }
         "axlGetSpec" => match m.resolve(&a[0]) {
             Some(Handle::Sdb(k)) => {
                 let id = s0(1);
@@ -1337,6 +1366,8 @@ fn export_tree(su: &Setup, stem: &str) -> Node {
     let active = root
         .child_mut("active")
         .expect("a setup database has <active>");
+    // No export holds the run mode (maestro.sdb's <currentmode> only).
+    active.children.retain(|c| c.name != "currentmode");
     let section = |active: &mut Node, name: &str| -> usize {
         if let Some(k) = active.children.iter().position(|c| c.name == name) {
             return k;
