@@ -1,0 +1,50 @@
+schemify 1 shprim
+  provenance "virtuoso demopdk/nmos_demo"
+  vibox none
+  vsym 8aeefbd8258f1f40
+
+pin D inout 10 -40
+  vplabel none
+pin G in -30 0
+  vplabel none
+pin S inout 10 40
+  vplabel none
+pin B inout 30 0
+  vplabel none
+
+param model demo_nch
+  kind string
+  doc "Device model"
+param w 300n
+  unit m
+  doc "Gate width"
+param l 60n
+  unit m
+  doc "Gate length"
+param nf 2
+  kind int
+  doc "Finger count"
+param m 1
+  doc "Parallel devices"
+param style a
+  kind choice
+  choices a b c
+  doc "Layout style"
+param as w*70n
+  doc "Source area"
+
+impl spice spice
+  format spectre "{name} ({D} {G} {S} {B}) {model} w={w} l={l} nf={nf} m={m} as={as}"
+  format cdl "M{name} {D} {G} {S} {B} demo_nch m={m} L={l} W={w}"
+
+line -30 0 -6 0
+
+poly 0 -20 10 -20 10 -40
+poly 0 20 10 20 10 40
+
+stext 16 -10 R0 {name}
+  size 0.6
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+stext 16 4 R0 w={w}
+  size 0.6
+  vlabel annotate drawing lowerLeft stick IL cdsParam(1) w={w}

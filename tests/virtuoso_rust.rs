@@ -870,7 +870,7 @@ fn import_onto_existing_files_keeps_schemify_only_data() {
         "  provenance \"virtuoso demopdk/nmos_demo\"",
         "  doc \"thin-oxide nmos\"\n",
     );
-    local = edit(&local, "  doc \"Total width\"", "  min 120n\n  max 100u\n");
+    local = edit(&local, "  doc \"Gate width\"", "  min 120n\n  max 100u\n");
     local = edit(
         &local,
         "impl spice spice",
@@ -893,7 +893,7 @@ fn import_onto_existing_files_keeps_schemify_only_data() {
     );
     // Changed in Virtuoso (a new default for w): the CDF wins, the bound, doc and spice
     // format stay.
-    let changed = text.replace("\"w\" \"string\" \"120n\"", "\"w\" \"string\" \"240n\"");
+    let changed = text.replace("\"w\" \"string\" \"300n\"", "\"w\" \"string\" \"240n\"");
     let m = virtuoso::import(
         &changed,
         &existing,

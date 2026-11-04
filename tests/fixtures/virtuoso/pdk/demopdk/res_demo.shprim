@@ -1,0 +1,28 @@
+schemify 1 shprim
+  provenance "virtuoso demopdk/res_demo"
+  vibox none
+  vsym 622c21842f0c2a21
+
+pin PLUS inout 0 -40
+  vplabel none
+pin MINUS inout 0 40
+  vplabel none
+
+param r 2k
+  unit Ohm
+  doc Resistance
+param w 2u
+  unit m
+  doc Width
+param l 8u
+  unit m
+  doc Length
+param variant ""
+  kind string
+  doc Variant
+
+impl spice spice
+  format spectre "{name} ({PLUS} {MINUS}) resistor r={r} w={w} l={l}{variant != \"\" ? \" variant=\" + variant : \"\"}"
+  format cdl "R{name} {PLUS} {MINUS} W={w} L={l} $[RDEMO]"
+
+rect -8 -24 8 24
