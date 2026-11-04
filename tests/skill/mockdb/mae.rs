@@ -18,6 +18,57 @@ use std::collections::BTreeMap;
 use super::super::V;
 use super::MockDb;
 
+/// The maestro rows of `mockdb::SIGNATURES` (IC23.1 ADE SKILL Reference syntax lines, via
+/// virtuoso-bridge-lite's function database, MIT).
+pub const ROWS: &[(&str, &str)] = &[
+    ("maeOpenSetup", "t t t ?application ?histName ?mode"),
+    ("maeCloseSession", "?session ?forceClose"),
+    ("maeSaveSetup", "?lib ?cell ?view ?session"),
+    ("maeGetSetup", "?typeName ?enabled ?run ?session"),
+    (
+        "maeCreateTest",
+        "t ?sourceTest ?lib ?cell ?view ?simulator ?session",
+    ),
+    ("maeDeleteTest", "t ?run ?session"),
+    ("maeSetAnalysis", "t t ?enable ?options ?session"),
+    ("maeGetEnabledAnalysis", "t ?session"),
+    ("maeGetAnalysis", "t t ?includeEmpty ?option ?session"),
+    ("maeSetVar", "t g ?typeName ?typeValue ?session"),
+    ("maeGetVar", "t ?typeName ?typeValue ?session"),
+    (
+        "maeSetCorner",
+        "t ?enabled ?enableTests ?disableTests ?session",
+    ),
+    (
+        "maeAddOutput",
+        "t t ?outputType ?signalName ?expr ?plot ?save ?session",
+    ),
+    ("maeGetTestOutputs", "t ?session"),
+    (
+        "maeSetSpec",
+        "t t ?minimum ?maximum ?gt ?lt ?range ?tolerance ?info ?weight ?corner ?session",
+    ),
+    ("maeSetEnvOption", "t ?options ?session"),
+    ("maeGetEnvOption", "t ?includeEmpty ?option ?session"),
+    ("maeSetSimOption", "t ?options ?session"),
+    ("maeGetSimOption", "t ?includeEmpty ?option ?session"),
+    ("axlGetTest", "x t"),
+    ("axlGetMainSetupDB", "t"),
+    ("axlGetCorner", "x t"),
+    ("axlGetEnabled", "x"),
+    ("axlGetModels", "x"),
+    ("axlGetModel", "x t"),
+    ("axlPutModel", "x t ?testName ?blockName"),
+    ("axlGetModelFile", "x"),
+    ("axlGetModelSection", "x"),
+    ("axlSetModelFile", "x t"),
+    ("axlSetModelSection", "x t"),
+    ("axlGetVars", "x"),
+    ("axlGetVar", "x t"),
+    ("axlGetVarValue", "x"),
+    ("axlGetSpecData", "x t t [t]"),
+];
+
 /// First `axl*` handle number (handles look like the reference's `7918`).
 const HANDLE_BASE: i64 = 7000;
 

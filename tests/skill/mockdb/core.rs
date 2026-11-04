@@ -1,35 +1,12 @@
-//! A mock Virtuoso database for the SKILL test interpreter (spec `interop.md` §5.4).
-//!
-//! Each Cadence function checks its arity and argument types against [`SIGNATURES`] (taken
-//! from the IC20.1 reference manuals) and fails as documented: a bad argument signals (`Err`), a refused
-//! operation returns `nil`. Behaviour the manuals leave open is marked `GUESS(Gn)`, matching
-//! the spec's §13 table; the probe (`skill/sfy_probe.il`) settles each one on a real
-//! Virtuoso. The maestro part lives in `mock_mae.rs`.
-//!
-//! Model: one arena of objects ([`Obj`], an attribute bag with `objType`), addressed by
-//! `V::Obj(id)`. Libraries are the cds.lib list ([`MockDb::add_lib`]); cells, views and files
-//! are DD objects; a cellview is open-able once created and keeps a backup of its content
-//! while opened `"w"`, so a purge or a last close without `dbSave` restores what was saved
-//! (or removes a never-saved view). Database order is unspecified in Virtuoso, so list
-//! attributes (`shapes`, `instances`, `terminals`, `nets`, `cells`, `views`) come back in
-//! *reverse* creation order: a dumper that forgets to sort fails the goldens.
-//!
-//! ponytail: one CDF level (the base cell CDF is the effective CDF; no library or user
-//! levels); objects of a purged cellview stay in the arena (Virtuoso invalidates them).
+//! DD, database and schematic-editor functions (`dd*`, `db*`, `sch*`; skdfref "Design
+//! Management Functions", "Database Access Functions"; skcompref "PI Functions"): the
+//! arena, cellviews, figures and properties, the Rust-side API of [`MockDb`], and
+//! `dispatch`, which runs every function of [`SIGNATURES`] that no other area delegates.
 
-use super::{Host, V};
-use std::collections::BTreeMap;
+use super::*;
 
-#[path = "mock_mae.rs"]
-pub mod mae;
-
-/// Signatures of every Cadence function the mock implements: `(name, args)`. `args` is a
-/// space-separated list of argument kinds, `[` starting the optional ones, `?key` naming an
-/// accepted keyword: `d` db/DD/CDF object, `D` object or nil, `t` string, `T` string or nil,
-/// `S` string or symbol, `x` integer, `n` number, `l` list, `p` point, `b` box, `L` layer
-/// (`"name"` or `("layer" "purpose")`), `g` anything. `tests/skill_lint.rs` checks every call
-/// in the shipped scripts against this table (maestro/OCEAN functions add their rows here).
-pub const SIGNATURES: &[(&str, &str)] = &[
+/// The DD, database and schematic-editor rows of [`SIGNATURES`].
+pub(super) const ROWS: &[(&str, &str)] = &[
     // DD (skdfref "Design Management Functions")
     ("ddGetObj", "T [T T T D t]"),
     ("ddGetObjWritePath", "d"),
@@ -70,348 +47,7 @@ pub const SIGNATURES: &[(&str, &str)] = &[
     ("schGlueLabel", "d d"),
     ("schCheck", "d"),
     ("schSolder", "d p"),
-    // CDF (cdfuser ch. 8 "CDF SKILL Summary")
-    ("cdfGetBaseCellCDF", "d"),
-    (
-        "cdfCreateBaseCellCDF",
-        "d ?doneProc ?formInitProc ?fieldWidth ?fieldHeight ?buttonFieldWidth ?promptWidth",
-    ),
-    ("cdfDeleteCDF", "d"),
-    (
-        "cdfCreateParam",
-        "d ?name ?type ?defValue ?units ?parseAsNumber ?choices ?prompt ?use ?display ?editable ?dontSave ?callback ?storeDefault ?parseAsCEL ?description",
-    ),
-    ("cdfSaveCDF", "d"),
-    ("cdfGetInstCDF", "d"),
-    ("cdfFindParamByName", "d t"),
-    ("cdfGetCellCDF", "d"),
-    ("cdfUpdateInstParam", "d"),
-    // Maestro (IC23.1 ADE SKILL Reference syntax lines, via virtuoso-bridge-lite's function
-    // database, MIT). Bodies in mock_mae.rs.
-    ("maeOpenSetup", "t t t ?application ?histName ?mode"),
-    ("maeCloseSession", "?session ?forceClose"),
-    ("maeSaveSetup", "?lib ?cell ?view ?session"),
-    ("maeGetSetup", "?typeName ?enabled ?run ?session"),
-    (
-        "maeCreateTest",
-        "t ?sourceTest ?lib ?cell ?view ?simulator ?session",
-    ),
-    ("maeDeleteTest", "t ?run ?session"),
-    ("maeSetAnalysis", "t t ?enable ?options ?session"),
-    ("maeGetEnabledAnalysis", "t ?session"),
-    ("maeGetAnalysis", "t t ?includeEmpty ?option ?session"),
-    ("maeSetVar", "t g ?typeName ?typeValue ?session"),
-    ("maeGetVar", "t ?typeName ?typeValue ?session"),
-    (
-        "maeSetCorner",
-        "t ?enabled ?enableTests ?disableTests ?session",
-    ),
-    (
-        "maeAddOutput",
-        "t t ?outputType ?signalName ?expr ?plot ?save ?session",
-    ),
-    ("maeGetTestOutputs", "t ?session"),
-    (
-        "maeSetSpec",
-        "t t ?minimum ?maximum ?gt ?lt ?range ?tolerance ?info ?weight ?corner ?session",
-    ),
-    ("maeSetEnvOption", "t ?options ?session"),
-    ("maeGetEnvOption", "t ?includeEmpty ?option ?session"),
-    ("maeSetSimOption", "t ?options ?session"),
-    ("maeGetSimOption", "t ?includeEmpty ?option ?session"),
-    ("axlGetTest", "x t"),
-    ("axlGetMainSetupDB", "t"),
-    ("axlGetCorner", "x t"),
-    ("axlGetEnabled", "x"),
-    ("axlGetModels", "x"),
-    ("axlGetModel", "x t"),
-    ("axlPutModel", "x t ?testName ?blockName"),
-    ("axlGetModelFile", "x"),
-    ("axlGetModelSection", "x"),
-    ("axlSetModelFile", "x t"),
-    ("axlSetModelSection", "x t"),
-    ("axlGetVars", "x"),
-    ("axlGetVar", "x t"),
-    ("axlGetVarValue", "x"),
-    ("axlGetSpecData", "x t t [t]"),
 ];
-
-/// Functions with a [`SIGNATURES`] row whose body is in `mock_mae.rs`.
-pub const DELEGATED: &[&str] = &[
-    "maeOpenSetup",
-    "maeCloseSession",
-    "maeSaveSetup",
-    "maeGetSetup",
-    "maeCreateTest",
-    "maeDeleteTest",
-    "maeSetAnalysis",
-    "maeGetEnabledAnalysis",
-    "maeGetAnalysis",
-    "maeSetVar",
-    "maeGetVar",
-    "maeSetCorner",
-    "maeAddOutput",
-    "maeGetTestOutputs",
-    "maeSetSpec",
-    "maeSetEnvOption",
-    "maeGetEnvOption",
-    "maeSetSimOption",
-    "maeGetSimOption",
-    "axlGetTest",
-    "axlGetMainSetupDB",
-    "axlGetCorner",
-    "axlGetEnabled",
-    "axlGetModels",
-    "axlGetModel",
-    "axlPutModel",
-    "axlGetModelFile",
-    "axlGetModelSection",
-    "axlSetModelFile",
-    "axlSetModelSection",
-    "axlGetVars",
-    "axlGetVar",
-    "axlGetVarValue",
-    "axlGetSpecData",
-];
-
-/// The arity a signature allows: (required positional, max positional, keywords).
-pub fn arity(sig: &str) -> (usize, usize, Vec<&str>) {
-    let mut req = 0;
-    let mut max = 0;
-    let mut opt = false;
-    let mut keys = Vec::new();
-    for tok in sig.split_whitespace() {
-        if tok == "..." {
-            max = usize::MAX;
-            continue;
-        }
-        if let Some(k) = tok.strip_prefix('?') {
-            keys.push(k);
-            continue;
-        }
-        let t = tok.trim_matches(|c| c == '[' || c == ']');
-        if tok.starts_with('[') {
-            opt = true;
-        }
-        if t.is_empty() {
-            continue;
-        }
-        max = max.saturating_add(1);
-        if !opt {
-            req += 1;
-        }
-    }
-    (req, max, keys)
-}
-
-/// One object: an attribute bag. `objType` names its kind.
-#[derive(Clone, Debug, Default)]
-pub struct Obj {
-    /// Attributes by name (relations hold `V::Obj` or lists of them).
-    pub attrs: BTreeMap<String, V>,
-}
-
-/// The mock database: libraries, cells, cellviews and their objects, CDF, maestro setups.
-pub struct MockDb {
-    /// Maestro state.
-    pub mae: mae::Mae,
-    objs: Vec<Obj>,
-    libs: Vec<u32>,
-    cvs: BTreeMap<(String, String, String), u32>,
-    backups: BTreeMap<u32, BTreeMap<String, V>>,
-    pins_made: u32,
-}
-
-impl Default for MockDb {
-    fn default() -> Self {
-        MockDb {
-            mae: mae::Mae::default(),
-            objs: vec![Obj::default()],
-            libs: Vec::new(),
-            cvs: BTreeMap::new(),
-            backups: BTreeMap::new(),
-            pins_made: 0,
-        }
-    }
-}
-
-const ORIENTS: &[&str] = &["R0", "R90", "R180", "R270", "MY", "MYR90", "MX", "MXR90"];
-const JUSTIFY: &[&str] = &[
-    "lowerLeft",
-    "lowerCenter",
-    "lowerRight",
-    "centerLeft",
-    "centerCenter",
-    "centerRight",
-    "upperLeft",
-    "upperCenter",
-    "upperRight",
-];
-const FONTS: &[&str] = &[
-    "euroStyle",
-    "gothic",
-    "math",
-    "roman",
-    "script",
-    "stick",
-    "swedish",
-    "fixed",
-    "milSpec",
-];
-const LABEL_TYPES: &[&str] = &["normalLabel", "NLPLabel", "ILLabel"];
-const PROP_TYPES: &[&str] = &[
-    "boolean", "fileName", "float", "hierProp", "ILExpr", "ILList", "int", "NLPExpr", "netSet",
-    "string", "time",
-];
-const CDF_TYPES: &[&str] = &[
-    "string", "int", "float", "radio", "cyclic", "boolean", "button", "netSet",
-];
-/// Attributes returned in reverse creation order ("database order").
-const DB_ORDER: &[&str] = &["shapes", "instances", "terminals", "nets", "cells", "views"];
-
-fn num(v: &V) -> Option<f64> {
-    match v {
-        V::Int(i) => Some(*i as f64),
-        V::Float(f) => Some(*f),
-        _ => None,
-    }
-}
-
-fn pt(v: &V) -> Option<(f64, f64)> {
-    match v.items() {
-        [x, y] => Some((num(x)?, num(y)?)),
-        _ => None,
-    }
-}
-
-fn bb(v: &V) -> Option<((f64, f64), (f64, f64))> {
-    match v.items() {
-        [a, b] => Some((pt(a)?, pt(b)?)),
-        _ => None,
-    }
-}
-
-fn vpt(p: (f64, f64)) -> V {
-    V::list(vec![V::Float(p.0), V::Float(p.1)])
-}
-
-fn vbox(a: (f64, f64), b: (f64, f64)) -> V {
-    let (x0, x1) = (a.0.min(b.0), a.0.max(b.0));
-    let (y0, y1) = (a.1.min(b.1), a.1.max(b.1));
-    V::list(vec![vpt((x0, y0)), vpt((x1, y1))])
-}
-
-fn s(v: &V) -> Option<&str> {
-    match v {
-        V::Str(x) => Some(x),
-        _ => None,
-    }
-}
-
-/// Orientation point maps in Virtuoso's y-up frame: mirror first, then turn
-/// counter-clockwise.
-// GUESS(G1): MYR90 = (-y, -x) and MXR90 = (y, x) (derived; the other six are definitions).
-fn orient_map(o: &str, (x, y): (f64, f64)) -> Option<(f64, f64)> {
-    Some(match o {
-        "R0" => (x, y),
-        "R90" => (-y, x),
-        "R180" => (-x, -y),
-        "R270" => (y, -x),
-        "MY" => (-x, y),
-        "MYR90" => (-y, -x),
-        "MX" => (x, -y),
-        "MXR90" => (y, x),
-        _ => return None,
-    })
-}
-
-/// Applies a transform list `(offset orient [mag])`: orient, then magnify, then translate.
-fn transform(p: (f64, f64), t: &V) -> Result<(f64, f64), String> {
-    let items = t.items();
-    let off = items
-        .first()
-        .and_then(pt)
-        .ok_or("transform: needs (offset orient [mag])")?;
-    let o = items.get(1).and_then(s).ok_or("transform: orient")?;
-    let mag = items.get(2).and_then(num).unwrap_or(1.0);
-    let (x, y) = orient_map(o, p).ok_or_else(|| format!("transform: orient {o}"))?;
-    Ok((x * mag + off.0, y * mag + off.1))
-}
-
-fn bad(name: &str, k: usize, what: &str) -> String {
-    format!("*Error* {name}: argument #{k} should be {what}")
-}
-
-/// Checks `args` against `sig`; returns positional arguments and keyword arguments.
-/// Positional arguments and `(keyword, value)` pairs of a checked call.
-type Args = (Vec<V>, Vec<(String, V)>);
-
-fn check(name: &str, sig: &str, args: &[V]) -> Result<Args, String> {
-    let (req, max, keys) = arity(sig);
-    let kinds: Vec<&str> = sig
-        .split_whitespace()
-        .filter(|t| !t.starts_with('?'))
-        .map(|t| t.trim_matches(|c| c == '[' || c == ']'))
-        .filter(|t| !t.is_empty())
-        .collect();
-    let mut pos = Vec::new();
-    let mut kw = Vec::new();
-    let mut it = args.iter();
-    while let Some(a) = it.next() {
-        match a {
-            V::Sym(k) if k.starts_with('?') => {
-                let k = &k[1..];
-                if !keys.contains(&k) {
-                    return Err(format!("*Error* {name}: unknown keyword ?{k}"));
-                }
-                let v = it
-                    .next()
-                    .ok_or_else(|| format!("*Error* {name}: ?{k} without a value"))?;
-                kw.push((k.to_owned(), v.clone()));
-            }
-            _ => pos.push(a.clone()),
-        }
-    }
-    if pos.len() < req || pos.len() > max {
-        return Err(format!(
-            "*Error* {name}: called with {} arguments, takes {req}..{max}",
-            pos.len()
-        ));
-    }
-    for (k, (v, kind)) in pos.iter().zip(&kinds).enumerate() {
-        let ok = match *kind {
-            "d" => matches!(v, V::Obj(_)),
-            "D" => matches!(v, V::Obj(_) | V::Nil),
-            "t" => matches!(v, V::Str(_)),
-            "T" => matches!(v, V::Str(_) | V::Nil),
-            "S" => matches!(v, V::Str(_) | V::Sym(_)),
-            "x" => matches!(v, V::Int(_)),
-            "n" => num(v).is_some(),
-            "l" => matches!(v, V::List(_) | V::Nil),
-            "p" => pt(v).is_some(),
-            "b" => bb(v).is_some(),
-            "L" => matches!(v, V::Str(_)) || matches!(v.items(), [V::Str(_), V::Str(_)]),
-            _ => true,
-        };
-        if !ok {
-            let what = match *kind {
-                "d" => "a database object",
-                "D" => "a database object or nil",
-                "t" => "a string",
-                "T" => "a string or nil",
-                "S" => "a string or symbol",
-                "x" => "an integer",
-                "n" => "a number",
-                "l" => "a list",
-                "p" => "a point (x y)",
-                "b" => "a box ((x0 y0) (x1 y1))",
-                _ => "a layer name or (layer purpose)",
-            };
-            return Err(bad(name, k + 1, what));
-        }
-    }
-    Ok((pos, kw))
-}
 
 impl MockDb {
     // ------------------------------------------------------------------ Rust API
@@ -501,7 +137,7 @@ impl MockDb {
 
     // ------------------------------------------------------------------ arena
 
-    fn new_obj(&mut self, ty: &str, attrs: Vec<(&str, V)>) -> u32 {
+    pub(super) fn new_obj(&mut self, ty: &str, attrs: Vec<(&str, V)>) -> u32 {
         let mut o = Obj::default();
         o.attrs.insert("objType".into(), V::str(ty));
         for (k, v) in attrs {
@@ -511,7 +147,7 @@ impl MockDb {
         (self.objs.len() - 1) as u32
     }
 
-    fn a(&self, id: u32, k: &str) -> V {
+    pub(super) fn a(&self, id: u32, k: &str) -> V {
         self.objs
             .get(id as usize)
             .and_then(|o| o.attrs.get(k))
@@ -519,11 +155,11 @@ impl MockDb {
             .unwrap_or(V::Nil)
     }
 
-    fn put(&mut self, id: u32, k: &str, v: V) {
+    pub(super) fn put(&mut self, id: u32, k: &str, v: V) {
         self.objs[id as usize].attrs.insert(k.into(), v);
     }
 
-    fn push(&mut self, id: u32, k: &str, v: V) {
+    pub(super) fn push(&mut self, id: u32, k: &str, v: V) {
         let mut l = self.a(id, k).items().to_vec();
         l.push(v);
         self.put(id, k, V::list(l));
@@ -540,11 +176,11 @@ impl MockDb {
         self.put(id, k, V::list(l));
     }
 
-    fn ty(&self, id: u32) -> String {
+    pub(super) fn ty(&self, id: u32) -> String {
         s(&self.a(id, "objType")).unwrap_or("").to_owned()
     }
 
-    fn obj(v: &V) -> Option<u32> {
+    pub(super) fn obj(v: &V) -> Option<u32> {
         match v {
             V::Obj(o) => Some(*o),
             _ => None,
@@ -561,7 +197,7 @@ impl MockDb {
             .find(|&c| s(&self.a(c, "name")) == Some(name))
     }
 
-    fn dd_find(
+    pub(super) fn dd_find(
         &self,
         lib: &str,
         cell: Option<&str>,
@@ -579,7 +215,7 @@ impl MockDb {
     }
 
     /// `ddGetObj` with mode `r`, `a` or `w` (creating cells, views and files on `a`/`w`).
-    fn dd_get(
+    pub(super) fn dd_get(
         &mut self,
         lib: &str,
         cell: Option<&str>,
@@ -1033,7 +669,7 @@ impl MockDb {
             .find(|&p| s(&self.a(p, "name")) == Some(name))
     }
 
-    fn set_prop(&mut self, o: u32, name: &str, ty: &str, v: V) -> u32 {
+    pub(super) fn set_prop(&mut self, o: u32, name: &str, ty: &str, v: V) -> u32 {
         let p = match self.find_prop(o, name) {
             Some(p) => p,
             None => {
@@ -1050,7 +686,7 @@ impl MockDb {
         p
     }
 
-    fn remove_prop(&mut self, o: u32, name: &str) {
+    pub(super) fn remove_prop(&mut self, o: u32, name: &str) {
         if let Some(p) = self.find_prop(o, name) {
             self.unlink(o, "prop", p);
         }
@@ -1065,203 +701,12 @@ impl MockDb {
         v
     }
 
-    // ------------------------------------------------------------------ CDF
-
-    fn cdf_param_type_ok(ty: &str, v: &V) -> bool {
-        match ty {
-            "int" => matches!(v, V::Int(_)),
-            "float" => matches!(v, V::Float(_) | V::Int(_)),
-            "boolean" => matches!(v, V::T | V::Nil | V::Str(_)),
-            "button" => true,
-            _ => matches!(v, V::Str(_)),
-        }
-    }
-
-    fn inst_cdf(&mut self, inst: u32) -> V {
-        let (lib, cell) = (self.a(inst, "libName"), self.a(inst, "cellName"));
-        let (Some(lib), Some(cell)) = (s(&lib), s(&cell)) else {
-            return V::Nil;
-        };
-        let Some(base) = self.base_cdf(lib, cell) else {
-            return V::Nil;
-        };
-        let cdf = self.new_obj(
-            "cdf",
-            vec![
-                ("type", V::str("instData")),
-                ("id", V::Obj(inst)),
-                ("simInfo", self.a(base, "simInfo")),
-                ("paramLabelSet", self.a(base, "paramLabelSet")),
-            ],
-        );
-        for p in self.a(base, "parameters").items().to_vec() {
-            let Some(p) = Self::obj(&p) else { continue };
-            let mut o = self.objs[p as usize].clone();
-            o.attrs.insert("sfyInst".into(), V::Obj(inst));
-            o.attrs.insert("sfyCdf".into(), V::Obj(cdf));
-            o.attrs.remove("value");
-            self.objs.push(o);
-            let id = (self.objs.len() - 1) as u32;
-            self.push(cdf, "parameters", V::Obj(id));
-        }
-        V::Obj(cdf)
-    }
-
-    /// `cdfGetCellCDF(ddCell)`: the cell's effective CDF, here a copy of the base CDF held
-    /// by the cell as the one in memory (`cdfUpdateInstParam` reads it), made again when the
-    /// base CDF changed shape. Its params have no instance: setting `value` sets the
-    /// in-memory default, as on a real cell CDF, and it stays set for every later caller,
-    /// which is why callers restore it.
-    fn cell_cdf(&mut self, cell: u32) -> V {
-        if self.ty(cell) != "ddCell" {
-            return V::Nil;
-        }
-        let Some(base) = Self::obj(&self.a(cell, "sfyBaseCdf")) else {
-            return V::Nil;
-        };
-        if let Some(c) = Self::obj(&self.a(cell, "sfyCellCdf"))
-            && self.a(c, "parameters").items().len() == self.a(base, "parameters").items().len()
-        {
-            return V::Obj(c);
-        }
-        let cdf = self.new_obj(
-            "cdf",
-            vec![
-                ("type", V::str("cellData")),
-                ("id", V::Obj(cell)),
-                ("simInfo", self.a(base, "simInfo")),
-                ("paramLabelSet", self.a(base, "paramLabelSet")),
-            ],
-        );
-        for p in self.a(base, "parameters").items().to_vec() {
-            let Some(p) = Self::obj(&p) else { continue };
-            let mut o = self.objs[p as usize].clone();
-            o.attrs.insert("sfyCellOf".into(), V::str("cell"));
-            self.objs.push(o);
-            let id = (self.objs.len() - 1) as u32;
-            self.push(cdf, "parameters", V::Obj(id));
-        }
-        self.put(cell, "sfyCellCdf", V::Obj(cdf));
-        V::Obj(cdf)
-    }
-
-    /// `cdfUpdateInstParam(inst)`: copies every value of the master cell's in-memory cell
-    /// CDF (the latest `cdfGetCellCDF`) onto the instance, through the base parameter so a
-    /// value equal to the default leaves no property. Without a cell CDF in memory it
-    /// changes nothing.
-    fn update_inst_params(&mut self, inst: u32) -> Result<V, String> {
-        let (lib, cell) = (self.a(inst, "libName"), self.a(inst, "cellName"));
-        let (Some(lib), Some(cell)) = (s(&lib).map(str::to_owned), s(&cell).map(str::to_owned))
-        else {
-            return Ok(V::Nil);
-        };
-        let Some(c) = self.dd_find(&lib, Some(&cell), None, None) else {
-            return Ok(V::Nil);
-        };
-        let (Some(cdf), Some(base)) = (
-            Self::obj(&self.a(c, "sfyCellCdf")),
-            self.base_cdf(&lib, &cell),
-        ) else {
-            return Ok(V::T);
-        };
-        for p in self.a(cdf, "parameters").items().to_vec() {
-            let Some(p) = Self::obj(&p) else { continue };
-            let n = s(&self.a(p, "name")).unwrap_or("").to_owned();
-            let Some(bp) = self.cdf_param(base, &n) else {
-                continue;
-            };
-            if s(&self.a(bp, "paramType")) == Some("button") {
-                continue;
-            }
-            // What the callbacks left in the cell CDF: its live value, else its default.
-            let v = match self.a(p, "sfyLive") {
-                V::Nil => self.a(p, "defValue"),
-                live => live,
-            };
-            self.set_inst_param(bp, inst, v)?;
-        }
-        Ok(V::T)
-    }
-
-    /// `param~>value = v` on an instance CDF: stores the instance property with the CDF's
-    /// type.
-    /// The value Virtuoso stores for a parseAsNumber param with units: kilo as AEL's `K`
-    /// (live ICADVM20.1 run: `r` "10k" of analogLib res came back "10K").
-    fn ael_kilo(&self, p: u32, v: V) -> V {
-        let numeric = s(&self.a(p, "parseAsNumber")) == Some("yes")
-            && s(&self.a(p, "units")).is_some_and(|u| !u.is_empty());
-        match &v {
-            V::Str(x) if numeric => match x.strip_suffix('k') {
-                Some(m) if m.parse::<f64>().is_ok() => V::str(&format!("{m}K")),
-                _ => v,
-            },
-            _ => v,
-        }
-    }
-
-    /// Live ICADVM20.1 (a foundry FD-SOI PDK, `cdfleak` probes): setting a parameter through an
-    /// instance's CDF also sets the in-memory cell CDF's `value` (`sfyLive` here; its
-    /// `defValue` and the base CDF stay), and every instance made afterwards stores that
-    /// value as a property of its own ([`MockDb::new_inst`]).
-    fn leak_to_cell(&mut self, inst: u32, p: u32, v: V) {
-        let (lib, cell) = (self.a(inst, "libName"), self.a(inst, "cellName"));
-        let Some(c) = s(&lib)
-            .zip(s(&cell))
-            .and_then(|(l, c)| self.dd_find(l, Some(c), None, None))
-        else {
-            return;
-        };
-        let name = s(&self.a(p, "name")).unwrap_or("").to_owned();
-        if let Some(cdf) = Self::obj(&self.cell_cdf(c))
-            && let Some(cp) = self.cdf_param(cdf, &name)
-        {
-            self.put(cp, "sfyLive", v);
-        }
-    }
-
-    fn set_inst_param(&mut self, p: u32, inst: u32, v: V) -> Result<V, String> {
-        let ty = s(&self.a(p, "paramType")).unwrap_or("string").to_owned();
-        let name = s(&self.a(p, "name")).unwrap_or("").to_owned();
-        if !Self::cdf_param_type_ok(&ty, &v) {
-            return Err(format!(
-                "*Error* CDF parameter {name} ({ty}): value of the wrong type"
-            ));
-        }
-        let store_default = s(&self.a(p, "storeDefault")) == Some("yes");
-        if super::equal(&v, &self.a(p, "defValue")) && !store_default {
-            // GUESS(G4): a value equal to the default with storeDefault "no" leaves no
-            // property (as the form does); the loader never sends one (spec §5.3).
-            self.remove_prop(inst, &name);
-            return Ok(v);
-        }
-        let (pty, pv) = match ty.as_str() {
-            "int" => ("int", v.clone()),
-            "float" => ("float", V::Float(num(&v).unwrap_or(0.0))),
-            "boolean" => (
-                "boolean",
-                if matches!(&v, V::Str(x) if &**x == "nil" || &**x == "FALSE") {
-                    V::Nil
-                } else if v.truthy() {
-                    V::T
-                } else {
-                    V::Nil
-                },
-            ),
-            // G13: an inherited-connection override is a netSet-typed property (as
-            // virtuoso-bridge-lite writes it with dbReplaceProp ... "netSet").
-            "netSet" => ("netSet", v.clone()),
-            _ => ("string", self.ael_kilo(p, v.clone())),
-        };
-        self.set_prop(inst, &name, pty, pv);
-        Ok(v)
-    }
-
     // ------------------------------------------------------------------ dispatch
 
-    fn call_db(&mut self, name: &str, args: &[V]) -> Option<Result<V, String>> {
+    pub(super) fn call_db(&mut self, name: &str, args: &[V]) -> Option<Result<V, String>> {
         let sig = SIGNATURES.iter().find(|(n, _)| *n == name)?.1;
-        if DELEGATED.contains(&name) {
-            // Signature checked here; the body lives in mock_mae.rs.
+        if DELEGATED.iter().any(|t| t.iter().any(|(n, _)| *n == name)) {
+            // Signature checked here; the body lives in the area's module (`Host::call`).
             return check(name, sig, args).err().map(Err);
         }
         Some(check(name, sig, args).and_then(|(a, kw)| self.dispatch(name, &a, &kw)))
@@ -1270,8 +715,6 @@ impl MockDb {
     fn dispatch(&mut self, name: &str, a: &[V], kw: &[(String, V)]) -> Result<V, String> {
         let o = |i: usize| -> u32 { Self::obj(&a[i]).unwrap_or(0) };
         let st = |i: usize| -> String { a.get(i).and_then(s).unwrap_or("").to_owned() };
-        let key =
-            |k: &str| -> Option<V> { kw.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()) };
         Ok(match name {
             "ddGetObj" => {
                 let lib = st(0);
@@ -1893,112 +1336,6 @@ impl MockDb {
                     ],
                 ))
             }
-            "cdfGetBaseCellCDF" => self.a(o(0), "sfyBaseCdf"),
-            "cdfCreateBaseCellCDF" => {
-                let c = o(0);
-                if self.ty(c) != "ddCell" || self.a(c, "sfyBaseCdf").truthy() {
-                    return Ok(V::Nil);
-                }
-                let cdf = self.new_obj(
-                    "cdf",
-                    vec![
-                        ("type", V::str("baseCellData")),
-                        ("id", V::Obj(c)),
-                        ("doneProc", key("doneProc").unwrap_or(V::str(""))),
-                        ("formInitProc", key("formInitProc").unwrap_or(V::str(""))),
-                    ],
-                );
-                self.put(c, "sfyBaseCdf", V::Obj(cdf));
-                V::Obj(cdf)
-            }
-            "cdfDeleteCDF" => {
-                let cdf = o(0);
-                match Self::obj(&self.a(cdf, "id")) {
-                    Some(c) if self.ty(c) == "ddCell" => {
-                        self.put(c, "sfyBaseCdf", V::Nil);
-                        V::T
-                    }
-                    _ => V::Nil,
-                }
-            }
-            "cdfCreateParam" => {
-                let cdf = o(0);
-                let (Some(V::Str(pname)), Some(V::Str(ty))) = (key("name"), key("type")) else {
-                    return Err(
-                        "*Error* cdfCreateParam: ?name and ?type are required strings".into(),
-                    );
-                };
-                if !CDF_TYPES.contains(&&*ty) {
-                    return Err(format!("*Error* cdfCreateParam: type {ty}"));
-                }
-                let def = key("defValue");
-                if def.is_none() && !matches!(&*ty, "boolean" | "button") {
-                    return Err(format!("*Error* cdfCreateParam: {pname} needs ?defValue"));
-                }
-                let def = def.unwrap_or(V::Nil);
-                if !matches!(&*ty, "button") && def.truthy() && !Self::cdf_param_type_ok(&ty, &def)
-                {
-                    return Err(format!(
-                        "*Error* cdfCreateParam: {pname}: ?defValue does not match type {ty}"
-                    ));
-                }
-                if matches!(&*ty, "radio" | "cyclic") && !matches!(key("choices"), Some(V::List(_)))
-                {
-                    return Err(format!(
-                        "*Error* cdfCreateParam: {pname}: {ty} needs ?choices"
-                    ));
-                }
-                if self.ty(cdf) != "cdf" || self.cdf_param(cdf, &pname).is_some() {
-                    return Ok(V::Nil); // an existing name is skipped silently
-                }
-                // ICADVM20.1 (live run 2026-10-15): "'parseAsNumber' field must be set if
-                // 'units' field is set for this type of parameter", and no parameter.
-                let units = matches!(key("units"), Some(V::Str(u)) if !u.is_empty());
-                let parsed = matches!(key("parseAsNumber"), Some(V::Str(y)) if &*y == "yes");
-                if &*ty == "string" && units && !parsed {
-                    return Ok(V::Nil);
-                }
-                // GUESS(G16): every attribute reads back as it was passed ("yes", "t", "nil");
-                // an unset one reads nil.
-                let mut attrs = vec![
-                    ("name", V::Str(pname.clone())),
-                    ("paramType", V::Str(ty.clone())),
-                    ("defValue", def.clone()),
-                    ("sfyCdf", V::Obj(cdf)),
-                ];
-                for (k, v) in kw {
-                    if !matches!(k.as_str(), "name" | "type" | "defValue") {
-                        attrs.push((k.as_str(), v.clone()));
-                    }
-                }
-                let p = self.new_obj("cdfParam", attrs);
-                self.push(cdf, "parameters", V::Obj(p));
-                V::Obj(cdf)
-            }
-            "cdfSaveCDF" => {
-                let cdf = o(0);
-                if s(&self.a(cdf, "type")) == Some("baseCellData") {
-                    V::T
-                } else {
-                    V::Nil
-                }
-            }
-            "cdfGetInstCDF" => {
-                let i = o(0);
-                if self.ty(i) != "inst" {
-                    return Ok(V::Nil);
-                }
-                self.inst_cdf(i)
-            }
-            "cdfFindParamByName" => self.cdf_param(o(0), &st(1)).map_or(V::Nil, V::Obj),
-            "cdfGetCellCDF" => self.cell_cdf(o(0)),
-            "cdfUpdateInstParam" => {
-                let i = o(0);
-                if self.ty(i) != "inst" {
-                    return Ok(V::Nil);
-                }
-                self.update_inst_params(i)?
-            }
             // Instances only: unlinked from their cellview.
             "dbDeleteObject" => {
                 let x = o(0);
@@ -2029,16 +1366,8 @@ impl MockDb {
                     .map(|&cv| V::Obj(cv))
                     .collect(),
             ),
-            _ => unreachable!("{name} has a signature but no body"),
+            _ => return self.dispatch_cdf(name, a, kw),
         })
-    }
-
-    fn cdf_param(&self, cdf: u32, name: &str) -> Option<u32> {
-        self.a(cdf, "parameters")
-            .items()
-            .iter()
-            .filter_map(Self::obj)
-            .find(|&p| s(&self.a(p, "name")) == Some(name))
     }
 
     fn inst_named(&self, cv: u32, name: &str) -> bool {
@@ -2185,7 +1514,7 @@ impl MockDb {
             })
     }
 
-    fn get_attr(&self, id: u32, attr: &str) -> V {
+    pub(super) fn get_attr(&self, id: u32, attr: &str) -> V {
         let ty = self.ty(id);
         match (ty.as_str(), attr) {
             (_, "bBox") if ty != "rect" && ty != "ellipse" => {
@@ -2227,7 +1556,7 @@ impl MockDb {
         }
     }
 
-    fn set_attr(&mut self, id: u32, attr: &str, v: V) -> Result<V, String> {
+    pub(super) fn set_attr(&mut self, id: u32, attr: &str, v: V) -> Result<V, String> {
         let ty = self.ty(id);
         if id as usize >= self.objs.len() || id == 0 {
             return Err(format!("db:{id}~>{attr}: no such object"));
@@ -2274,7 +1603,7 @@ impl MockDb {
                     self.put(
                         id,
                         "sfyLive",
-                        if super::equal(&v, &self.a(id, "defValue")) {
+                        if super::super::equal(&v, &self.a(id, "defValue")) {
                             V::Nil
                         } else {
                             v.clone()
@@ -2307,29 +1636,5 @@ impl MockDb {
             self.touch(cv);
         }
         Ok(v)
-    }
-}
-
-impl Host for MockDb {
-    fn call(&mut self, name: &str, args: &[V]) -> Option<Result<V, String>> {
-        if let Some(r) = self.call_db(name, args) {
-            return Some(r);
-        }
-        mae::call(self, name, args)
-    }
-
-    fn get(&mut self, obj: u32, attr: &str) -> Result<V, String> {
-        if obj == 0 || obj as usize >= self.objs.len() {
-            return Err(format!("db:{obj}~>{attr}: no such object"));
-        }
-        Ok(self.get_attr(obj, attr))
-    }
-
-    fn set(&mut self, obj: u32, attr: &str, value: V) -> Result<V, String> {
-        self.set_attr(obj, attr, value)
-    }
-
-    fn bound(&self, name: &str) -> bool {
-        SIGNATURES.iter().any(|(n, _)| *n == name)
     }
 }

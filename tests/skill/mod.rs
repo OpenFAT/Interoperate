@@ -12,7 +12,7 @@
 //! empty list and false, `case` compares with `equal` and never evaluates keys, `foreach`
 //! returns its input list, `substring` is 1-based, `lineread` parses without evaluating and
 //! returns `t` for a blank line and `nil` at end of file. Cadence functions (`db*`, `sch*`,
-//! `cdf*`, `mae*`) go to the [`Host`] — the mock Virtuoso of `mockdb.rs`.
+//! `cdf*`, `mae*`) go to the [`Host`] — the mock Virtuoso of `mockdb/`.
 //!
 //! ponytail: the oracle is our reading of the manual, not a real Virtuoso. Goldens captured
 //! from the self-test (`SfySelfTest`) on a real installation replace it when available.

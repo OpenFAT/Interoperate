@@ -438,7 +438,7 @@ fn every_call_is_known_and_well_formed() {
 fn every_cadence_signature_checks_its_arity() {
     // A call with too few arguments signals, as Virtuoso's argument check does.
     let mut db = skill::mockdb::MockDb::default();
-    for (name, sig) in SIGNATURES {
+    for (name, sig) in SIGNATURES.iter() {
         let (req, _, _) = arity(sig);
         let r = db.call_fn(name, &[]);
         if req > 0 {
