@@ -151,7 +151,7 @@ let((bench c st)
     chkE("st1 edited: tran" lambda(() maeGetAnalysis("st1" "tran" ?session st)))
     chkE("st1 edited: outputs" lambda(() mapcar(lambda((o) o~>name) maeGetTestOutputs("st1" ?session st))))
     errset(maeCloseSession(?session st ?forceClose t)))
-  chkSameDir("st1 not rewritten" sprintf(nil "%s/orig_st1" chkDir) chkSt1))
+  chkSameDir("st1_after_maestro" sprintf(nil "%s/orig_st1" chkDir) chkSt1))
 
 ;; ---- cleanup (run.sh removes chkLib)
 system(sprintf(nil "rm -rf %s /tmp/sfy_%s_adel.b64" chkDir getShellEnvVar("USER")))
