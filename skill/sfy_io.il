@@ -313,7 +313,10 @@
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
     axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode
     axlGetTestToolArgs hdbOpen hdbSetTopCellViewName hdbSave hdbClose getDirFiles isDir system
-    envGetVal maeSetSetup maeSetParameter))
+    envGetVal maeSetSetup maeSetParameter
+    axlGetHistoryEntry axlGetHistoryResults axlGetPointPsfDir openResults results
+    selectResult outputs v i drGetWaveformXVec drGetWaveformYVec drVectorLength drGetElem
+    complexp real imag))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.

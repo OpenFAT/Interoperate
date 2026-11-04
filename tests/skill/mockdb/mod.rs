@@ -20,7 +20,7 @@
 //! Submodules, one area of Cadence functions each, with its rows of [`SIGNATURES`]: `core`
 //! (DD, database, schematic editor), `cdf`, `mae` (maestro, `mae*`/`axl*`), and the stubs
 //! `hdb` (config views), `asi` (ADE L sessions) and `layout`, empty until their lanes fill
-//! them (README "Development").
+//! them (README "Development"), and `results` (maestro histories and OCEAN, lane L4).
 
 use super::{Host, V};
 use std::collections::BTreeMap;
@@ -32,6 +32,7 @@ mod core;
 mod hdb;
 mod layout;
 pub mod mae;
+pub mod results;
 
 /// Signatures of every Cadence function the mock implements: `(name, args)`. `args` is a
 /// space-separated list of argument kinds, `[` starting the optional ones, `?key` naming an
@@ -52,7 +53,8 @@ const DISPATCHED: [&[(&str, &str)]; 2] = [core::ROWS, cdf::ROWS];
 
 /// Areas whose bodies live in their module's `call`: the signature is checked before the
 /// call reaches it. A lane adds its area here and to `Host::call`.
-const DELEGATED: [&[(&str, &str)]; 4] = [mae::ROWS, hdb::ROWS, asi::ROWS, layout::ROWS];
+const DELEGATED: [&[(&str, &str)]; 5] =
+    [mae::ROWS, hdb::ROWS, asi::ROWS, layout::ROWS, results::ROWS];
 
 /// The arity a signature allows: (required positional, max positional, keywords).
 pub fn arity(sig: &str) -> (usize, usize, Vec<&str>) {
@@ -302,6 +304,7 @@ impl Host for MockDb {
             .or_else(|| hdb::call(self, name, args))
             .or_else(|| asi::call(self, name, args))
             .or_else(|| layout::call(self, name, args))
+            .or_else(|| results::call(self, name, args))
     }
 
     fn get(&mut self, obj: u32, attr: &str) -> Result<V, String> {

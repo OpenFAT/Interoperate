@@ -57,7 +57,9 @@ pub const KINDS: &[(&str, Scope)] = &[
     // ---- L2: label flags (no new kind: `label`'s arity)
     // ---- L3: config (read::dump files it into its cell, config::import maps it)
     ("config", Scope::Cell),
-    // ---- L4: job, value, pass
+    // ---- L4: history, job (results::parse; a results dump of its own)
+    ("history", Scope::File),
+    ("job", Scope::File),
     // ---- L6: a test's own vars, its enable, device parameters
     ("testvar", Scope::Maestro),
     ("testenable", Scope::Maestro),

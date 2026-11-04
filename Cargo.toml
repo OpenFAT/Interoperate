@@ -16,7 +16,9 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # The native command line (`src/cli/`, `schemify-interop`): file system access, so never
 # part of the wasm guest. SpiceRack reads the PDK model files `pdk-scan` serves.
-cli = ["dep:spicerack"]
+# `maestro-results` hashes the design as `schemify run` does (run.md §4): the run crate's
+# `design`, over elab (both Schemify crates of the pinned revision; no third-party crate).
+cli = ["dep:spicerack", "dep:schemify-run", "dep:schemify-elab"]
 
 [[bin]]
 name = "schemify-interop"
@@ -31,6 +33,8 @@ schemify-expr.workspace = true
 # SpiceRack's IR, readers and writers (no simulator backends): the PDK store and model
 # conversion (CLI only). Pinned like the Schemify crates.
 spicerack = { git = "https://github.com/OpenFAT/SpiceRack", rev = "9d1d6bb8ce5bcd7886392b5c57a407deb8a2ae15", default-features = false, optional = true }
+schemify-run = { workspace = true, optional = true }
+schemify-elab = { workspace = true, optional = true }
 
 [dev-dependencies]
 # The xschem differential (tests/xschem_differential.rs): import → elaborate → netlist →
@@ -61,6 +65,7 @@ schemify-elab = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104
 schemify-netlist = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
 schemify-wave = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
 schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
+schemify-run = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88", default-features = false }
 schemify-spicecmp = { git = "https://github.com/OpenFAT/Schemify", rev = "cd03d0c104633ec69721e62b7610e3290c8c3a88" }
 
 # Small module: size over speed, no unwinding (a panic is a trap the host reports).
