@@ -1,4 +1,4 @@
-//! Maestro's run modes ⇄ bench `montecarlo`/`optimize` records (spec `interop.md` §9.8,
+//! Maestro's run modes ⇄ bench `montecarlo`/`optimize` records (spec `interop.md` §9.9,
 //! lane L5). Maestro keeps them in the setup database the view's own setup carries
 //! (`maesdb`, `restore`): `<runoptions>` holds each mode's options, `<specs>` the goals,
 //! a global var's `min:step:max` value the optimizer's range.
@@ -37,7 +37,7 @@ type OptMap = (
 /// Monte Carlo options with a `montecarlo` attribute. A mode written from a record lists
 /// its mapped options in table order (Maestro's own creation order in the probes), then
 /// the extras in record order.
-/// GUESS(G41): `lds` is `samplingmode`'s word for low-discrepancy sampling.
+/// GUESS(G49): `lds` is `samplingmode`'s word for low-discrepancy sampling.
 const MC_OPTS: [OptMap; 6] = [
     ("mcnumpoints", "samples", &[]),
     (
@@ -60,7 +60,7 @@ const MC_OPTS: [OptMap; 6] = [
 ];
 
 /// Optimizer options with an `optimize` attribute. The local optimizer's algorithm is its
-/// `effort` (adexl's form: Brent-Powell `fine`, Hooke-Jeeves `coarse`; GUESS(G42)).
+/// `effort` (adexl's form: Brent-Powell `fine`, Hooke-Jeeves `coarse`; GUESS(G50)).
 const OPT_OPTS: [OptMap; 2] = [
     (
         "effort",
@@ -319,7 +319,7 @@ fn tol(sp: &mae_xml::SetupSpec) -> Option<String> {
     (sp.kind == "tol").then(|| sp.tol.clone())
 }
 
-/// Import side (spec §9.8): the run modes of the stored setup in `records` (one test's,
+/// Import side (spec §9.9): the run modes of the stored setup in `records` (one test's,
 /// `maestro` first; `test` the mapped test) become `montecarlo`/`optimize` records of
 /// `bench`, and each optimizer range var gains `min`, `max` and `step`. Nothing happens
 /// without a `maesdb` record.
@@ -690,7 +690,7 @@ fn put_var(root: &mut Node, name: &str, value: &str) {
     set_child(v, "value", value);
 }
 
-/// Export side, after `with_stored` (spec §9.8): bench `c`'s `montecarlo` and `optimize`
+/// Export side, after `with_stored` (spec §9.9): bench `c`'s `montecarlo` and `optimize`
 /// records go into the stored setup's XML in `records`' `maesdb` record, where they
 /// differ from what that XML imports as. Without a stored setup they are reported
 /// (`needs_review: montecarlo`/`optimize`): only a view from Virtuoso carries the setup
@@ -722,7 +722,7 @@ pub fn export_run_modes(c: &Cell, records: &mut [Record], notes: &mut Notes) {
                 what,
                 cell,
                 format!(
-                    "{what} {}: no stored Maestro setup to carry it (§9.8)",
+                    "{what} {}: no stored Maestro setup to carry it (§9.9)",
                     r.name
                 ),
             );

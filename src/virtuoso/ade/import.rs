@@ -574,7 +574,7 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
             push_attr(bench, "enable", &["false"]);
         }
     }
-    // §9.8: the stored setup's run modes, with the first test's specs as goals (lane L5).
+    // §9.9: the stored setup's run modes, with the first test's specs as goals (lane L5).
     runmode::import(ok[0], &first.name, bench, cell, notes);
     assert!(bench.record_count() >= before, "the import only appends");
 }

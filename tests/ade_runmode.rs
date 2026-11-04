@@ -1,4 +1,4 @@
-//! Maestro's run modes through Schemify and back (spec `interop.md` §9.8, lane L5): the
+//! Maestro's run modes through Schemify and back (spec `interop.md` §9.9, lane L5): the
 //! Monte Carlo and optimizer options of the stored setup become `montecarlo`/`optimize`
 //! records, the specs goals, a range var `vary` with `min`/`max`/`step`; an edit in
 //! Schemify goes back into the stored setup XML and nothing else changes.
