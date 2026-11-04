@@ -143,3 +143,11 @@ SKILL reader that gates the shipped scripts.
 The `si.env` keys and the `si -batch` calls (`-command nl` for Spectre, `-command netlist`
 plus the CDL Out form's keys for auCdl, both checked on ICADVM20.1) are not covered by the
 mock. If the netlist checks fail with an si usage error, the log is in `out/netlist/*.log`.
+
+## Per-lane checks (`checks/`)
+
+A development harness beside the kit: one check per lane of Interop's parallel work (README
+"Development"), `checks/l1_mae_xml.il` to `checks/l9_cdfcb.il`, each a stub until its lane
+writes it. `checks/run.sh <check>` runs one on the Virtuoso host under the shared run lock, in
+the lane's own scratch library `sfyprobe_<lane>`, created for the run and deleted after it;
+its header has the setup and the exit codes.
