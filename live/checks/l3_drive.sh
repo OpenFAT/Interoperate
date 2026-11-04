@@ -2,7 +2,7 @@
 # Lane L3 live check driver (gap C): runs l3_config on the Virtuoso host and does its
 # Schemify half here, with this checkout's CLI.
 #
-#   live/checks/l3_drive.sh            (SFYCHECK_HOST, default vhost)
+#   SFY_HOST=<host> live/checks/l3_drive.sh   (SFY_HOST: the Virtuoso host's ssh name, required)
 #
 # Ships live/checks (as <work>/src_l3) and this checkout's schemify.il (as
 # <work>/schemify_l3.il, so lanes running at once do not overwrite each other's) to the
@@ -16,7 +16,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$here/../.."
-host="${SFYCHECK_HOST:?}"
+host="${SFY_HOST:-}"
+[[ -n $host ]] || { echo "usage: SFY_HOST=<host> $0   (SFY_HOST: the Virtuoso host's ssh name)" >&2; exit 2; }
 work=sfytest/checks
 lib=sfyprobe_l3
 tmp="${SFYCHECK_LOCAL:-$(mktemp -d)}"

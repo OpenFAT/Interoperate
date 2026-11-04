@@ -2,8 +2,8 @@
 # Lane L8 live check driver (gap H): runs l8_layout on the Virtuoso host and does its
 # Schemify half here, with this checkout's CLI and KLayout.
 #
-#   live/checks/l8_drive.sh            (SFYCHECK_HOST, default vhost; KLAYOUT, default
-#                                       klayout on PATH, else nixpkgs#klayout)
+#   SFY_HOST=<host> live/checks/l8_drive.sh   (SFY_HOST: the Virtuoso host's ssh name, required;
+#                                             KLAYOUT, default klayout on PATH, else nixpkgs#klayout)
 #
 # Ships live/checks and this checkout's schemify.il to <host>:sfytest/checks, starts
 # `run.sh l8_layout` there, and when the session's export bundle appears: takes it into a
@@ -17,7 +17,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$here/../.."
-host="${SFYCHECK_HOST:?}"
+host="${SFY_HOST:-}"
+[[ -n $host ]] || { echo "usage: SFY_HOST=<host> $0   (SFY_HOST: the Virtuoso host's ssh name)" >&2; exit 2; }
 work=sfytest/checks
 lib=sfyprobe_l8
 tmp="${SFYCHECK_LOCAL:-$(mktemp -d)}"

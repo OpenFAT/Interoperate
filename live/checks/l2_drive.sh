@@ -2,7 +2,7 @@
 # Lane L2 live check driver (gap D): runs l2_labels on the Virtuoso host and does its
 # Schemify half here, with this checkout's CLI.
 #
-#   live/checks/l2_drive.sh            (SFYCHECK_HOST, default vhost)
+#   SFY_HOST=<host> live/checks/l2_drive.sh   (SFY_HOST: the Virtuoso host's ssh name, required)
 #
 # Ships live/checks, the kit fixture (as l2_kit.il) and this checkout's schemify.il to
 # <host>:sfytest/checks, starts `run.sh l2_labels` there, and when the session's first dump
@@ -16,7 +16,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$here/../.."
-host="${SFYCHECK_HOST:?}"
+host="${SFY_HOST:-}"
+[[ -n $host ]] || { echo "usage: SFY_HOST=<host> $0   (SFY_HOST: the Virtuoso host's ssh name)" >&2; exit 2; }
 work=sfytest/checks
 lib=sfyprobe_l2
 tmp="${SFYCHECK_LOCAL:-$(mktemp -d)}"

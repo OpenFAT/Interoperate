@@ -2,7 +2,7 @@
 # Lane L9 live check driver (design-library CDF callbacks): runs l9_cdfcb on the Virtuoso
 # host and does its Schemify half here, with this checkout's CLI.
 #
-#   live/checks/l9_drive.sh            (SFYCHECK_HOST, default vhost)
+#   SFY_HOST=<host> live/checks/l9_drive.sh   (SFY_HOST: the Virtuoso host's ssh name, required)
 #
 # Ships live/checks, the kit fixture (as l9_kit.il), build.il's helpers (as l9_build.il) and
 # this checkout's schemify.il to <host>:sfytest/checks/src_l9 (its own directory and
@@ -17,7 +17,8 @@
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 repo="$here/../.."
-host="${SFYCHECK_HOST:?}"
+host="${SFY_HOST:-}"
+[[ -n $host ]] || { echo "usage: SFY_HOST=<host> $0   (SFY_HOST: the Virtuoso host's ssh name)" >&2; exit 2; }
 work=sfytest/checks
 src=$work/src_l9
 lib=sfyprobe_l9

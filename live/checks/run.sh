@@ -1,21 +1,22 @@
 #!/usr/bin/env bash
-# One lane's live check on the Virtuoso host (vhost), modelled on the research probes'
-# harness (notes/interop-research/probes: run.sh, wrap.il):
+# One lane's live check on the Virtuoso host ($SFY_HOST, its ssh name), modelled on the
+# research probes' harness (notes/interop-research/probes: run.sh, wrap.il):
 #
-#   scp -r live/checks vhost:sfytest/checks/src
-#   scp schemify.il vhost:sfytest/checks/      (schemify-interop install-skill <dir>)
-#   ssh vhost bash sfytest/checks/src/run.sh <check>
+#   scp -r live/checks "$SFY_HOST":sfytest/checks/src
+#   scp schemify.il "$SFY_HOST":sfytest/checks/      (schemify-interop install-skill <dir>)
+#   ssh "$SFY_HOST" bash sfytest/checks/src/run.sh <check>
 #
 # <check> is a file stem here: l1_mae_xml … l9_cdfcb. The lane is the part before the first
 # `_`; the check runs in that lane's scratch library sfyprobe_<lane>, created for the run
 # and deleted after it (directory and cds.lib entry), so lanes never share one. The
-# Virtuoso session holds /tmp/user-sfy-run.lock, on the host's local disk: one run at
+# Virtuoso session holds /tmp/<user>-sfy-run.lock, on the host's local disk: one run at
 # a time across every lane. Output: <work>/out/<check>.txt (the check's lines, `end` last)
 # and <check>.CDS.log. Only analogLib, basic and cdsDefTechLib are used.
 #
 # Environment: SFYCHECK_WORK (default ~/sfytest/checks), SFYCHECK_IL (default
 # <work>/schemify.il), SFYCHECK_ENV (the csh file that sets up Cadence, default
-# ~/sfytest/env.csh), CDS (the Virtuoso install), SFYCHECK_TIMEOUT (seconds, default 2400).
+# ~/sfytest/env.csh), CDS (the Virtuoso install, under the site's kit tree: read only, and
+# needed only while <work> has no cds.lib), SFYCHECK_TIMEOUT (seconds, default 2400).
 # Exit status: 0 a PASS and no FAIL, 1 a FAIL or no `end`, 2 usage or setup, 3 nothing
 # checked (only SKIP lines: the lane's check is still a stub).
 set -uo pipefail
@@ -30,11 +31,11 @@ lib="sfyprobe_$lane"
 work="${SFYCHECK_WORK:-$HOME/sfytest/checks}"
 il="${SFYCHECK_IL:-$work/schemify.il}"
 envfile="${SFYCHECK_ENV:-$HOME/sfytest/env.csh}"
-CDS="${CDS:?}"
 out="$work/out"
 [[ -f $il ]] || { echo "run.sh: no $il (schemify-interop install-skill writes one)" >&2; exit 2; }
 mkdir -p "$out"
 cd "$work" || exit 2
+[[ -f cds.lib || -n ${CDS:-} ]] || { echo "run.sh: no $work/cds.lib: set CDS to the Virtuoso install to write one" >&2; exit 2; }
 [[ -f cds.lib ]] || cat > cds.lib <<CDSLIB
 DEFINE analogLib $CDS/tools/dfII/etc/cdslib/artist/analogLib
 DEFINE basic $CDS/tools/dfII/etc/cdslib/basic
@@ -50,7 +51,7 @@ drop_lib
 trap drop_lib EXIT
 
 rm -f "$out/$check.txt"
-flock /tmp/user-sfy-run.lock csh -f -c "source $envfile >& /dev/null; cd $work; \
+flock "/tmp/$(id -un)-sfy-run.lock" csh -f -c "source $envfile >& /dev/null; cd $work; \
   setenv SFYCHECK $check; setenv SFYCHECK_DIR $here; setenv SFYCHECK_LIB $lib; \
   setenv SFYCHECK_WORK $work; setenv SFYCHECK_IL $il; setenv SFYCHECK_OUT $out/$check.txt; \
   timeout ${SFYCHECK_TIMEOUT:-2400} virtuoso -nograph -restore $here/wrap.il -log $out/$check.CDS.log < /dev/null" \

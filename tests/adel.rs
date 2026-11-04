@@ -412,13 +412,20 @@ fn the_probe_states_round_trip_byte_for_byte() {
         // The test's own setup, as Maestro has it: tran, the outputs, the model file.
         for want in [
             format!("code {state} spectre"),
-            "  | include \"/home/user/sfytest/probes/stats.scs\"".to_owned(),
             "  | tran tran stop=20u strobeoutput=strobeonly strobeperiod=0.2u".to_owned(),
             "output vmax".to_owned(),
             "output vavg".to_owned(),
         ] {
             assert!(bench.contains(&want), "{from}: {want}\n{bench}");
         }
+        // The model file sits in the probing account's home: only the path's tail is checked.
+        assert!(
+            bench
+                .lines()
+                .any(|l| l.starts_with("  | include \"/")
+                    && l.ends_with("/sfytest/probes/stats.scs\"")),
+            "{from}: the model file\n{bench}"
+        );
         let n = notes.text();
         assert!(
             n.contains("component convergence is a tar archive of sigList (calls `asiAddToRestorePool`, which only evaluating applies): kept verbatim, not mapped"),

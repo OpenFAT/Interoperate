@@ -11,8 +11,8 @@ use std::path::Path;
 
 use interop::klayout::{self, Files, Mode};
 
-/// A `drDumpDrf` file in the shape of vhost's (probe `layout`), with values of its own: a
-/// 4×4 stipple and a dashed line style for y1.
+/// A `drDumpDrf` file in the shape of the Virtuoso host's (probe `layout`), with values of its
+/// own: a 4×4 stipple and a dashed line style for y1.
 const DRF: &str = "\
 drDefineDisplay(
 ;( DisplayName )

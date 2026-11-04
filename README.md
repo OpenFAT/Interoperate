@@ -390,6 +390,10 @@ edits no shared list:
 | L10 the PDK side | `src/pdk_models.rs`, `src/pdk_scan.rs` |
 
 Each of L1 to L9 also owns its live check, `live/checks/l<N>_*.il` (`live/checks/run.sh`).
+The host comes from `SFY_HOST` (its ssh name; required, no default): a lane with a driver
+runs `SFY_HOST=<host> live/checks/l<N>_drive.sh`, which ships `live/checks` and starts
+`run.sh` there; any other check runs as `run.sh`'s header shows, `ssh "$SFY_HOST" bash
+sfytest/checks/src/run.sh <check>`.
 The registration points: a new `.sfyx` record kind is a row in its lane's section of
 `src/virtuoso/kinds.rs`; mock Cadence functions are rows in the area's `ROWS` and bodies in
 its `call` (`tests/skill/mockdb/`); the SKILL parts are already in `src/skill.rs`'s `PARTS`

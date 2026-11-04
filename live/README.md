@@ -150,4 +150,5 @@ A development harness beside the kit: one check per lane of Interop's parallel w
 "Development"), `checks/l1_mae_xml.il` to `checks/l9_cdfcb.il`, each a stub until its lane
 writes it. `checks/run.sh <check>` runs one on the Virtuoso host under the shared run lock, in
 the lane's own scratch library `sfyprobe_<lane>`, created for the run and deleted after it;
-its header has the setup and the exit codes.
+its header has the setup and the exit codes. A lane with a driver runs it from here with
+`SFY_HOST=<host> checks/l<N>_drive.sh` (`SFY_HOST`, the host's ssh name, is required).
