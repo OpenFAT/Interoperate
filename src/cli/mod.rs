@@ -11,6 +11,7 @@
 //! | `virtuoso-refresh` | `virtuoso_refresh` |
 //! | `pdk-models` | `pdk_models` |
 //! | `pdk-scan` | `pdk_scan` |
+//! | `pdk-map` | `pdk_map` |
 //! | `maestro-results` | `maestro_results` |
 //! | `layout-export`, `layout-import` | `layout` |
 //! | `ciel` | `ciel` |
@@ -25,6 +26,7 @@ mod jobs;
 mod layout;
 mod maestro_results;
 mod pdk_derived;
+mod pdk_map;
 mod pdk_models;
 mod pdk_scan;
 mod virtuoso_refresh;
@@ -35,6 +37,7 @@ use jobs::*;
 use layout::*;
 use maestro_results::*;
 use pdk_derived::*;
+use pdk_map::*;
 use pdk_models::*;
 use pdk_scan::*;
 use virtuoso_refresh::*;
@@ -54,6 +57,7 @@ pub fn run(args: &[String]) -> u8 {
         Some((cmd, rest)) if cmd == "virtuoso-refresh" => virtuoso_refresh(rest),
         Some((cmd, rest)) if cmd == "pdk-models" => pdk_models(rest),
         Some((cmd, rest)) if cmd == "pdk-scan" => pdk_scan(rest),
+        Some((cmd, rest)) if cmd == "pdk-map" => pdk_map(rest),
         Some((cmd, rest))
             if cmd == "virtuoso-export"
                 || cmd == "virtuoso-import"

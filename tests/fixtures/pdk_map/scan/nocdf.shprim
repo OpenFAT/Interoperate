@@ -1,0 +1,16 @@
+schemify 1 shprim
+  provenance "pdk-scan fkit/nocdf"
+
+pin a inout 40 0
+pin b inout 40 20
+
+impl spice spice
+  format spice "X{name} {a} {b} nocdf"
+  format spectre "{name} ({a} {b}) nocdf"
+
+rect -20 -10 20 30
+
+line 20 0 40 0
+line 20 20 40 20
+
+stext -20 -20 R0 {name}

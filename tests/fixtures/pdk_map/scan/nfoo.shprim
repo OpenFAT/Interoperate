@@ -1,0 +1,29 @@
+schemify 1 shprim
+  provenance "pdk-scan fkit/nfoo"
+
+pin d inout 40 0
+pin g inout 40 20
+pin s inout 40 40
+pin b inout 40 60
+
+param w ""
+  kind string
+param l ""
+  kind string
+param nf ""
+  kind string
+param m ""
+  kind string
+
+impl spice spice
+  format spice "X{name} {d} {g} {s} {b} nfoo{w != \"\" ? \" w=\" + w : \"\"}{l != \"\" ? \" l=\" + l : \"\"}{nf != \"\" ? \" nf=\" + nf : \"\"}{m != \"\" ? \" m=\" + m : \"\"}"
+  format spectre "{name} ({d} {g} {s} {b}) nfoo{w != \"\" ? \" w=\" + w : \"\"}{l != \"\" ? \" l=\" + l : \"\"}{nf != \"\" ? \" nf=\" + nf : \"\"}{m != \"\" ? \" m=\" + m : \"\"}"
+
+rect -20 -10 20 70
+
+line 20 0 40 0
+line 20 20 40 20
+line 20 40 40 40
+line 20 60 40 60
+
+stext -20 -20 R0 {name}

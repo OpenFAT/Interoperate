@@ -25,6 +25,7 @@ usage: schemify-interop virtuoso-export <project-dir> <cell-file|dir>... -o <fil
        schemify-interop pdk-derived <project-dir> <char.sfyx>
        schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
        schemify-interop pdk-scan --protocol | --remote-script | [--stdin] --root <dir> --entry <path> --dialect spice|hspice|spectre [--section <s>] [--lib <name>]
+       schemify-interop pdk-map --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o <interop.map>
        schemify-interop pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (d: spice|hspice|spectre|vacask|xyce)
 (cell files, .sfyx paths and output paths are relative to <project-dir>; a directory names every
 cell file under it)";

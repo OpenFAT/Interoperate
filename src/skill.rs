@@ -13,6 +13,7 @@ pub const PARTS: &[(&str, &str)] = &[
     ("sfy_layout.il", include_str!("../skill/sfy_layout.il")),
     ("sfy_cdfcb.il", include_str!("../skill/sfy_cdfcb.il")),
     ("sfy_char.il", include_str!("../skill/sfy_char.il")),
+    ("sfy_pdkmap.il", include_str!("../skill/sfy_pdkmap.il")),
     ("sfy_selftest.il", include_str!("../skill/sfy_selftest.il")),
 ];
 
@@ -23,7 +24,7 @@ pub const PROBE: &str = include_str!("../skill/sfy_probe.il");
 /// (an empty lane part) is left out.
 pub fn schemify_il() -> String {
     let mut out = String::from(
-        ";; schemify.il: Schemify <-> Virtuoso bridge (interop plugin). Load with\n;; (load \"/absolute/path/schemify.il\"); entry points: SfyExport SfyExportLib SfyImport SfyCharacterize SfySelfTest.\n",
+        ";; schemify.il: Schemify <-> Virtuoso bridge (interop plugin). Load with\n;; (load \"/absolute/path/schemify.il\"); entry points: SfyExport SfyExportLib SfyImport SfyCharacterize SfyCdfNames SfySelfTest.\n",
     );
     for (name, text) in PARTS {
         // An empty lane part ships nothing, so adding one changes no byte of schemify.il

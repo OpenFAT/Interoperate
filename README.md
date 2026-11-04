@@ -73,6 +73,7 @@ schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
 schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
+schemify-interop pdk-map         --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o interop.map   (PDK map below)
 schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (PDK models below)
 schemify-interop ciel            <args>...      (ciel from PATH, else a private venv pinned to ciel 3.2.0 under Schemify's data directory, <data>/tools/ciel-3.2.0; needs python3; install output on stderr, ciel's exit status)
 ```
@@ -297,6 +298,40 @@ in their own case, and top-level compact models (BSIM, PSP, HiSIM, UTSOI) get `d
 Lines SpiceRack does not read are counted, never shown. Includes inside a corner `section`
 are followed for the selected section.
 
+### PDK map (remote PDKs)
+
+`schemify-interop pdk-map --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o interop.map`
+writes the `interop.map` rows that send a scanned kit's cells to the kit's own Virtuoso
+cells, so the rows come from the kit rather than from someone's notes. `<dir>` holds the
+scanned `.shprim` cells of Schemify library `--lib` (default: the directory's name). The dump
+is what `SfyCdfNames("<file>" list("<vlib>" ...))` writes in Virtuoso: for each cell of each
+library, its base CDF's `model` default, its spectre simInfo `termOrder`, its CDF parameter
+names and its symbol's terminal names. No values, no geometry.
+
+A scanned cell `X` goes to the Virtuoso cell whose `model` default is `X` (ignoring case)
+and whose `termOrder` has as many terminals as `X` has pins. Pins pair by position, and each
+parameter name the two share becomes a `param` row. Ties go first to the cell whose symbol
+has exactly the `termOrder` terminals (a symbol with its body pin beats one that inherits
+it), then to the library named first, then to the cell name. `interop.report.md` (`.txt`)
+beside the map gives each cell's choice and the reason for it (`mapped`) and says why each
+other cell was not mapped (`needs_review:unmapped`: no candidate, or a pin-count mismatch).
+The map passes `Mapping::parse` before it is written. It holds the kit's names, so keep it
+out of public repositories, like a mirror.
+
+After a remote scan refresh, PDK-Manager runs the dump on the kit host (`sh -s`, whatever
+the login shell) and maps locally:
+
+```sh
+schemify-interop install-skill /tmp/sfy && scp /tmp/sfy/schemify.il host:/tmp/sfy-cdf.il
+ssh host sh -s <<'EOF'
+cd <a directory whose cds.lib defines the kit's libraries>   # with Cadence set up
+printf '(load "/tmp/sfy-cdf.il")\n(SfyCdfNames "/tmp/sfy-cdf.sfyx" (list "<vlib>"))\n(exit)\n' >/tmp/sfy-cdf-run.il
+virtuoso -nograph -restore /tmp/sfy-cdf-run.il </dev/null >/dev/null
+EOF
+scp host:/tmp/sfy-cdf.sfyx . && ssh host rm -f /tmp/sfy-cdf.il /tmp/sfy-cdf-run.il /tmp/sfy-cdf.sfyx /tmp/sfy-cdf.sfyx.log
+schemify-interop pdk-map --scan <scanned cells> --dump sfy-cdf.sfyx --lib <library> -o interop.map
+```
+
 ### PDK models (local kits)
 
 `schemify-interop pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>`
@@ -430,6 +465,7 @@ edits no shared list:
 | L8 layout through KLayout | `src/klayout.rs`, `skill/sfy_layout.il`, `src/cli/layout.rs` |
 | L9 design-library CDF callbacks | `src/virtuoso/read/cdf.rs`, `skill/sfy_cdfcb.il` |
 | L10 the PDK side | `src/pdk_models.rs`, `src/pdk_scan.rs` |
+| pdk-map | `src/pdk_map.rs`, `src/cli/pdk_map.rs`, `skill/sfy_pdkmap.il`, `live/checks/pdkmap_*` |
 
 Each of L1 to L9 also owns its live check, `live/checks/l<N>_*.il` (`live/checks/run.sh`).
 The host comes from `SFY_HOST` (its ssh name; required, no default): a lane with a driver
