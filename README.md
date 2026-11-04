@@ -212,8 +212,9 @@ cd ocean && ocean -nograph < dc_vgs.ocn         ; in a shell
 ```
 
 Importing goes the other way. A comma list comes back as a `lin`/`log`/`values` sweep, and the
-analyses come back as one code block named after the test. Monte Carlo and optimizer records,
-configs, and anything without a maestro form stay on the Schemify side; the report lists them.
+analyses come back as one code block named after the test. Monte Carlo and optimizer records
+go back only into a view that came from Virtuoso, and anything without a maestro form stays on
+the Schemify side; the report lists them.
 
 ### Different libraries for the same devices (`interop.map`)
 
@@ -264,8 +265,13 @@ Every conversion lists its losses in the report. The main ones:
   `prop.cfg`, and the library names inside the text when `SfyImport ?lib` renames a library.
 - Maestro setups now round-trip in full: the view's own setup rides in the bench, and a
   re-export updates the tests in place with only what you changed, instead of recreating
-  them. What is not yet mapped into Schemify records (pending lane L5): Monte Carlo and the
-  optimizer. They come back to Virtuoso unchanged but cannot be edited in Schemify.
+  them.
+- Monte Carlo and optimizer setups map onto `montecarlo` and `optimize` records (samples,
+  seed, sampling, nominal; algorithm, budget, goals from specs, var ranges as `vary`), and
+  an edit goes back into the stored setup as only that change. They go back only into a
+  view that came from Virtuoso: a bench made in Schemify has no setup to write them into,
+  so they are reported. Reported, not sent: other algorithms, the optimizer's seed, config
+  and corner. Monte Carlo draws do not match Spectre's sample by sample.
 - A Maestro view of several tests becomes one bench with a `test` record per test: its own
   var values, enable, config, outputs and code; device parameters become `param` lines and
   `calcVal` becomes `result()` (runs refuse it for now). Lost: run plans, reliability,
