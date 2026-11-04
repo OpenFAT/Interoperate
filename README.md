@@ -63,6 +63,7 @@ schemify-interop pdk-derived     <project> <char.sfyx>                   (derive
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
 schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
 schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (PDK models below)
+schemify-interop ciel            <args>...      (ciel from PATH, else a private venv pinned to ciel 3.2.0 under Schemify's data directory, <data>/tools/ciel-3.2.0; needs python3; install output on stderr, ciel's exit status)
 ```
 
 Paths after `<project>` are relative to it; a directory stands for every cell file under it. Each conversion writes a report next to its output
