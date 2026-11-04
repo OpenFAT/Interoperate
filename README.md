@@ -261,8 +261,10 @@ Every conversion lists its losses in the report. The main ones:
   are kept on the Schemify side.
 - PDK CDF callbacks inside Schemify. Derived parameters (`ad`, `as`, finger widths) stay
   Virtuoso's: see "Derived parameters" above.
-- Cosmetic Virtuoso fields on cellviews you redraw: label fonts, justification,
-  `cdsName()` versus `[@instanceName]` labels.
+- On a cellview you redraw, every surviving object keeps how Virtuoso drew it (label fonts,
+  justification, flags and offsets, bus widths, noConn names). What does not: a multi-point
+  wire's segmentation (Virtuoso splits it into 2-point wires), and instance properties and
+  textDisplays, pending in the CDF lane.
 - xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers.
 
 ## How this is tested without Virtuoso
