@@ -174,7 +174,8 @@
     ;; names) and the test temperature (simulator option temp, GUESS(G28)) as the var
     ;; "temperature", which the Rust side reads as the test temperature; then the test's own
     ;; values (axlGetVars of the test: (handle names)), which override a global of the same
-    ;; name in this test only.
+    ;; name in this test only. An empty value is skipped: after a run Maestro gives a test an
+    ;; empty placeholder of a global, which is not the test's own value.
     (setq vl nil)
     (foreach n (car (errset (maeGetSetup ?typeName "variables" ?session sess)))
       (setq vl (cons (list n (SfyAtomStr (car (errset (maeGetVar n ?session sess))))) vl)))
@@ -188,7 +189,7 @@
       (foreach n (cadr (car (errset (axlGetVars th))))
         (setq vl (cons (list n (SfyAtomStr (car (errset (axlGetVarValue (axlGetVar th n))))))
                    vl))))
-    (foreach x (SfySortByKey vl)
+    (foreach x (SfySortByKey (setof x vl (nequal (cadr x) "")))
       (SfyPut port "testvar" x))
     (unless (errset (progn
     (foreach a (sort (copy (maeGetEnabledAnalysis test ?session sess)) nil)

@@ -380,3 +380,39 @@ fn a_schemify_bench_of_two_tests_loads_as_two_maestro_tests() {
     assert_eq!(p(""), Some(("schemify/tb/schematic/X1", "w", "2u")));
     assert_eq!(p("tt"), Some(("schemify/tb/schematic/X1", "w", "3u")));
 }
+
+/// After a run Maestro gives a test an empty placeholder of a global var (found by lane L5):
+/// the dumper skips it, so the global's value is what the test sees, not "".
+#[test]
+fn an_empty_test_var_leaves_the_global() {
+    let mut i = skill::virtuoso(&[LIB, "analogLib", "basic"]);
+    let ok = run(
+        &mut i,
+        &format!(
+            r#"(let ((cv (dbOpenCellViewByType "{LIB}" "rc" "schematic" "schematic" "w"))
+                     (s (maeOpenSetup "{LIB}" "rc" "maestro" ?mode "a")))
+                 (dbSave cv) (dbClose cv)
+                 (maeCreateTest "T1" ?lib "{LIB}" ?cell "rc" ?view "schematic" ?simulator "spectre" ?session s)
+                 (maeSetVar "VDD" "1.8" ?session s)
+                 (maeSetVar "VDD" "" ?typeName "test" ?typeValue (list "T1") ?session s)
+                 (maeSetVar "C" "5n" ?typeName "test" ?typeValue (list "T1") ?session s)
+                 (maeSaveSetup ?lib "{LIB}" ?cell "rc" ?view "maestro" ?session s)
+                 (maeCloseSession ?session s ?forceClose t))"#
+        ),
+    );
+    assert!(ok.truthy());
+    let ok = run(
+        &mut i,
+        &format!(r#"(SfyExport "/t/a.sfyx" "{LIB}" (list "rc"))"#),
+    );
+    assert!(ok.truthy(), "{}", i.files["/t/a.sfyx.log"]);
+    let recs = sfyx::read(&i.files["/t/a.sfyx"]).unwrap();
+    let of = |tag: &str| {
+        recs.iter()
+            .filter(|r| r.tag == tag)
+            .map(|r| (r.str(0).unwrap().to_owned(), r.str(1).unwrap().to_owned()))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(of("var"), [("VDD".to_owned(), "1.8".to_owned())]);
+    assert_eq!(of("testvar"), [("C".to_owned(), "5n".to_owned())]);
+}
