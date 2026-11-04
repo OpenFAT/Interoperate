@@ -889,6 +889,13 @@ pub fn template_to_literal(t: &str) -> Option<String> {
     Some(out)
 }
 
+/// The expression of a template that is exactly one hole (`{w*2}` → `w*2`); `None` for
+/// anything else.
+pub fn one_hole(t: &str) -> Option<&str> {
+    let e = t.strip_prefix('{')?.strip_suffix('}')?;
+    (!e.contains(['{', '}']) && !e.trim().is_empty()).then_some(e)
+}
+
 /// A literal as a Schemify template (braces doubled).
 pub fn literal_to_template(s: &str) -> String {
     s.replace('{', "{{").replace('}', "}}")

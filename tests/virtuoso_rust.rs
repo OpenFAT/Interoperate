@@ -1438,3 +1438,64 @@ fn a_huge_text_size_exports_saturated() {
         .expect("the stext goes out as a label");
     assert_eq!(label.int(8), Ok(i32::MAX / 1000 * 1000));
 }
+
+/// A pass-through of the parent's params (§3.4): a string-kind override that is one hole
+/// exports as its `pPar` expression, the parent's CDF carries the params' defaults, and
+/// import gives the holes back.
+#[test]
+fn a_parent_param_hole_crosses_as_ppar() {
+    let mut f = Files::new();
+    f.insert(
+        "schemify.project".into(),
+        b"schemify 1 project\n\nlib dev path dev\n".to_vec(),
+    );
+    f.insert(
+        "dev/dev.shprim".into(),
+        b"schemify 1 shprim\n  prefix M\n\npin d inout 0 -20\npin g in -20 0\npin s inout 0 20\n\n\
+          param w 1u\n  kind string\nparam l 1u\n  kind string\n\n\
+          impl spice spice\n  format spice \"M{name} {d} {g} {s} nch w={w} l={l}\"\n\n\
+          stext 0 0 R0 {name}\n  size 0.2\n"
+            .to_vec(),
+    );
+    f.insert(
+        "amp.shcomp".into(),
+        b"schemify 1 shcomp\n\npin A in -40 0\n\nparam w 80n\nparam l 20n\n\n\
+          impl sch schematic\n\nstext 0 0 R0 {name}\n  size 0.2\n\n\
+          inst a0m0 dev:dev\n  at 100 0 R0\n  name m0\n  w {w}\n  l {l*2}\n"
+            .to_vec(),
+    );
+    let d = design(&f);
+    let tops: Vec<usize> = (0..d.cells.len()).collect();
+    let mut opts = ExportOptions::default();
+    opts.lib_map.insert(String::new(), "top".into());
+    let e = virtuoso::export(&d, &tops, &Mapping::default(), &opts).unwrap();
+    assert!(!e.notes.text().contains("template"), "{}", e.notes.text());
+    for want in [
+        r#""w" "string" "pPar(\"w\")")"#,
+        r#""l" "string" "pPar(\"l\")*2")"#,
+    ] {
+        assert!(e.sfyx.contains(want), "{want}\n{}", e.sfyx);
+    }
+    let amp = e.sfyx.split("(\"cell\" \"amp\"").nth(1).unwrap();
+    let cdf = amp.split("(\"cv\"").next().unwrap();
+    for (p, v) in [("w", "80n"), ("l", "20n")] {
+        assert!(
+            cdf.lines()
+                .any(|l| l.starts_with(&format!("(\"param\" \"{p}\" \"string\" \"{v}\""))),
+            "{p}:\n{cdf}"
+        );
+    }
+    let imp = virtuoso::import(
+        &strip_stash(&e.sfyx),
+        &Files::new(),
+        &Mapping::default(),
+        &import_opts(),
+    )
+    .unwrap();
+    let got = String::from_utf8_lossy(&imp.files.iter().find(|x| x.0 == "amp.shcomp").unwrap().1)
+        .into_owned();
+    assert!(
+        got.contains("  w {w}\n") && got.contains("  l {l*2}\n"),
+        "{got}"
+    );
+}

@@ -817,6 +817,16 @@ fn override_prop(
         },
         Some("string" | "choice") | None => match ael::template_to_literal(val) {
             Some(t) => Some(prop("string", t)),
+            // A value that is one hole (`{w}`, `{w*2}`) is its expression, evaluated in the
+            // parent: `pPar("w")`, `pPar("w")*2` (§3.4).
+            None if let Some(Ok(t)) =
+                ael::one_hole(val).map(|e| ael::to_ael(e, parent_scope(c))) =>
+            {
+                if let Some(why) = t.review {
+                    notes.review(why, &c.path, format!("{inst}: {pname} = `{val}`"));
+                }
+                Some(prop("string", t.text))
+            }
             None => {
                 notes.review(
                     "template",

@@ -295,7 +295,43 @@ pub(super) fn schematic_in(
             let value = match (pkind.as_deref(), p.ty.as_str()) {
                 (_, "boolean") => ael::bool_from_cdf(&p.value).map(str::to_owned),
                 (Some("int"), _) | (_, "int") => Some(p.value.trim().to_owned()),
-                (Some("string" | "choice"), _) => Some(ael::literal_to_template(&p.value)),
+                // An expression over the parent's params (`pPar("w")*2`) is that hole
+                // (`{w*2}`, §3.4), the form export reads for a param of unknown kind too;
+                // any other text is literal.
+                (k, _)
+                    if matches!(k, Some("string" | "choice"))
+                        || (k.is_none() && p.value.contains("pPar(")) =>
+                {
+                    Some(
+                        Some(&p.value)
+                            .filter(|v| v.contains("pPar("))
+                            .and_then(|v| {
+                                ael::from_ael(
+                                    v,
+                                    |n| {
+                                        if own_params.iter().any(|x| x == n) {
+                                            AelName::Param
+                                        } else {
+                                            AelName::Unknown
+                                        }
+                                    },
+                                    |_| None,
+                                )
+                            })
+                            .filter(|t| {
+                                t.review.is_none()
+                                    && schemify_expr::Program::compile(
+                                        &t.text,
+                                        schemify_expr::Mode::Scalar,
+                                    )
+                                    .is_ok()
+                            })
+                            .map_or_else(
+                                || ael::literal_to_template(&p.value),
+                                |t| format!("{{{}}}", si_text(&t.text)),
+                            ),
+                    )
+                }
                 (Some("bool"), _) => ael::bool_from_cdf(&p.value).map(str::to_owned),
                 (kind, _) => {
                     let tr = ael::from_ael(
