@@ -118,7 +118,7 @@
              (overwrite nil))
   (let ((sfyLogPort (SfyLogOpen path)) (sfyCountTab (makeTable "sfyCounts" nil))
         (sfyCountKeys nil) (sfyFails 0) (lines nil) (states nil) (rest nil) (tag nil) (n 0)
-        (r nil) (p nil) (cells (strcat path ".cells.sfyx")))
+        (r t) (p nil) (cells (strcat path ".cells.sfyx")))
     (SfyLog (sprintf nil "SfyAdeLImport %s" path))
     (SfyPreflight)
     (setq lines (SfyAdeLines path))
@@ -126,15 +126,21 @@
       (SfyRefuse 0 (sprintf nil "cannot read %s (an absolute path)" path))
       (progn
         (foreach line lines
+          (unless (SfyAdeLTag line) (setq rest (cons line rest))))
+        ;; The state records, parsed (never evaluated) by lineread like SfyReadRecords: one
+        ;; record per line, so its count is the line number.
+        (setq p (infile path))
+        (while (and p (setq r (errset (lineread p))) (car r))
           (setq n (add1 n))
-          (setq tag (SfyAdeLTag line))
+          (setq r (and (listp (car r)) (car (car r))))
+          (setq tag (and (listp r) (car r)))
           (cond
-            ((null tag) (setq rest (cons line rest)))
-            ((null (setq r (car (errset (linereadstring line)))))
-              (SfyRefuse n "not readable as SKILL data"))
             ((equal tag "adel") (setq states (cons (list (list n r)) states)))
+            ((nequal tag "adelfile") nil)
             ((null states) (SfyRefuse n "adelfile before any adel record"))
             (t (setq states (cons (append (car states) (list (list n r))) (cdr states))))))
+        (when p (close p))
+        (unless r (SfyRefuse n "not readable as SKILL data"))
         (setq p (outfile cells "w"))
         (if (null p)
           (SfyRefuse 0 (sprintf nil "cannot write %s" cells))

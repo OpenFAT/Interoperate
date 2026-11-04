@@ -8,7 +8,7 @@
 ;; deletes the maestro view, so only the states describe the setup. Then, per state:
 ;;   (a) dump (SfyAdeLExport), Schemify import and export (schemify-interop), the state
 ;;       deleted, load (SfyAdeLImport): every state file must come back byte for byte;
-;;   (b) for st1, an edit in Schemify (a new var K), exported and loaded: the bench lands in
+;;   (b) for st1, an edit in Schemify (var C 1n -> 2n), exported and loaded: the bench lands in
 ;;       rc/maestro as test st1 with its variables, and the state files are not rewritten.
 ;; Environment: SFYCHECK_CLI, the schemify-interop binary (default ~/sfytest/l7/schemify-interop).
 
@@ -130,10 +130,10 @@ foreach(x list(list("st1" "dir" "proj1" chkSt1) list("st2" "cellview" "proj2" ch
     when(from == "cellview"
       chkThat("st2 is a view again" ddGetObj(chkLib "rc" "st2") != nil))))
 
-;; ---- (b) st1 edited in Schemify: a new var K
+;; ---- (b) st1 edited in Schemify: var C 1n -> 2n
 let((bench c st)
   bench = sprintf(nil "%s/proj1/%s/rc.shbench" chkDir chkLib)
-  system(sprintf(nil "printf 'var K 7\\n' >> %s" bench))
+  system(sprintf(nil "sed -i 's/^var C 1n$/var C 2n/' %s" bench))
   chkThat("st1 edited: schemify-interop virtuoso-export" chkCliRun("proj1" "st1_export_edited" sprintf(nil "virtuoso-export . %s/rc.shbench -o c.sfyx" chkLib)))
   c = sprintf(nil "%s/proj1/c.sfyx" chkDir)
   chkLine("c.sfyx records" chkTags(c))
@@ -145,7 +145,7 @@ let((bench c st)
   chkThat("st1 edited: rc/maestro opens" st)
   when(st
     chkThat("st1 edited: test st1" member("st1" car(errset(maeGetSetup(?session st)))))
-    foreach(kv '(("K" "7") ("C" "1n") ("rmc" "1k"))
+    foreach(kv '(("C" "2n") ("rmc" "1k"))
       chkThat(sprintf(nil "st1 edited: var %s is %s" car(kv) cadr(kv))
         car(errset(maeGetVar(car(kv) ?session st))) == cadr(kv)))
     chkE("st1 edited: tran" lambda(() maeGetAnalysis("st1" "tran" ?session st)))
