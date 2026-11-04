@@ -264,9 +264,14 @@ Every conversion lists its losses in the report. The main ones:
   `prop.cfg`, and the library names inside the text when `SfyImport ?lib` renames a library.
 - Maestro setups now round-trip in full: the view's own setup rides in the bench, and a
   re-export updates the tests in place with only what you changed, instead of recreating
-  them. What is not yet mapped into Schemify records (pending lanes L5 and L6): Monte Carlo,
-  optimizer and multi-test setups. They come back to Virtuoso unchanged but cannot be
-  edited in Schemify.
+  them. What is not yet mapped into Schemify records (pending lane L5): Monte Carlo and the
+  optimizer. They come back to Virtuoso unchanged but cannot be edited in Schemify.
+- A Maestro view of several tests becomes one bench with a `test` record per test: its own
+  var values, enable, config, outputs and code; device parameters become `param` lines and
+  `calcVal` becomes `result()` (runs refuse it for now). Lost: run plans, reliability,
+  checks and asserts. Kept only in the stored setup, not editable in Schemify: spec weights
+  and tolerances, a test bound to another cell, per-test corner selections. Disabled vars
+  and outputs still export enabled.
 - ADE L states (`SfyAdeLExport`, `SfyAdeLImport`) map onto the bench like a Maestro test:
   design, variables, temperature, analyses, model files and outputs (no corners or specs).
   An unedited bench gives the state back byte for byte; an edited one becomes a Maestro
