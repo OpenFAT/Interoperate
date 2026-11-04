@@ -225,6 +225,9 @@ pub(super) fn schematic_in(
         let mut inherits: Vec<(String, String)> = Vec::new();
         let raw = |n: &str| props.iter().find(|p| p.name == n).map(|p| p.value.clone());
         let mut wave_params: BTreeMap<String, String> = BTreeMap::new();
+        // Properties Schemify has no param for, kept with their Virtuoso type (vprop).
+        let mut vprops: Vec<&Prop> = Vec::new();
+        let plain_master = row.is_none() && dev.is_none() && src.is_none();
         for p in &props {
             match p.name.as_str() {
                 "schemifyId" | "nlAction" => continue,
@@ -257,6 +260,12 @@ pub(super) fn schematic_in(
                         inst.name, p.name, p.value, inst.lib, inst.cell
                     ),
                 );
+                continue;
+            }
+            if matches!(p.ty.as_str(), "ILList" | "time" | "ILExpr" | "NLPExpr")
+                || (plain_master && p.ty != "string" && iface.kind(&p.name).is_none())
+            {
+                vprops.push(p);
                 continue;
             }
             if let Some(current) = src
@@ -391,6 +400,14 @@ pub(super) fn schematic_in(
                 &cell,
                 format!("{}: {}/{} → {new_cref}", inst.name, inst.lib, inst.cell),
             );
+            let tds = sv.tds.iter().filter(|t| t.owner == inst.r).count();
+            if tds > 0 {
+                notes.dropped(
+                    "display-only",
+                    &cell,
+                    format!("{}: {tds} textDisplay(s) of the old master", inst.name),
+                );
+            }
             pending.push(Pending {
                 id: id.clone(),
                 cellref: new_cref,
@@ -408,6 +425,32 @@ pub(super) fn schematic_in(
         }
         for [p, v, d] in cached {
             push_attr(doc, "cached", &[p, v, d]);
+        }
+        for p in vprops {
+            push_attr(doc, "vprop", &[&p.name, &p.ty, &p.value]);
+        }
+        // Its textDisplays, at their offset from the instance's origin (DBU, Virtuoso's
+        // axes), so they follow a move.
+        for t in sv.tds.iter().filter(|t| t.owner == inst.r) {
+            let (dx, dy) = (t.xy[0] - inst.xy[0], t.xy[1] - inst.xy[1]);
+            let flags: String = t.flags.iter().map(|&f| if f { '1' } else { '0' }).collect();
+            push_attr(
+                doc,
+                "vtd",
+                &[
+                    &t.assoc,
+                    &t.name,
+                    &t.layer,
+                    &t.purpose,
+                    &dx.to_string(),
+                    &dy.to_string(),
+                    &t.orient,
+                    &t.justify,
+                    &t.font,
+                    &t.height.to_string(),
+                    &flags,
+                ],
+            );
         }
     }
     // Schematic pins.
@@ -690,6 +733,8 @@ pub(super) fn schematic_in(
     if dots > 0 {
         notes.dropped("solder-dot", &cell, format!("{dots} object(s)"));
     }
+    // textDisplays: each on its instance (`vtd`), or reported with a re-mastered one.
+    tally.out += sv.tds.len();
     let st = cv_props(sv, &cell, notes, &mut tally);
     report_rest(sv, &cell, notes, &mut tally);
     assert_eq!(

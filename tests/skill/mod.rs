@@ -1870,11 +1870,17 @@ impl<H: Host> Interp<H> {
                     last
                 }
                 "linereadstring" => {
-                    // Parses (never evaluates) the first form of the string.
+                    // Parses (never evaluates) the forms of the string's first line, as a
+                    // list (live ICADVM20.1: "a=1 b=2" reads ((setq a 1) (setq b 2))).
                     need(1)?;
-                    let forms =
-                        read_all(&text(&a[0])?).map_err(|e| format!("linereadstring: {e}"))?;
-                    forms.into_iter().next().unwrap_or(V::Nil)
+                    let t = text(&a[0])?;
+                    let line = t.split('\n').next().unwrap_or("");
+                    let forms = read_all(line).map_err(|e| format!("linereadstring: {e}"))?;
+                    if forms.is_empty() {
+                        V::Nil
+                    } else {
+                        V::list(forms)
+                    }
                 }
                 "charToInt" => {
                     // The first byte of the symbol's name (a byte-string SKILL's character code).

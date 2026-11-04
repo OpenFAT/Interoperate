@@ -164,8 +164,10 @@
                (cdfGetBaseCellCDF (ddGetObj lib cell)))))
     (when cdf
       (SfyPut port "cdf" (list (SfyText (list (SfyStrOr (getSGq cdf paramLabelSet))))))
+      ;; A design cell's callbacks carry their code (sfy_cdfcb.il); a ref cell's never.
       (foreach p (getSGq cdf parameters)
-        (SfyPut port "param" (SfyParamFields p)))
+        (SfyPut port "param" (append (SfyParamFields p)
+                               (and (equal role "design") (SfyCdfCbFields lib p)))))
       (foreach s (SfySimInfoFields (getSGq cdf simInfo))
         (SfyPut port "siminfo" s)))))
 
@@ -287,11 +289,11 @@
     (SfyPut port tag (cons n (caddr e))))
   n)
 
-;; One cellview in spec 4.2 order: cv, term, pinfig, inst, spin, wire, label, shape, prop.
+;; One cellview in spec 4.2 order: cv, term, pinfig, inst, spin, wire, label, shape, td, prop.
 (procedure (SfyDumpCvBody port cv view)
   (let ((upi 160000) (refs (makeTable "sfyRefs" nil)) (n 0)
         (pinfigs nil) (insts nil) (spins nil) (wires nil) (labels nil) (shapes nil)
-        (ot nil) (par nil) (b nil))
+        (tds nil) (ot nil) (par nil) (b nil))
     (SfyPut port "cv" (list view (getSGq cv cellViewType) upi))
     (foreach i (getSGq cv instances)
       (if (equal (getSGq i purpose) "pin") (setq spins (cons i spins)) (setq insts (cons i insts))))
@@ -299,6 +301,7 @@
       (setq ot (getSGq f objType))
       (cond
         ((equal ot "label") (setq labels (cons f labels)))
+        ((equal ot "textDisplay") (setq tds (cons f tds)))
         ((getSGq f pin) (setq pinfigs (cons f pinfigs)))
         ((and (equal (getSGq f layerName) "wire") (equal (getSGq f purpose) "drawing"))
           ;; GUESS(G15): solder dots (dot or ellipse on wire drawing) are not dumped.
@@ -376,6 +379,7 @@
                     (SfyShapeCoords f upi) (SfyWidth f upi))))
         shapes)
       refs n))
+    (SfyDumpTds port tds refs upi)
     ;; append takes exactly two lists in Virtuoso (a live IC23/ICADVM20 run signalled on six).
     (SfyDumpProps port cv refs
       (append pinfigs (append insts (append spins (append wires (append labels shapes))))))))
@@ -384,7 +388,7 @@
 (procedure (SfyPropValue p)
   (let ((v (getSGq p value)))
     (case (getSGq p valueType)
-      ("string" (and (stringp v) v))
+      (("string" "time" "ILExpr" "NLPExpr") (and (stringp v) v))
       ("int" (and (fixp v) (sprintf nil "%d" v)))
       ("float" (and (floatp v) (sprintf nil "%.17g" v)))
       ("boolean" (if (SfyYes v) "TRUE" "FALSE"))
@@ -681,11 +685,13 @@
         out)))
     (list (stringToSymbol (cadr rec)) (cons nil (reverse out)))))
 
-;; A CDF value of type ty from its text (int, float, boolean; the rest stay strings).
+;; A CDF value of type ty from its text (int, float, boolean; the rest stay strings). A
+;; float through cdfParseFloatString, which reads scale factors: atof("500n") is 500.0
+;; (live ICADVM20.1), and import writes a float parameter's value as 500n.
 (procedure (SfyCdfValue ty s)
   (case ty
     ("int" (atoi s))
-    ("float" (atof s))
+    ("float" (cdfParseFloatString s))
     ("boolean" (SfyYes s))
     (t s)))
 
@@ -724,7 +730,7 @@
   (let ((sfyTlib (arrayref sfyC "lib")) (sfyCell (arrayref sfyC "name")) (sfyView (arrayref sfyV "view"))
         (sfyLine (arrayref sfyV "line")) (sfyCv nil) (sfyUpi (arrayref sfyV "upi"))
         (sfyRefs (makeTable "sfyObjs" nil)) (sfyTerms (makeTable "sfyTerms" nil))
-        (sfyProps nil) (sfyConns nil) (sfyTag nil)
+        (sfyProps nil) (sfyConns nil) (sfyTds nil) (sfyTag nil)
         (sfyKeep (exists sfyLr (arrayref sfyV "recs")
                 (and (equal (car (cadr sfyLr)) "prop") (equal (nth 1 (cadr sfyLr)) 0)
                      (equal (nth 2 (cadr sfyLr)) "schemifyKeep")))))
@@ -755,8 +761,10 @@
             ("shape" (SfyLoadShape sfyLr))
             ("prop" (unless (equal (nth 2 (cadr sfyLr)) "schemifyKeep") (setq sfyProps (cons sfyLr sfyProps))))
             ("conn" (setq sfyConns (cons sfyLr sfyConns)))
+            ("td" (setq sfyTds (cons sfyLr sfyTds)))
             (t (SfyCount (strcat "skipped:" sfyTag)))))
         (SfyLoadProps (reverse sfyProps))
+        (foreach sfyLr (reverse sfyTds) (SfyLoadTd sfyLr))
         (foreach sfyLr (reverse sfyConns) (SfyLoadConn sfyLr))
         (SfyFinishCv sfyTlib sfyCell sfyView sfyLine)))))
 
@@ -1039,11 +1047,12 @@
   (let ((f (cdr (cadr lr))) (v nil) (ok t))
     (setq v (nth 3 f))
     (case (nth 2 f)
-      (("string" "netSet") nil)
+      (("string" "netSet" "time" "ILExpr" "NLPExpr") nil)
       ("int" (setq v (atoi v)) (setq ok (fixp v)))
       ("float" (setq v (atof v)) (setq ok (floatp v)))
       ("boolean" (setq v (SfyYes v)))
-      ("ILList" (setq v (errset (linereadstring v))) (setq ok v) (setq v (car v)))
+      ;; linereadstring gives the list of the line's forms: the value is the first.
+      ("ILList" (setq v (errset (linereadstring v))) (setq ok v) (setq v (car (car v))))
       (t (setq ok nil)))
     (cond
       ((not ok) (SfyRefuse (car lr) (sprintf nil "property %s: %s value %s" (nth 1 f) (nth 2 f) (nth 3 f))))
@@ -1279,7 +1288,7 @@
             (cond
               ((and (equal sfyTy "int") (stringp sfyV)) (atoi sfyV))
               ((equal sfyTy "int") (if (fixp sfyV) sfyV (round sfyV)))
-              ((and (equal sfyTy "float") (stringp sfyV)) (atof sfyV))
+              ((and (equal sfyTy "float") (stringp sfyV)) (cdfParseFloatString sfyV))
               ;; A boolean given as text (t/nil, TRUE/FALSE) is set as the boolean.
               ((and (equal sfyTy "boolean") (stringp sfyV))
                 (and (member sfyV (list "t" "TRUE" "true")) t))

@@ -208,6 +208,7 @@ pub(super) fn schematic_out(
     // Instances.
     let mut names: Vec<String> = Vec::new();
     let mut inst_ref = Vec::new();
+    let mut stashed: BTreeMap<usize, bool> = BTreeMap::new();
     for k in 0..g.inst_id.len() {
         let mi = g.inst_master[k] as usize;
         let r = ids.take();
@@ -270,6 +271,24 @@ pub(super) fn schematic_out(
             };
             match key {
                 "at" | "name" | "ignore" => continue,
+                // A property Schemify has no param for, as Virtuoso had it; an override of
+                // the same name wins.
+                "vprop" => {
+                    let (Some(ty), Some(v)) = (c.doc.attr_value(a, 1), c.doc.attr_value(a, 2))
+                    else {
+                        continue;
+                    };
+                    if c.attr(rec, val).is_none() {
+                        cv.props.push(Prop::new(r, val, ty, v));
+                    }
+                    continue;
+                }
+                "vtd" => {
+                    if let Some(t) = text_display(c, a, r, at) {
+                        cv.tds.push(t);
+                    }
+                    continue;
+                }
                 "inherit" => {
                     let pin = val;
                     let net = c.doc.attr_value(a, 1).unwrap_or("");
@@ -388,6 +407,17 @@ pub(super) fn schematic_out(
         if let Some(row) = row {
             for (p, v) in &row.sets {
                 cv.props.push(Prop::string(r, p, v.clone()));
+            }
+        }
+        // A design-library callback's params, which the CDF going out as imported derives
+        // only when its callbacks run (§6.3).
+        if matches!(plan.how[mi], How::Design)
+            && *stashed
+                .entry(mi)
+                .or_insert_with(|| matches!(super::records::cdf_as_imported(master), Some(Some(_))))
+        {
+            for (n, v) in super::cdf::stashed_computed(master, |n| c.attr(rec, n)) {
+                cv.props.push(Prop::string(r, &n, v));
             }
         }
         cv.insts.push(Inst {
@@ -706,6 +736,27 @@ fn derived_digest(c: &Cell, rec: u32, master: &Cell) -> Option<String> {
             .find(|q| master.field(*q, 0) == n)?;
         let template = matches!(master.attr(p, "kind"), Some("string" | "choice"));
         Some((c.attr(rec, n).unwrap_or(master.field(p, 1)), template))
+    })
+}
+
+/// The textDisplay of instance ref `r` at `at` that attribute `a` (`vtd <assoc> <name>
+/// <layer> <purpose> <dx> <dy> <orient> <justify> <font> <height> <flags>`) keeps.
+fn text_display(c: &Cell, a: u32, r: u32, at: [i32; 2]) -> Option<TextDisplay> {
+    let v = |k: usize| c.doc.attr_value(a, k);
+    let int = |k: usize| v(k)?.parse::<i32>().ok();
+    let f: Vec<bool> = v(10)?.chars().map(|x| x == '1').collect();
+    Some(TextDisplay {
+        owner: r,
+        assoc: v(0)?.to_owned(),
+        name: v(1)?.to_owned(),
+        layer: v(2)?.to_owned(),
+        purpose: v(3)?.to_owned(),
+        xy: [at[0].checked_add(int(4)?)?, at[1].checked_add(int(5)?)?],
+        orient: v(6)?.to_owned(),
+        justify: v(7)?.to_owned(),
+        font: v(8)?.to_owned(),
+        height: int(9)?,
+        flags: f.try_into().ok()?,
     })
 }
 

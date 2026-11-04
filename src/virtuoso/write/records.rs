@@ -298,6 +298,27 @@ fn cv_records(cv: &Cv, out: &mut Vec<Record>) {
             ],
         ));
     }
+    let mut tds: Vec<(u32, &TextDisplay)> = cv.tds.iter().map(|t| (rr(t.owner), t)).collect();
+    tds.sort_by(|a, b| {
+        (a.0, &a.1.assoc, &a.1.name, a.1.xy).cmp(&(b.0, &b.1.assoc, &b.1.name, b.1.xy))
+    });
+    for (r, t) in tds {
+        let mut f = vec![
+            i(r as i32),
+            s(&t.assoc),
+            s(&t.name),
+            s(&t.layer),
+            s(&t.purpose),
+            i(t.xy[0]),
+            i(t.xy[1]),
+            s(&t.orient),
+            s(&t.justify),
+            s(&t.font),
+            i(t.height),
+        ];
+        f.extend(t.flags.map(|b| i(i32::from(b))));
+        out.push(Record::new("td", f));
+    }
     let mut props: Vec<(u32, &Prop)> = cv.props.iter().map(|p| (rr(p.r), p)).collect();
     props.sort_by(|a, b| (a.0, &a.1.name).cmp(&(b.0, &b.1.name)));
     for (r, p) in props {

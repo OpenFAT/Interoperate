@@ -137,6 +137,34 @@ pub struct Shape {
     pub width: i32,
 }
 
+/// A textDisplay an instance owns (`td`): it shows a CDF value of the instance on the
+/// canvas (sfy_cdfcb.il).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct TextDisplay {
+    /// Ref of the owner instance.
+    pub owner: u32,
+    /// What it shows: `label` (a master label), `prop` (a property), `attr` (an attribute).
+    pub assoc: String,
+    /// The master label's text, or the property's or attribute's name.
+    pub name: String,
+    /// Layer.
+    pub layer: String,
+    /// Purpose.
+    pub purpose: String,
+    /// Where Virtuoso shows it.
+    pub xy: [i32; 2],
+    /// Orientation.
+    pub orient: String,
+    /// Justification.
+    pub justify: String,
+    /// Font.
+    pub font: String,
+    /// Height, 1/upi inch.
+    pub height: i32,
+    /// `isDrafted isOverbar isVisible isNameVisible isValueVisible`.
+    pub flags: [bool; 5],
+}
+
 /// A property (`prop`).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Prop {
@@ -144,7 +172,7 @@ pub struct Prop {
     pub r: u32,
     /// Name.
     pub name: String,
-    /// `string int float boolean ILList`.
+    /// `string int float boolean ILList netSet time ILExpr NLPExpr`.
     pub ty: String,
     /// Value text.
     pub value: String,
@@ -201,6 +229,8 @@ pub struct Cv {
     pub labels: Vec<Label>,
     /// Shapes.
     pub shapes: Vec<Shape>,
+    /// Instances' textDisplays.
+    pub tds: Vec<TextDisplay>,
     /// Properties.
     pub props: Vec<Prop>,
     /// Every ref an object record of this cellview defined (§4.2: unique per cellview).
@@ -221,6 +251,7 @@ impl Cv {
             + self.wires.len()
             + self.labels.len()
             + self.shapes.len()
+            + self.tds.len()
             + self.props.len()
             + self.conns.len()
             + self.unknown.len()
@@ -399,7 +430,11 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
             }
             "param" | "siminfo" if !in_cdf => return Err(r.err("before the cell's `cdf`")),
             "param" => {
-                r.arity(8)?;
+                // Eight fields, or ten in a design cell whose callback's code the dumper
+                // read (`from`, `code`; sfy_cdfcb.il).
+                if r.fields.len() != 10 {
+                    r.arity(8)?;
+                }
                 let ty = r.str(1)?;
                 if !CDF_TYPES.contains(&ty) {
                     return Err(r.err(format!("type `{ty}`")));
@@ -413,6 +448,10 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                     flags: strs(r, r.list(5)?, "flags")?,
                     choices: strs(r, r.list(6)?, "choices")?,
                     callback: r.text(7)?,
+                    source: match r.fields.len() {
+                        10 => Some((r.str(8)?.to_owned(), r.text(9)?)),
+                        _ => None,
+                    },
                 };
                 let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
                 if cdf.params.iter().any(|x| x.name == p.name) {
@@ -713,7 +752,15 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
             let ty = r.str(2)?;
             if !matches!(
                 ty,
-                "string" | "int" | "float" | "boolean" | "ILList" | "netSet"
+                "string"
+                    | "int"
+                    | "float"
+                    | "boolean"
+                    | "ILList"
+                    | "netSet"
+                    | "time"
+                    | "ILExpr"
+                    | "NLPExpr"
             ) {
                 return Err(r.err(format!("type `{ty}`")));
             }
@@ -723,6 +770,34 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
                 name: r.str(1)?.to_owned(),
                 ty: ty.to_owned(),
                 value: r.str(3)?.to_owned(),
+            });
+        }
+        "td" => {
+            r.arity(16)?;
+            let assoc = r.str(1)?;
+            if !matches!(assoc, "label" | "prop" | "attr") {
+                return Err(r.err(format!("textDisplay of `{assoc}`")));
+            }
+            let mut flags = [false; 5];
+            for (k, f) in flags.iter_mut().enumerate() {
+                *f = match r.int(11 + k)? {
+                    0 => false,
+                    1 => true,
+                    _ => return Err(r.err("a textDisplay flag is 0 or 1")),
+                };
+            }
+            cv.tds.push(TextDisplay {
+                owner: pos(r, 0)?,
+                assoc: assoc.to_owned(),
+                name: r.str(2)?.to_owned(),
+                layer: r.str(3)?.to_owned(),
+                purpose: r.str(4)?.to_owned(),
+                xy: [r.int(5)?, r.int(6)?],
+                orient: orient(r, 7)?,
+                justify: r.str(8)?.to_owned(),
+                font: r.str(9)?.to_owned(),
+                height: r.int(10)?,
+                flags,
             });
         }
         "conn" => {
@@ -770,6 +845,11 @@ fn check_refs(cv: &Cv) -> Result<(), String> {
     for c in &cv.conns {
         if !cv.insts.iter().any(|i| i.r == c.r) {
             return Err(format!("conn of unknown instance {}", c.r));
+        }
+    }
+    for t in &cv.tds {
+        if !cv.insts.iter().any(|i| i.r == t.owner) {
+            return Err(format!("textDisplay of unknown instance {}", t.owner));
         }
     }
     for f in cv.pinfigs.iter().filter(|f| f.dir.is_empty()) {

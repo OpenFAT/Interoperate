@@ -22,6 +22,7 @@ fn param(name: &str, string: bool) -> ParamIn {
         unit: None,
         doc: None,
         choices: Vec::new(),
+        computed: None,
     }
 }
 

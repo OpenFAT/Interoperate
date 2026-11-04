@@ -362,6 +362,7 @@ pub(super) fn build(
                 unit: None,
                 doc: None,
                 choices: Vec::new(),
+                computed: None,
             });
         }
     }
@@ -497,6 +498,9 @@ pub(super) fn build(
             }
             if let Some(d) = &p.doc {
                 push_attr(&mut doc, "doc", &[d]);
+            }
+            if let Some(e) = &p.computed {
+                push_attr(&mut doc, "computed", &[e]);
             }
         }
     }

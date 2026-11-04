@@ -39,6 +39,9 @@ pub const KINDS: &[(&str, Scope)] = &[
     ("shape", Scope::Object),
     ("prop", Scope::Object),
     ("conn", Scope::Object),
+    // ---- L9: instance textDisplays (sfy_cdfcb.il); callback code (no new kind: `param`'s
+    // arity)
+    ("td", Scope::Object),
     // ---- maestro (ade::check, ade::import; lanes L1, L6)
     ("maestro", Scope::Maestro),
     ("var", Scope::Maestro),

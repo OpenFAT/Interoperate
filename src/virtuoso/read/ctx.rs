@@ -238,6 +238,9 @@ impl<'a> Ctx<'a> {
         }
         if let Some(cdf) = &c.cdf {
             for p in params_in(c, cdf, &mut Notes::default()) {
+                if p.computed.is_some() {
+                    i.computed.push(p.name.clone());
+                }
                 i.params.push((p.name, p.kind, p.default));
             }
             for p in cdf.params.iter().filter(|p| p.ty == "netSet") {

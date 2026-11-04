@@ -178,7 +178,7 @@
     '(("sfyx" "is") ("lib" "s") ("cell" "ss") ("cdf" "x") ("param" "sssssllx")
       ("siminfo" "sl") ("cv" "ssi") ("prop" "isss") ("inst" "issssiis") ("wire" "ili")
       ("label" "iisiisssisss") ("spin" "isssssiis") ("term" "sss") ("pinfig" "isiiii")
-      ("shape" "isssli") ("conn" "iss") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
+      ("shape" "isssli") ("td" "issssiisssiiiiii") ("conn" "iss") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
       ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("end" "")))))
 
@@ -218,6 +218,8 @@
       ((and (equal (car rec) "pinfig") (equal (length (cdr rec)) 7) (setq schema "isiiiis") nil) nil)
       ;; A label's isOverbar isDrafted isVisible, when not 0 0 1, as three more fields.
       ((and (equal (car rec) "label") (equal (length (cdr rec)) 15) (setq schema "iisiisssisssiii") nil) nil)
+      ;; A design cell's callback code (sfy_cdfcb.il) as two more fields.
+      ((and (equal (car rec) "param") (equal (length (cdr rec)) 10) (setq schema "sssssllxsx") nil) nil)
       ((nequal (strlen schema) (length (cdr rec)))
         (sprintf nil "%s takes %d fields, has %d" (car rec) (strlen schema) (length (cdr rec))))
       (t
@@ -300,6 +302,7 @@
     schCreateWireLabel schCreateNetExpression schCreatePin schCreateNoteLabel schGlueLabel
     schCheck schSolder cdfGetBaseCellCDF cdfCreateBaseCellCDF cdfDeleteCDF cdfCreateParam
     cdfSaveCDF cdfGetInstCDF cdfFindParamByName cdfGetCellCDF cdfUpdateInstParam
+    cdfParseFloatString dbCreateTextDisplay
     maeOpenSetup maeCloseSession
     maeSaveSetup maeGetSetup maeCreateTest maeDeleteTest maeSetAnalysis
     maeGetEnabledAnalysis maeGetAnalysis maeSetVar maeGetVar maeSetCorner maeAddOutput

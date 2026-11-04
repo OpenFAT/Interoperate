@@ -327,6 +327,58 @@ fn param_out(c: &Cell, r: u32, notes: &mut Notes) -> CdfParam {
     p
 }
 
+/// The values of `master`'s computed params on one instance (`over`: its override of a
+/// param), for a master whose CDF goes out as Virtuoso had it (§7.5): that CDF derives them
+/// by its callbacks, which the loader does not run, so the instance stores them as Virtuoso
+/// does. A value is the rule over the instance's values and the defaults; a rule that does
+/// not give a finite number (an input that is not constant, a cycle) gives none.
+pub(super) fn stashed_computed<'a>(
+    master: &'a Cell,
+    over: impl Fn(&str) -> Option<&'a str>,
+) -> Vec<(String, String)> {
+    use schemify_expr::{Mode, Program, Scratch, Value};
+    fn value<'a>(
+        m: &'a Cell,
+        over: &dyn Fn(&str) -> Option<&'a str>,
+        n: &str,
+        depth: u32,
+    ) -> Option<f64> {
+        let r = m.records(RecordKind::Param).find(|r| m.field(*r, 0) == n)?;
+        let text = match m.attr(r, "computed") {
+            Some(e) => e,
+            None => over(n).unwrap_or(m.field(r, 1)),
+        };
+        // ponytail: depth bound for cycles; import refuses cyclic rules already.
+        if depth > 16 {
+            return None;
+        }
+        let p = Program::compile(text, Mode::Scalar).ok()?;
+        let ids: Vec<String> = p.idents().map(str::to_owned).collect();
+        let vals: Vec<Option<f64>> = ids.iter().map(|i| value(m, over, i, depth + 1)).collect();
+        let mut inputs = Vec::new();
+        let mut k = 0;
+        p.bind(&mut inputs, |_| {
+            let v = vals[k].map(Value::Num);
+            k += 1;
+            v
+        })
+        .ok()?;
+        match p.eval(&inputs, &mut Scratch::default()).ok()? {
+            Value::Num(x) if x.is_finite() => Some(x),
+            Value::Int(i) => Some(i as f64),
+            _ => None,
+        }
+    }
+    master
+        .records(RecordKind::Param)
+        .filter(|r| master.attr(*r, "computed").is_some())
+        .filter_map(|r| {
+            let n = master.field(r, 0);
+            value(master, &over, n, 0).map(|x| (n.to_owned(), format!("{x:e}")))
+        })
+        .collect()
+}
+
 pub(super) fn literal(t: &str, what: &str, c: &Cell, notes: &mut Notes) -> String {
     ael::template_to_literal(t).unwrap_or_else(|| {
         notes.review(

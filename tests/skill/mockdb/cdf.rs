@@ -20,7 +20,37 @@ pub(super) const ROWS: &[(&str, &str)] = &[
     ("cdfFindParamByName", "d t"),
     ("cdfGetCellCDF", "d"),
     ("cdfUpdateInstParam", "d"),
+    ("cdfParseFloatString", "t"),
+    // skdfref ch. 2: a textDisplay an instance owns shows a CDF value (a master label such
+    // as [@w], a property, an attribute).
+    ("dbCreateTextDisplay", "d d L g p t t t n [g g g g g T g]"),
 ];
+
+/// `cdfParseFloatString(s)`: a number with an optional SKILL scale factor (`500n`, `1.5K`,
+/// `2M` mega, `5e-07`) as a float. GUESS: text that is not one gives nil.
+fn parse_float_string(t: &str) -> V {
+    let t = t.trim();
+    let exp = |c: char| match c {
+        'T' => Some("e12"),
+        'G' => Some("e9"),
+        'M' => Some("e6"),
+        'K' | 'k' => Some("e3"),
+        '%' => Some("e-2"),
+        'm' => Some("e-3"),
+        'u' => Some("e-6"),
+        'n' => Some("e-9"),
+        'p' => Some("e-12"),
+        'f' => Some("e-15"),
+        'a' => Some("e-18"),
+        _ => None,
+    };
+    // The mantissa with the factor as an exponent, so 3u is the double nearest 3e-6.
+    let text = match t.chars().last().and_then(exp) {
+        Some(e) => format!("{}{e}", &t[..t.len() - 1]),
+        None => t.to_owned(),
+    };
+    text.parse::<f64>().map_or(V::Nil, V::Float)
+}
 
 impl MockDb {
     // ------------------------------------------------------------------ CDF
@@ -214,6 +244,57 @@ impl MockDb {
         Ok(v)
     }
 
+    /// `dbCreateTextDisplay(assoc owner lpp flags xy justify orient font height [drafted
+    /// overbar visible nameVisible valueVisible [name]])`: a textDisplay of owner `owner`
+    /// (an instance) in its cellview, `assocType` and `text` by what `assoc` is (a label: its
+    /// text; a property: its name; else the attribute `name`). ponytail: xy and orient are
+    /// kept as given; Virtuoso maps a label's through the instance (live ICADVM20.1), which
+    /// the loader undoes by setting both afterwards.
+    fn create_text_display(&mut self, a: &[V]) -> Result<V, String> {
+        let (Some(assoc), Some(owner)) = (Self::obj(&a[0]), Self::obj(&a[1])) else {
+            return Err("*Error* dbCreateTextDisplay: associate and owner must be objects".into());
+        };
+        let Some(cv) = Self::obj(&self.a(owner, "cellView")) else {
+            return Ok(V::Nil);
+        };
+        if !self.editable(cv) {
+            return Ok(V::Nil);
+        }
+        let (ty, text) = match self.ty(assoc).as_str() {
+            "label" => ("labelAssocType", self.a(assoc, "theLabel")),
+            "prop" => ("propAssocType", self.a(assoc, "name")),
+            _ => match a.get(14) {
+                Some(V::Str(n)) => ("attrAssocType", V::Str(n.clone())),
+                _ => return Ok(V::Nil),
+            },
+        };
+        let flag = |k: usize, d: bool| a.get(k).map_or(d, V::truthy);
+        let b = |x: bool| if x { V::T } else { V::Nil };
+        let td = self.new_shape(
+            cv,
+            "textDisplay",
+            &Self::lpp(&a[2]),
+            vec![
+                ("owner", V::Obj(owner)),
+                ("associate", V::Obj(assoc)),
+                ("assocType", V::str(ty)),
+                ("text", text),
+                ("xy", a[4].clone()),
+                ("justify", a[5].clone()),
+                ("orient", a[6].clone()),
+                ("font", a[7].clone()),
+                ("height", a[8].clone()),
+                ("isDrafted", b(flag(9, false))),
+                ("isOverbar", b(flag(10, false))),
+                ("isVisible", b(flag(11, true))),
+                ("isNameVisible", b(flag(12, true))),
+                ("isValueVisible", b(flag(13, true))),
+            ],
+        );
+        self.push(owner, "textDisplays", V::Obj(td));
+        Ok(V::Obj(td))
+    }
+
     pub(super) fn cdf_param(&self, cdf: u32, name: &str) -> Option<u32> {
         self.a(cdf, "parameters")
             .items()
@@ -340,6 +421,8 @@ impl MockDb {
                 }
                 self.update_inst_params(i)?
             }
+            "cdfParseFloatString" => parse_float_string(&st(0)),
+            "dbCreateTextDisplay" => self.create_text_display(a)?,
             _ => unreachable!("{name} has a signature but no body"),
         })
     }

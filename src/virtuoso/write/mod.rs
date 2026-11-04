@@ -19,7 +19,7 @@ use super::ael::{self, Name};
 use super::devices;
 use super::read::{
     self, Cdf, CdfParam, Conn, Cv, DCell, Dump, Inst, Label, PinFig, Prop, Shape, SimInfo, SimVal,
-    Spin, Term, TextView, Wire,
+    Spin, Term, TextDisplay, TextView, Wire,
 };
 use super::{Export, ExportOptions, ade};
 use crate::align;
