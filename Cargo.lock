@@ -351,7 +351,7 @@ dependencies = [
 [[package]]
 name = "spicerack"
 version = "0.2.0"
-source = "git+https://github.com/OpenFAT/SpiceRack?rev=738da712b02d2db4bfd36fe1d2fca05f19ee8a0d#738da712b02d2db4bfd36fe1d2fca05f19ee8a0d"
+source = "git+https://github.com/OpenFAT/SpiceRack?rev=9d1d6bb8ce5bcd7886392b5c57a407deb8a2ae15#9d1d6bb8ce5bcd7886392b5c57a407deb8a2ae15"
 dependencies = [
  "num-complex",
  "serde",
