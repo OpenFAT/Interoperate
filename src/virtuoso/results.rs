@@ -1,5 +1,5 @@
 //! A maestro history → one imported Schemify run (spec `interop.md` §4.2 `history`/`job`,
-//! §9.7; Schemify run.md §4 imported runs, waves.md §9).
+//! §9.10; Schemify run.md §4 imported runs, waves.md §9).
 //!
 //! Spine: the dump `SfyAdeResults` wrote ([`parse`]: the `history` record and one `job`
 //! per simulated point, naming its waveform export) → the history's `.rdb` beside it

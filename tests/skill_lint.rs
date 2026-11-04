@@ -570,5 +570,7 @@ fn callback_stack_binds_only_sfy_names_and_preflight_lists_every_function() {
     got.sort();
     let mut sig: Vec<String> = SIGNATURES.iter().map(|(n, _)| n.to_string()).collect();
     sig.sort();
+    // `isDir` and `system` are rows of both `asi` and `results`.
+    sig.dedup();
     assert_eq!(got, sig);
 }

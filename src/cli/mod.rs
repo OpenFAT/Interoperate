@@ -11,7 +11,7 @@
 //! | `virtuoso-refresh` | `virtuoso_refresh` |
 //! | `pdk-models` | `pdk_models` |
 //! | `pdk-scan` | `pdk_scan` |
-//! | `maestro-results` (lane L4, not implemented yet) | `maestro_results` |
+//! | `maestro-results` | `maestro_results` |
 //! | `layout-export`, `layout-import` (lane L8, not implemented yet) | `layout` |
 
 use std::path::{Path, PathBuf};

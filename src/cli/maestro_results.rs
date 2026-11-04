@@ -1,4 +1,4 @@
-//! `maestro-results` (spec `interop.md` §9.7): a maestro history, as `SfyAdeResults`
+//! `maestro-results` (spec `interop.md` §9.10): a maestro history, as `SfyAdeResults`
 //! dumped it, → one imported Schemify run of a bench (run.md §4, waves.md §9).
 
 use super::*;

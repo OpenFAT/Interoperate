@@ -330,6 +330,9 @@ impl Host for MockDb {
     ) -> Option<Result<V, String>> {
         match mae::call_files(self, name, args, files) {
             Some(r) => Some(r),
+            None if results::active() && matches!(name, "isDir" | "system") => {
+                self.call(name, args)
+            }
             None => asi::call_files(self, name, args, files).or_else(|| self.call(name, args)),
         }
     }

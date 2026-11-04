@@ -6,6 +6,7 @@
 mod common;
 mod skill;
 
+#[cfg(feature = "cli")]
 use std::path::Path;
 
 use interop::virtuoso::results::{self, rdb, wave};

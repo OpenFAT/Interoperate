@@ -1,5 +1,5 @@
 ;; sfy_results.il: a maestro history's results as a results dump (interop spec 4.2 history
-;; and job records, 9.7). Prefix form only (spec 5.1).
+;; and job records, 9.10). Prefix form only (spec 5.1).
 ;;
 ;; What only Virtuoso can do happens here: the point directories (axlGetPointPsfDir: its
 ;; directory number is not the design point) and the waveforms, which maestro writes as

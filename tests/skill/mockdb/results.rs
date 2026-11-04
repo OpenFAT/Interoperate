@@ -79,6 +79,12 @@ pub fn set(h: History) {
     });
 }
 
+/// Whether a history is set ([`set`]): `isDir` and `system`, rows of `asi` too, are then this
+/// area's.
+pub fn active() -> bool {
+    STATE.with(|s| !s.borrow().history.name.is_empty())
+}
+
 /// The commands `system` was given, in order.
 pub fn commands() -> Vec<String> {
     STATE.with(|s| s.borrow().commands.clone())
