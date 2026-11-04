@@ -47,14 +47,14 @@ fn dir_files(dir: &Path) -> BTreeMap<String, String> {
     out
 }
 
-/// A mock Virtuoso with an empty `LIB/rc` schematic and the library at `/mock/LIB`.
+/// A mock Virtuoso with an empty `LIB/rc` schematic (the mock puts the library at
+/// `/mock/LIB`).
 fn virtuoso() -> Interp<MockDb> {
     let mut i = skill::virtuoso(&[LIB, "analogLib", "basic"]);
     run(
         &mut i,
         &format!(
-            r#"(let ((cv (dbOpenCellViewByType "{LIB}" "rc" "schematic" "schematic" "w"))) (dbSave cv) (dbClose cv))
-               (setSGq (ddGetObj "{LIB}") "/mock/{LIB}" readPath)"#
+            r#"(let ((cv (dbOpenCellViewByType "{LIB}" "rc" "schematic" "schematic" "w"))) (dbSave cv) (dbClose cv))"#
         ),
     );
     i
