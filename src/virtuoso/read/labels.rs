@@ -23,6 +23,13 @@ pub(super) fn net_of_prop(v: &str) -> (String, bool) {
     }
 }
 
+/// The `vflags <overbar> <drafted> <visible>` values (0/1) of label `l`, `None` at
+/// export's `0 0 1` (§7.5; `write::with_flags` reads them).
+pub(super) fn flags_of(l: &Label) -> Option<[&'static str; 3]> {
+    let b = |x: bool| if x { "1" } else { "0" };
+    (l.overbar || l.drafted || l.hidden).then(|| [b(l.overbar), b(l.drafted), b(!l.hidden)])
+}
+
 /// Text height (1/`upi` inch) → Schemify `size` milli (§3.5).
 pub(super) fn size_milli(height: i32, upi: i32) -> i32 {
     profile::size_of_height(profile::height_from_virtuoso(height, upi))
@@ -126,10 +133,41 @@ pub(super) fn nlp_in(text: &str, label_set: &str) -> Option<String> {
     }
 }
 
+/// The point of polyline `pts` nearest `p`: the projection on a horizontal or vertical
+/// segment, else the nearest end (§6.2).
+pub(crate) fn project(p: [i32; 2], pts: &[[i32; 2]]) -> [i32; 2] {
+    let mut best = pts[0];
+    let mut bd = i64::MAX;
+    let d2 = |a: [i32; 2], b: [i32; 2]| {
+        let (dx, dy) = (
+            i64::from(a[0]) - i64::from(b[0]),
+            i64::from(a[1]) - i64::from(b[1]),
+        );
+        dx * dx + dy * dy
+    };
+    for s in pts.windows(2) {
+        let (a, b) = (s[0], s[1]);
+        let q = if a[1] == b[1] {
+            [p[0].clamp(a[0].min(b[0]), a[0].max(b[0])), a[1]]
+        } else if a[0] == b[0] {
+            [a[0], p[1].clamp(a[1].min(b[1]), a[1].max(b[1]))]
+        } else if d2(p, a) <= d2(p, b) {
+            a
+        } else {
+            b
+        };
+        if d2(p, q) < bd {
+            bd = d2(p, q);
+            best = q;
+        }
+    }
+    best
+}
+
 /// The `vplabel` values of symbol pin `name` at `at` (milli-units): `none` when its main
 /// pin figure has no pin label, the label's offset from the pin and its orient, justify,
-/// font and height when they differ from export's (at the pin, R0, centerLeft, stick, half
-/// LABEL_HEIGHT), else `None`.
+/// font and height (then its flags, when not `0 0 1`) when they differ from export's (at
+/// the pin, R0, centerLeft, stick, half LABEL_HEIGHT, `0 0 1`), else `None`.
 pub(super) fn pin_label_as_drawn(
     sv: &Cv,
     name: &str,
@@ -157,18 +195,22 @@ pub(super) fn pin_label_as_drawn(
     let h = profile::height_from_virtuoso(l.height, sv.upi);
     let o = orient_in(&l.orient);
     let usual = i64::from(crate::virtuoso::write::LABEL_HEIGHT / 2);
+    let flags = flags_of(l);
     if d == [0, 0]
         && o == Orient::R0
         && (l.justify.as_str(), l.font.as_str(), h) == ("centerLeft", "stick", usual)
+        && flags.is_none()
     {
         return None;
     }
-    Some(vec![
+    let mut v = vec![
         coord_text(d[0]),
         coord_text(d[1]),
         o.as_str().into(),
         l.justify.clone(),
         l.font.clone(),
         h.to_string(),
-    ])
+    ];
+    v.extend(flags.into_iter().flatten().map(str::to_owned));
+    Some(v)
 }

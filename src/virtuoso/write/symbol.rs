@@ -53,11 +53,12 @@ pub(super) fn symbol_out(c: &Cell, ids: &mut Ids, notes: &mut Notes) -> Cv {
                 .push(Prop::string(r, "schemifyPin", pins.name[k].clone()));
         }
         // The name label as Virtuoso drew it (`vplabel <dx> <dy> <orient> <justify> <font>
-        // <height>` from the pin, or `vplabel none`), else export's.
+        // <height> [<overbar> <drafted> <visible>]` from the pin, or `vplabel none`), else
+        // export's.
         let v: Vec<&str> = c.attr_values(pin_rec, "vplabel");
         let (xy, orient, justify, font, height) = match v[..] {
             ["none"] => continue,
-            [dx, dy, o, j, f, h] => {
+            [dx, dy, o, j, f, h, ..] => {
                 let d = [parse_coord(dx).unwrap_or(0), parse_coord(dy).unwrap_or(0)];
                 let p = [pins.at[k][0] + d[0], pins.at[k][1] + d[1]];
                 (
@@ -72,8 +73,9 @@ pub(super) fn symbol_out(c: &Cell, ids: &mut Ids, notes: &mut Notes) -> Cv {
         };
         let o = orient.parse().unwrap_or(Orient::R0);
         let style = ["pin", "label", justify, font, "normal"];
+        let l = label(ids.take(), r, term, xy, o, height, style);
         cv.labels
-            .push(label(ids.take(), r, term, xy, o, height, style));
+            .push(with_flags(l, v.get(6..).unwrap_or_default()));
     }
     for r in 1..c.doc.record_count() {
         let kind = c.doc.record_kind(r);

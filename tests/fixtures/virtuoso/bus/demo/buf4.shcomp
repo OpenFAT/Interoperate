@@ -1,7 +1,7 @@
 schemify 1 shcomp
   vibox none
   vsym 8c00b16877b7513c
-  vsch 22e26de3eafc7a1a
+  vsch c562c5c19e191a55
   vcdf 4e8ac34b11252ac0
   vcdfrec "(\"cdf\" \"\")"
   vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"in<3:0>\" \"out<3:0>\"))))"
@@ -21,10 +21,13 @@ inst gs58w6 ./buf
 
 wire 0zyyrf 40 0 80 0
   bus true
+  vwidth 3
 wire epnzab -80 0 -40 0
   bus true
+  vwidth 3
 
 label yjnhep -60 0 R0 in[3:0]
+  voff 0 -3
 
 port 3hza6w -80 0 R0 in[3:0]
 port mg4dke 80 0 R180 out[3:0]

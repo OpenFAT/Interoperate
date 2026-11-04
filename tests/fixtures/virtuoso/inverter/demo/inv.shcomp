@@ -1,7 +1,7 @@
 schemify 1 shcomp
   vibox -42 -32 42 22
   vsym aab279831c8cf04a
-  vsch d58d03df2fbe20b5
+  vsch a567654ce42921eb
   vcdf d6c8dc96356fe4c9
   vcdfrec "(\"cdf\" \"\")"
   vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\" \"Y\"))))"
@@ -43,18 +43,23 @@ inst yw9rth analogLib:nmos4
 
 wire 2082fx 20 40 40 40
 wire 5q0ejr 40 -70 40 -40
+  vseg c8k666 1
 wire 65faq1 20 -70 40 -70
+  vseg c8k666 2
 wire 6ye473 -20 -40 -20 40
 wire c8k666 20 -40 40 -40
 wire e7w35r 20 -90 20 -70
 wire hanj44 40 40 40 70
+  vseg 2082fx 1
 wire m9mpm5 20 0 60 0
 wire necd1n 20 -10 20 10
 wire v5jqqv 20 70 20 90
 wire z7gf9e 20 70 40 70
+  vseg 2082fx 2
 wire zz835z -60 0 -20 0
 
 label htaex2 20 -88 R270 vdd!
+  voff 1 0
 label peb7yn 20 90 R0 GND
   global true
   vinst I2

@@ -40,7 +40,17 @@ pub(super) fn label(
         kind: kind.into(),
         layer: layer.into(),
         purpose: purpose.into(),
+        ..Label::default()
     }
+}
+
+/// `l` with the flags of `vflags <overbar> <drafted> <visible>` (0/1, §7.5); without them,
+/// export's `0 0 1`.
+pub(super) fn with_flags(mut l: Label, vflags: &[&str]) -> Label {
+    if let [o, d, v] = vflags {
+        (l.overbar, l.drafted, l.hidden) = (*o == "1", *d == "1", *v == "0");
+    }
+    l
 }
 
 /// `height = size × 10_000` milli (§3.5); `size` absent → `default_milli`.
@@ -73,12 +83,14 @@ pub(super) fn stext_out(c: &Cell, r: u32, ids: &mut Ids, notes: &mut Notes) -> O
     // A label from Virtuoso whose template is still the one it imported as goes back as
     // drawn: `vlabel <layer> <purpose> <justify> <font> <kind> <text> <template>`.
     let v: Vec<&str> = c.attr_values(r, "vlabel");
+    let vflags = c.attr_values(r, "vflags");
     if let [layer, purpose, justify, font, kind, text, tmpl] = v[..]
         && tmpl == t
     {
         let style = [layer, purpose, justify, font, kind];
         let h = height(c, r, STEXT_SIZE_MILLI);
-        return Some(label(ids.take(), 0, text.into(), at, o, h, style));
+        let l = label(ids.take(), 0, text.into(), at, o, h, style);
+        return Some(with_flags(l, &vflags));
     }
     let items = template_items(t)?;
     let params: Vec<&str> = c
@@ -103,20 +115,22 @@ pub(super) fn stext_out(c: &Cell, r: u32, ids: &mut Ids, notes: &mut Notes) -> O
             (text, "NLP", "annotate", "drawing")
         }
     };
-    let j = justify(
+    let (hc, vc) = (
         c.doc.find_attr(r, "hcenter").is_some(),
         c.doc.find_attr(r, "vcenter").is_some(),
     );
+    let mut style = [layer, purpose, justify(hc, vc), "stick", kind];
+    // After a template edit the text and kind follow the new template; the rest keeps how
+    // Virtuoso drew it (§7.5), its justification while the centring still agrees.
+    if let [l, p, j, f, ..] = v[..] {
+        (style[0], style[1], style[3]) = (l, p, f);
+        if (j.ends_with("Center"), j.starts_with("center")) == (hc, vc) {
+            style[2] = j;
+        }
+    }
     let h = height(c, r, STEXT_SIZE_MILLI);
-    Some(label(
-        ids.take(),
-        0,
-        text,
-        at,
-        o,
-        h,
-        [layer, purpose, j, "stick", kind],
-    ))
+    let l = label(ids.take(), 0, text, at, o, h, style);
+    Some(with_flags(l, &vflags))
 }
 
 /// The NLP text of a symbol label template with holes (§3.5): every hole a parameter of

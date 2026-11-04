@@ -49,12 +49,16 @@ pub(super) fn schematic_in(
     let id_of = |r: u32| prop(r, "schemifyId");
     // Pre-claim: ids wanted by objects, in dump order, so a fresh id never steals one.
     let mut claimed: BTreeSet<String> = BTreeSet::new();
-    for p in sv
-        .props
-        .iter()
-        .filter(|p| p.name == "schemifyId" && is_id(&p.value))
-    {
-        claimed.insert(p.value.clone());
+    for p in sv.props.iter() {
+        match p.name.as_str() {
+            "schemifyId" if is_id(&p.value) => {
+                claimed.insert(p.value.clone());
+            }
+            "schemifySegs" => {
+                claimed.extend(p.value.split(' ').filter(|i| is_id(i)).map(str::to_owned))
+            }
+            _ => {}
+        }
     }
     let reserved = if claimed.is_empty() {
         reserved
@@ -84,6 +88,17 @@ pub(super) fn schematic_in(
             doc.push_field(&id);
             doc.push_field_coord(at[0]);
             doc.push_field_coord(at[1]);
+            // Its name and orientation (§7.5); a name export generates (`NC<k>`) is not kept.
+            let generated = inst
+                .name
+                .strip_prefix("NC")
+                .is_some_and(|k| !k.is_empty() && k.bytes().all(|b| b.is_ascii_digit()));
+            if !generated {
+                push_attr(doc, "vinst", &[&inst.name]);
+            }
+            if o != Orient::R0 {
+                push_attr(doc, "vorient", &[o.as_str()]);
+            }
             continue;
         }
         if devices::is_global_symbol(&inst.lib, &inst.cell) {
@@ -496,15 +511,34 @@ pub(super) fn schematic_in(
             continue;
         }
         let pts = rejoined.get(&w.r).cloned().unwrap_or(pts);
-        let mut first = true;
+        // A wire of more than two points: each later segment carries `vseg <first id> <k>`
+        // so export draws one figure again, and the id export kept in `schemifySegs` (§7.5).
+        let later: Vec<&str> =
+            prop(w.r, "schemifySegs").map_or_else(Vec::new, |v| v.split(' ').collect());
+        // A bus width other than export's: `vwidth <w>`.
+        let width = profile::height_from_virtuoso(w.width, upi) as i32;
+        let mut first: Option<String> = None;
+        let mut k = 0;
         for seg in pts.windows(2) {
             if seg[0] == seg[1] {
                 continue;
             }
-            let id = ids.next(if first { id_of(w.r) } else { None }, &reserved);
-            first = false;
+            let want = match &first {
+                None => id_of(w.r),
+                Some(_) => later.get(k - 1).copied(),
+            };
+            let id = ids.next(want, &reserved);
             let xy = [seg[0][0], seg[0][1], seg[1][0], seg[1][1]];
             crate::remap::push_wire(doc, &id, xy, w.width > 0);
+            if let Some(f) = &first {
+                push_attr(doc, "vseg", &[f, &k.to_string()]);
+            }
+            if w.width > 0 && width != crate::virtuoso::write::BUS_WIDTH {
+                doc.push_attr("vwidth");
+                doc.push_value_coord(width);
+            }
+            first.get_or_insert(id);
+            k += 1;
         }
     }
     // Labels.
@@ -566,15 +600,27 @@ pub(super) fn schematic_in(
                 if parse_netexpr(&l.text).is_some() {
                     push_attr(doc, "vexpr", &[&l.text]);
                 }
-                let h = profile::height_from_virtuoso(l.height, upi);
-                if (l.justify.as_str(), l.font.as_str(), h)
-                    != (
-                        "lowerLeft",
-                        "stick",
-                        i64::from(crate::virtuoso::write::LABEL_HEIGHT),
-                    )
+                let h = profile::height_from_virtuoso(l.height, upi).to_string();
+                let usual = crate::virtuoso::write::LABEL_HEIGHT.to_string();
+                if (l.layer.as_str(), l.purpose.as_str()) != ("wire", "label") {
+                    push_attr(
+                        doc,
+                        "vstyle",
+                        &[&l.justify, &l.font, &h, &l.layer, &l.purpose],
+                    );
+                } else if (l.justify.as_str(), l.font.as_str(), &h)
+                    != ("lowerLeft", "stick", &usual)
                 {
-                    push_attr(doc, "vstyle", &[&l.justify, &l.font, &h.to_string()]);
+                    push_attr(doc, "vstyle", &[&l.justify, &l.font, &h]);
+                }
+                // Drawn away from its wire: the offset from the point on it (§7.5).
+                if origin != at {
+                    doc.push_attr("voff");
+                    doc.push_value_coord(origin[0] - at[0]);
+                    doc.push_value_coord(origin[1] - at[1]);
+                }
+                if let Some(f) = flags_of(l) {
+                    push_attr(doc, "vflags", &f);
                 }
             }
             // Note text, and any other unglued label (a schematic pin's name on pin/label
@@ -588,6 +634,9 @@ pub(super) fn schematic_in(
                 let v = [&l.layer, &l.purpose, &l.justify, &l.font, &l.kind];
                 if v != ["text", "drawing", "upperLeft", "stick", "normal"] {
                     push_attr(doc, "vlabel", &v);
+                }
+                if let Some(f) = flags_of(l) {
+                    push_attr(doc, "vflags", &f);
                 }
             }
         }
@@ -639,6 +688,18 @@ pub(super) fn schematic_in(
                         dash: sh.purpose == "drawing1",
                     },
                 );
+                // What the Schemify form does not hold (§7.5): a path's width, and the box of
+                // an elliptic ellipse, which comes in as a polygon of its points.
+                if sh.kind == "path" && sh.width > 0 {
+                    doc.push_attr("vpath");
+                    doc.push_value_coord(profile::height_from_virtuoso(sh.width, upi) as i32);
+                }
+                if sh.kind == "ellipse" && form == "poly" {
+                    doc.push_attr("vellipse");
+                    for v in box_in(&sh.coords, upi, "ellipse", &cell, notes) {
+                        doc.push_value_coord(v);
+                    }
+                }
             }
             None => notes.dropped("display-only", &cell, format!("note {}", sh.kind)),
         }
@@ -654,37 +715,6 @@ pub(super) fn schematic_in(
         "{cell} schematic: count conservation"
     );
     st
-}
-
-/// The point of polyline `pts` nearest `p`: the projection on a horizontal or vertical
-/// segment, else the nearest end (§6.2).
-pub(super) fn project(p: [i32; 2], pts: &[[i32; 2]]) -> [i32; 2] {
-    let mut best = pts[0];
-    let mut bd = i64::MAX;
-    let d2 = |a: [i32; 2], b: [i32; 2]| {
-        let (dx, dy) = (
-            i64::from(a[0]) - i64::from(b[0]),
-            i64::from(a[1]) - i64::from(b[1]),
-        );
-        dx * dx + dy * dy
-    };
-    for s in pts.windows(2) {
-        let (a, b) = (s[0], s[1]);
-        let q = if a[1] == b[1] {
-            [p[0].clamp(a[0].min(b[0]), a[0].max(b[0])), a[1]]
-        } else if a[0] == b[0] {
-            [a[0], p[1].clamp(a[1].min(b[1]), a[1].max(b[1]))]
-        } else if d2(p, a) <= d2(p, b) {
-            a
-        } else {
-            b
-        };
-        if d2(p, q) < bd {
-            bd = d2(p, q);
-            best = q;
-        }
-    }
-    best
 }
 
 /// A dumped wire for [`rejoin_split_wires`]: (ref, points, its schemifyId when valid).

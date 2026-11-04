@@ -260,23 +260,24 @@ fn cv_records(cv: &Cv, out: &mut Vec<Record>) {
         ));
     }
     for (r, l) in la {
-        out.push(Record::new(
-            "label",
-            vec![
-                i(r as i32),
-                i(rr(l.parent) as i32),
-                s(&l.text),
-                i(l.xy[0]),
-                i(l.xy[1]),
-                s(&l.orient),
-                s(&l.justify),
-                s(&l.font),
-                i(l.height),
-                s(&l.kind),
-                s(&l.layer),
-                s(&l.purpose),
-            ],
-        ));
+        let mut f = vec![
+            i(r as i32),
+            i(rr(l.parent) as i32),
+            s(&l.text),
+            i(l.xy[0]),
+            i(l.xy[1]),
+            s(&l.orient),
+            s(&l.justify),
+            s(&l.font),
+            i(l.height),
+            s(&l.kind),
+            s(&l.layer),
+            s(&l.purpose),
+        ];
+        if l.overbar || l.drafted || l.hidden {
+            f.extend([l.overbar, l.drafted, !l.hidden].map(|b| i(i32::from(b))));
+        }
+        out.push(Record::new("label", f));
     }
     for (r, x) in sh {
         out.push(Record::new(

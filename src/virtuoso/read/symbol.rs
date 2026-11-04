@@ -132,14 +132,12 @@ pub(super) fn shape_in(sh: &Shape, upi: i32, cell: &str, notes: &mut Notes) -> O
                     cell,
                     format!("{} with an elliptic box drawn as a polygon", sh.kind),
                 );
-                let n = 32;
-                let mut pts = Vec::new();
-                for k in 0..n {
-                    let t = std::f64::consts::TAU * f64::from(k) / f64::from(n);
-                    pts.push(cx + (f64::from(w) / 2.0 * t.cos()).round() as i32);
-                    pts.push(cy + (f64::from(h) / 2.0 * t.sin()).round() as i32);
-                }
-                return Some(("poly".into(), pts, None, true));
+                return Some((
+                    "poly".into(),
+                    ellipse_poly([a[0], a[1], b[0], b[1]]),
+                    None,
+                    true,
+                ));
             }
             if sh.kind == "ellipse" {
                 return Some(("circle".into(), vec![cx, cy, w / 2], None, false));
@@ -153,6 +151,21 @@ pub(super) fn shape_in(sh: &Shape, upi: i32, cell: &str, notes: &mut Notes) -> O
         }
         _ => None,
     }
+}
+
+/// The 32-point polygon an ellipse in box `b` (two opposite corners, milli-units) comes
+/// in as.
+pub(crate) fn ellipse_poly(b: [i32; 4]) -> Vec<i32> {
+    let (w, h) = ((b[2] - b[0]).abs(), (b[3] - b[1]).abs());
+    let (cx, cy) = ((b[0] + b[2]) / 2, (b[1] + b[3]) / 2);
+    let n = 32;
+    let mut pts = Vec::new();
+    for k in 0..n {
+        let t = std::f64::consts::TAU * f64::from(k) / f64::from(n);
+        pts.push(cx + (f64::from(w) / 2.0 * t.cos()).round() as i32);
+        pts.push(cy + (f64::from(h) / 2.0 * t.sin()).round() as i32);
+    }
+    pts
 }
 
 /// Degrees (milli) of micro-radians.
@@ -571,6 +584,9 @@ pub(super) fn build(
                 &l.layer, &l.purpose, &l.justify, &l.font, &l.kind, &l.text, &tmpl,
             ];
             push_attr(&mut doc, "vlabel", &drawn);
+            if let Some(f) = flags_of(l) {
+                push_attr(&mut doc, "vflags", &f);
+            }
         }
         if pin_labels > 0 {
             notes.dropped("pin-label", &cell, format!("{pin_labels} object(s)"));

@@ -255,6 +255,13 @@
 (procedure (SfyLabelKind lt)
   (case lt ("NLPLabel" "NLP") ("ILLabel" "IL") (t "normal")))
 
+;; A label's isOverbar isDrafted isVisible as 0/1, the label record's last three fields,
+;; or nil at the usual 0 0 1 (spec 4.2: a dumper writes them only then).
+(procedure (SfyLabelFlags f)
+  (let ((v (mapcar (lambda (x) (if x 1 0))
+             (list (getSGq f isOverbar) (getSGq f isDrafted) (getSGq f isVisible)))))
+    (unless (equal v (list 0 0 1)) v)))
+
 ;; The coordinates and width of a shape (spec 4.2 shape record).
 (procedure (SfyShapeCoords f upi)
   (case (getSGq f objType)
@@ -353,8 +360,10 @@
       (setq par (getSGq (cadr e) parent))
       (setq b (car e))
       (SfyPut port "label"
-        (list n (or (and par (arrayref refs par)) 0) (nth 2 b) (nth 0 b) (nth 1 b) (nth 5 b)
-          (nth 6 b) (nth 7 b) (nth 8 b) (nth 9 b) (nth 3 b) (nth 4 b))))
+        (append
+          (list n (or (and par (arrayref refs par)) 0) (nth 2 b) (nth 0 b) (nth 1 b) (nth 5 b)
+            (nth 6 b) (nth 7 b) (nth 8 b) (nth 9 b) (nth 3 b) (nth 4 b))
+          (SfyLabelFlags (cadr e)))))
     (setq n (SfyEmit port "shape"
       (mapcar (lambda (f)
                 (list (list (SfyShapeCoords f upi) (getSGq f objType) (getSGq f layerName)
@@ -897,15 +906,23 @@
             (when (and p (not (dbCreatePin (getSGq term net) p nil term))) (setq p nil))
             (SfyCreated p lr (sprintf nil "symbol pin %s" (nth 1 f)))))))))
 
-;; ("wire" ref points width): schCreateWire "draw", snapped to one database unit.
+;; ("wire" ref points width): schCreateWire "draw", snapped to one database unit. A wire
+;; of more than two points is made as one figure on wire drawing, as it was dumped:
+;; schCreateWire "draw" makes one figure per segment.
 (procedure (SfyLoadWire lr)
-  (let ((f (cdr (cadr lr))) (snap (quotient 1.0 sfyUpi)))
+  (let ((f (cdr (cadr lr))) (snap (quotient 1.0 sfyUpi)) (pts nil) (lpp (list "wire" "drawing")))
     (when (SfySchematicP lr)
+      (setq pts (SfyPts (nth 1 f)))
       (SfyCreated
-        (car (schCreateWire sfyCv "draw" "full" (SfyPts (nth 1 f)) snap snap (SfyUU (nth 2 f))))
+        (cond
+          ((null (cddr pts))
+            (car (schCreateWire sfyCv "draw" "full" pts snap snap (SfyUU (nth 2 f)))))
+          ((zerop (nth 2 f)) (dbCreateLine sfyCv lpp pts))
+          (t (dbCreatePath sfyCv lpp pts (SfyUU (nth 2 f)))))
         lr "wire"))))
 
-;; ("label" ref parent text x y orient justify font height kind layer purpose)
+;; ("label" ref parent text x y orient justify font height kind layer purpose
+;;  [overbar drafted visible])
 (procedure (SfyLoadLabel lr)
   (let ((f (cdr (cadr lr))) (par nil) (pt nil) (h nil) (lt nil) (lbl nil) (lpp nil) (wireP nil))
     (setq par (if (zerop (nth 1 f)) nil (SfyRef (nth 1 f) lr)))
@@ -936,6 +953,10 @@
             (when (and lbl par (not (car (errset (schGlueLabel lbl par)))))
               (setSGq lbl par parent))
             lbl)))
+      (when (and lbl (nth 12 f))
+        (setSGq lbl (equal (nth 12 f) 1) isOverbar)
+        (setSGq lbl (equal (nth 13 f) 1) isDrafted)
+        (setSGq lbl (equal (nth 14 f) 1) isVisible))
       (SfyCreated lbl lr (sprintf nil "label %s" (nth 2 f))))))
 
 ;; ("shape" ref kind layer purpose coords width)

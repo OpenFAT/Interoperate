@@ -167,6 +167,10 @@ pub(super) fn schematic_out(
     // Wires (after the edits) in Schemify coordinates, for gluing labels.
     // (wire ref, segment) of every wire label can glue to.
     let mut segs: Vec<(u32, [i32; 4])> = Vec::new();
+    // The wires later segments may continue (first id → index in `cv.wires`), and the ids
+    // of the segments each absorbed.
+    let mut figures: BTreeMap<&str, usize> = BTreeMap::new();
+    let mut later: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
     for w in 0..g.wire.len() {
         if edits.wire_dead.binary_search(&w).is_ok() {
             continue;
@@ -176,8 +180,6 @@ pub(super) fn schematic_out(
             seg[end * 2] = p[0];
             seg[end * 2 + 1] = p[1];
         }
-        let r = ids.take();
-        segs.push((r, seg));
         let a = conv(
             [seg[0], seg[1]],
             &format!("wire {}", g.wire_id[w]),
@@ -190,12 +192,52 @@ pub(super) fn schematic_out(
             c,
             notes,
         );
+        // Segment k of a wire Virtuoso drew as one figure (`vseg <first id> <k>`, §7.5)
+        // joins that figure again while it still continues it.
+        let rec = g.wire_rec[w];
+        let joined = match c.attr_values(rec, "vseg")[..] {
+            [first, k] => figures.get(first).copied().filter(|&j| {
+                let pts = &mut cv.wires[j].pts;
+                if k.parse() != Ok(pts.len() - 1) {
+                    return false;
+                }
+                // A first segment is stored either way round (`remap::push_wire`).
+                if pts.len() == 2 && !(pts[1] == a || pts[1] == b) {
+                    pts.reverse();
+                }
+                match pts.last() {
+                    Some(&p) if p == a => pts.push(b),
+                    Some(&p) if p == b => pts.push(a),
+                    _ => return false,
+                }
+                true
+            }),
+            _ => None,
+        };
+        if let Some(j) = joined {
+            segs.push((cv.wires[j].r, seg));
+            later.entry(j).or_default().push(&g.wire_id[w]);
+            continue;
+        }
+        let r = ids.take();
+        segs.push((r, seg));
+        figures.insert(&g.wire_id[w], cv.wires.len());
+        // A bus as wide as Virtuoso drew it (`vwidth <w>`), else export's.
+        let width = c.attr(rec, "vwidth").and_then(|v| parse_coord(v).ok());
         cv.wires.push(Wire {
             r,
             pts: vec![a, b],
-            width: if g.wire_bus[w] { BUS_WIDTH } else { 0 },
+            width: if g.wire_bus[w] {
+                width.unwrap_or(BUS_WIDTH)
+            } else {
+                0
+            },
         });
         id_prop(&mut cv, r, &g.wire_id[w]);
+    }
+    for (j, v) in later {
+        let r = cv.wires[j].r;
+        cv.props.push(Prop::string(r, "schemifySegs", v.join(" ")));
     }
     // Instances.
     let mut names: Vec<String> = Vec::new();
@@ -473,8 +515,19 @@ pub(super) fn schematic_out(
             });
             continue;
         }
+        // Where Virtuoso drew it: `voff <dx> <dy>` from its point on the wire (§7.5).
+        let off = match rec.map_or_else(Vec::new, |r| c.attr_values(r, "voff"))[..] {
+            [dx, dy] => [dx, dy].map(|v| parse_coord(v).unwrap_or(0)),
+            _ => [0, 0],
+        };
+        let origin = [at[0] + off[0], at[1] + off[1]];
         // ponytail: O(labels × wires) gluing; a sorted segment index for 10^5-wire cells.
-        let parent = match segs.iter().find(|(_, s)| nets::on_segment(at, *s)) {
+        // Of the wires through the point, the one import projected the origin onto.
+        let parent = match segs
+            .iter()
+            .filter(|(_, s)| nets::on_segment(at, *s))
+            .min_by_key(|(_, s)| read::project(origin, &[[s[0], s[1]], [s[2], s[3]]]) != at)
+        {
             Some((wr, _)) => *wr,
             None => {
                 // §6.2: a stub away from the instance whose pin this is.
@@ -502,19 +555,23 @@ pub(super) fn schematic_out(
         if let Some(id) = id {
             id_prop(&mut cv, r, id);
         }
-        // What a label from Virtuoso was there: a net expression (`vexpr <text>`) and a style
-        // (`vstyle <justify> <font> <height>`), drawn so again.
+        // What a label from Virtuoso was there: a net expression (`vexpr <text>`), a style
+        // (`vstyle <justify> <font> <height> [<layer> <purpose>]`) and its flags (`vflags`),
+        // drawn so again.
         let vexpr = rec.and_then(|r| c.attr(r, "vexpr"));
         let vstyle: Vec<&str> = rec.map_or_else(Vec::new, |r| c.attr_values(r, "vstyle"));
-        let (justify, font, height) = match vstyle[..] {
-            [j, f, h] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT)),
-            _ => ("lowerLeft", "stick", LABEL_HEIGHT),
+        let (justify, font, height, layer, purpose) = match vstyle[..] {
+            [j, f, h] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), "wire", "label"),
+            [j, f, h, l, p] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), l, p),
+            _ => ("lowerLeft", "stick", LABEL_HEIGHT, "wire", "label"),
         };
         let kind = if vexpr.is_some() { "NLP" } else { "normal" };
         let text = vexpr.map_or(text, str::to_owned);
-        let xy = conv(at, "label", c, notes);
-        let style = ["wire", "label", justify, font, kind];
-        cv.labels.push(label(r, parent, text, xy, o, height, style));
+        let xy = conv(origin, "label", c, notes);
+        let style = [layer, purpose, justify, font, kind];
+        let vflags = rec.map_or_else(Vec::new, |r| c.attr_values(r, "vflags"));
+        let l = label(r, parent, text, xy, o, height, style);
+        cv.labels.push(with_flags(l, &vflags));
     }
     // Ports → schematic pins.
     let own = sym_pins(c);
@@ -566,17 +623,30 @@ pub(super) fn schematic_out(
             orient: profile::orient_to_virtuoso(o).into(),
         });
     }
-    // Noconns → basic/noConn instances.
+    // Noconns → basic/noConn instances, named and turned as Virtuoso had them (`vinst`,
+    // `vorient`, §7.5), else `NC<k>` and R0.
+    names.extend(
+        g.noconn_rec
+            .iter()
+            .filter_map(|&r| c.attr(r, "vinst").map(str::to_owned)),
+    );
     let mut nc = 0;
     for k in 0..g.noconn_at.len() {
         let r = ids.take();
-        let name = loop {
-            let nm = format!("NC{nc}");
-            nc += 1;
-            if !names.contains(&nm) {
-                break nm;
+        let vinst = c.attr(g.noconn_rec[k], "vinst");
+        let name = vinst.map(str::to_owned).unwrap_or_else(|| {
+            loop {
+                let nm = format!("NC{nc}");
+                nc += 1;
+                if !names.contains(&nm) {
+                    break nm;
+                }
             }
-        };
+        });
+        let o = c
+            .attr(g.noconn_rec[k], "vorient")
+            .and_then(|o| o.parse().ok())
+            .unwrap_or(Orient::R0);
         id_prop(&mut cv, r, &g.noconn_id[k]);
         cv.insts.push(Inst {
             r,
@@ -585,7 +655,7 @@ pub(super) fn schematic_out(
             cell: "noConn".into(),
             view: "symbol".into(),
             xy: conv(g.noconn_at[k], "noconn", c, notes),
-            orient: "R0".into(),
+            orient: profile::orient_to_virtuoso(o).into(),
         });
     }
     // Texts → note labels; shapes → note shapes.
@@ -603,20 +673,32 @@ pub(super) fn schematic_out(
         let xy = conv(c.point(r, 1), "text", c, notes);
         let (text, h) = (c.field(r, 4).to_owned(), height(c, r, TEXT_SIZE_MILLI));
         let style = [layer, purpose, justify, font, kind];
-        cv.labels.push(label(lr, 0, text, xy, o, h, style));
+        let l = label(lr, 0, text, xy, o, h, style);
+        cv.labels.push(with_flags(l, &c.attr_values(r, "vflags")));
     }
     for r in c.records(RecordKind::Shape) {
         let dashed = c.attr(r, "dash").is_some_and(|x| x != "0");
-        for sh in graphic_out(
-            c,
-            r,
-            RecordKind::Shape,
-            1,
-            "text",
-            if dashed { "drawing1" } else { "drawing" },
-            ids,
-            notes,
-        ) {
+        let purpose = if dashed { "drawing1" } else { "drawing" };
+        let mut shapes = graphic_out(c, r, RecordKind::Shape, 1, "text", purpose, ids, notes);
+        // What the Schemify form does not hold (§7.5): a path's width, and an elliptic
+        // ellipse while its polygon is still the one its box came in as.
+        if let Some(w) = c.attr(r, "vpath").and_then(|w| parse_coord(w).ok()) {
+            for sh in shapes.iter_mut().filter(|s| s.kind == "line") {
+                (sh.kind, sh.width) = ("path".into(), w);
+            }
+        }
+        if let [x0, y0, x1, y1] = c.attr_values(r, "vellipse")[..]
+            && let [Ok(x0), Ok(y0), Ok(x1), Ok(y1)] = [x0, y0, x1, y1].map(parse_coord)
+            && coords(c, r, 2) == read::ellipse_poly([x0, y0, x1, y1])
+            && let [sh] = &mut shapes[..]
+        {
+            let (a, b) = (
+                conv([x0, y0], "ellipse", c, notes),
+                conv([x1, y1], "ellipse", c, notes),
+            );
+            (sh.kind, sh.coords) = ("ellipse".into(), norm_box(a, b).to_vec());
+        }
+        for sh in shapes {
             id_prop(&mut cv, sh.r, c.field(r, 0));
             cv.shapes.push(sh);
         }

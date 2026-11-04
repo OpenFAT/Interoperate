@@ -1,5 +1,5 @@
 schemify 1 shbench
-  vsch 00e6931c96b3513e
+  vsch 7b4b6af5c0cede2a
 
 inst 4hmqt8 ./ne
   at 0 0 R0
@@ -16,6 +16,7 @@ inst bq7ctq analogLib:vdc
 
 wire 45eq8r -120 -10 -120 10
 wire 6vawys -80 0 -40 0
+  vseg nvehcj 1
 wire nvehcj -80 0 -80 10
 
 label 5yde3w -120 -10 R0 VDDA

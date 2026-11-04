@@ -112,6 +112,12 @@ pub struct Label {
     pub layer: String,
     /// Purpose.
     pub purpose: String,
+    /// `isOverbar`.
+    pub overbar: bool,
+    /// `isDrafted`.
+    pub drafted: bool,
+    /// Not `isVisible`.
+    pub hidden: bool,
 }
 
 /// Any other figure (`shape`).
@@ -633,7 +639,17 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
             });
         }
         "label" => {
-            r.arity(12)?;
+            // Twelve fields, or fifteen with `isOverbar isDrafted isVisible` as 0/1, which a
+            // dumper writes only when they are not `0 0 1`.
+            let flag = |k: usize| match r.fields.get(k).map(|_| r.int(k)).transpose()? {
+                None => Ok(None),
+                Some(0) => Ok(Some(false)),
+                Some(1) => Ok(Some(true)),
+                Some(_) => Err(r.err("a label flag is 0 or 1")),
+            };
+            if r.fields.len() != 15 {
+                r.arity(12)?;
+            }
             let kind = r.str(9)?;
             if !matches!(kind, "normal" | "NLP" | "IL") {
                 return Err(r.err(format!("kind `{kind}`")));
@@ -651,6 +667,9 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
                 kind: kind.to_owned(),
                 layer: r.str(10)?.to_owned(),
                 purpose: r.str(11)?.to_owned(),
+                overbar: flag(12)? == Some(true),
+                drafted: flag(13)? == Some(true),
+                hidden: flag(14)? == Some(false),
             });
         }
         "shape" => {

@@ -1,7 +1,7 @@
 schemify 1 shcomp
   vibox none
   vsym dbaf51c5ebf5ac30
-  vsch 4b80ea862fdcb615
+  vsch 529f1662c30fc612
   vcdf 6b471fcf5fb59eec
   vcdfrec "(\"cdf\" \"\")"
   vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\"))))"
@@ -24,5 +24,6 @@ wire ppt8fj 0 30 0 60
 
 label cc2c60 0 -48 R270 vdd
   vexpr [@vdd:%:vdd!]
+  voff 2 0
 
 port pq533p 0 60 R270 A

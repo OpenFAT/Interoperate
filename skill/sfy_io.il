@@ -216,6 +216,8 @@
       ((null (setq schema (SfySchema (car rec)))) (sprintf nil "unknown record %s" (car rec)))
       ;; A schematic's pinfig carries its terminal's direction as a seventh field.
       ((and (equal (car rec) "pinfig") (equal (length (cdr rec)) 7) (setq schema "isiiiis") nil) nil)
+      ;; A label's isOverbar isDrafted isVisible, when not 0 0 1, as three more fields.
+      ((and (equal (car rec) "label") (equal (length (cdr rec)) 15) (setq schema "iisiisssisssiii") nil) nil)
       ((nequal (strlen schema) (length (cdr rec)))
         (sprintf nil "%s takes %d fields, has %d" (car rec) (strlen schema) (length (cdr rec))))
       (t
