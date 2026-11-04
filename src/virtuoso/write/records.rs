@@ -78,7 +78,8 @@ pub(super) fn cdf_as_imported(c: &Cell) -> Option<Option<Cdf>> {
 
 /// The records of `d` in §4.2 order: header; per library (sorted), its `ref` cells then
 /// its `design` cells (each sorted by name) with CDF, cellviews (sorted by view, objects
-/// in kind order, each kind sorted by name, else coordinates, else text) and text views;
+/// in kind order, each kind sorted by name, else coordinates, else text), text views and
+/// config views;
 /// maestro records; `end`. Refs are renumbered 1… in emission order, so the same tables
 /// always give the same records.
 pub fn records(d: &Dump) -> Vec<Record> {
@@ -110,6 +111,11 @@ pub fn records(d: &Dump) -> Vec<Record> {
                 "textview",
                 vec![s(&t.view), s(&t.file), sfyx::text(&t.text)],
             ));
+        }
+        let mut cfgs: Vec<_> = c.configs.iter().collect();
+        cfgs.sort_by(|a, b| a.view.cmp(&b.view));
+        for x in cfgs {
+            out.push(Record::new("config", vec![s(&x.view), sfyx::text(&x.text)]));
         }
     }
     // Maestro tests by (cell, test name), as the SKILL dumper writes them (§4.2).

@@ -178,7 +178,7 @@
     '(("sfyx" "is") ("lib" "s") ("cell" "ss") ("cdf" "x") ("param" "sssssllx")
       ("siminfo" "sl") ("cv" "ssi") ("prop" "isss") ("inst" "issssiis") ("wire" "ili")
       ("label" "iisiisssisss") ("spin" "isssssiis") ("term" "sss") ("pinfig" "isiiii")
-      ("shape" "isssli") ("conn" "iss") ("textview" "ssx") ("maestro" "sssss")
+      ("shape" "isssli") ("conn" "iss") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
       ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("end" "")))))
 
@@ -307,7 +307,8 @@
     maeGetSimOption axlGetTest axlGetMainSetupDB axlGetCorner axlGetEnabled axlGetModels
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
-    axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode))
+    axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode
+    hdbOpen hdbSetTopCellViewName hdbSave hdbClose))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.

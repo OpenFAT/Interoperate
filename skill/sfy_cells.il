@@ -138,8 +138,9 @@
       (unless (errset (SfyDumpCell port (car e) (cadr e) role (caddr e)) t)
         (SfyRefuse 0 (sprintf nil "%s/%s: SKILL error %s" (car e) (cadr e) (SfyErrMsg)))))))
 
-;; One cell: cell record, CDF, cellviews by view name, text views (design cells). A master
-;; missing from cds.lib (an unbound instance) is refused and skipped, so the rest dumps.
+;; One cell: cell record, CDF, cellviews by view name, text views and config views (design
+;; cells; sfy_cfg.il). A master missing from cds.lib (an unbound instance) is refused and
+;; skipped, so the rest dumps.
 (procedure (SfyDumpCell port lib cell role views)
   (if (null (ddGetObj lib cell))
     (SfyRefuse 0 (sprintf nil "master %s/%s not found (is its library in cds.lib?)" lib cell))
@@ -148,7 +149,9 @@
       (SfyDumpCdf port lib cell role)
       (foreach v (or views (setof v0 (list "schematic" "symbol") (ddGetObj lib cell v0)))
         (SfyDumpCv port lib cell v))
-      (when (equal role "design") (SfyDumpTextViews port lib cell)))))
+      (when (equal role "design")
+        (SfyDumpTextViews port lib cell)
+        (when (fboundp 'SfyCfgDump) (SfyCfgDump port lib cell))))))
 
 ;; ---------------------------------------------------------------- CDF
 
@@ -467,6 +470,14 @@
                 (unless (errset (SfyLoadCv sfyC sfyV) t)
                   (SfyRefuse (arrayref sfyV "line") (sprintf nil "SKILL error %s" (SfyErrMsg)))
                   (SfyPurgeWriting (arrayref sfyC "lib") (arrayref sfyC "name")))))))
+        ;; Config views after the schematics they name, before the maestro tests that run them.
+        (foreach sfyC (car sfyGrouped)
+          (when (and (equal (arrayref sfyC "role") "design") (not (arrayref sfyC "skip")))
+            (foreach sfyLr (arrayref sfyC "cfgs")
+              (if (fboundp 'SfyCfgLoad)
+                (unless (errset (SfyCfgLoad sfyC sfyLr) t)
+                  (SfyRefuse (car sfyLr) (sprintf nil "SKILL error %s" (SfyErrMsg))))
+                (SfyCount "skipped:config")))))
         (when (cadr sfyGrouped)
           (if (fboundp 'SfyAdeImport)
             (unless (errset (SfyAdeImport (cadr sfyGrouped) lib) t)
@@ -476,7 +487,7 @@
     (SfyLogClose)))
 
 ;; Groups records (line record) into cells: tables with "line" "lib" (target) "rlib"
-;; (dumped) "name" "role" "cdf" (records) "cvs" "texts"; cellview tables with "line" "view"
+;; (dumped) "name" "role" "cdf" (records) "cvs" "texts" "cfgs"; cellview tables with "line" "view"
 ;; "type" "upi" "recs". Returns (cells maestroRecords), or nil after refusing the first
 ;; record out of context.
 (procedure (SfyGroup recs lib)
@@ -537,6 +548,12 @@
               (progn
                 (setq cv nil)
                 (setarray cell "texts" (cons lr (arrayref cell "texts"))))))
+          ((equal tag "config")
+            (if (null cell)
+              (setq err "config outside a cell")
+              (progn
+                (setq cv nil)
+                (setarray cell "cfgs" (cons lr (arrayref cell "cfgs"))))))
           ((equal tag "maestro")
             (setq inAde t)
             (setq cell nil)
@@ -554,6 +571,7 @@
       (foreach c cells
         (setarray c "cdf" (reverse (arrayref c "cdf")))
         (setarray c "texts" (reverse (arrayref c "texts")))
+        (setarray c "cfgs" (reverse (arrayref c "cfgs")))
         (setarray c "cvs" (reverse (arrayref c "cvs")))
         (foreach v (arrayref c "cvs") (setarray v "recs" (reverse (arrayref v "recs")))))
       (list (reverse cells) (reverse ade)))))

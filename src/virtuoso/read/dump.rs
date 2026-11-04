@@ -261,6 +261,8 @@ pub struct DCell {
     pub cvs: Vec<Cv>,
     /// Text views.
     pub textviews: Vec<TextView>,
+    /// Config views (`virtuoso::config`).
+    pub configs: Vec<crate::virtuoso::config::ConfigView>,
     /// Line of the `cell` record.
     pub line: u32,
 }
@@ -380,7 +382,7 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 in_cell = true;
                 in_cdf = false;
             }
-            "cdf" | "param" | "siminfo" | "textview" | "cv" if !in_cell => {
+            "cdf" | "param" | "siminfo" | "textview" | "config" | "cv" if !in_cell => {
                 return Err(r.err("outside a cell"));
             }
             "cdf" => {
@@ -470,6 +472,17 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                     file: r.str(1)?.to_owned(),
                     text: r.text(2)?,
                 });
+            }
+            "config" => {
+                r.arity(2)?;
+                d.cells
+                    .last_mut()
+                    .unwrap()
+                    .configs
+                    .push(crate::virtuoso::config::ConfigView {
+                        view: r.str(0)?.to_owned(),
+                        text: r.text(1)?,
+                    });
             }
             "cv" => {
                 r.arity(3)?;

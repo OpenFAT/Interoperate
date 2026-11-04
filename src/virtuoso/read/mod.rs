@@ -81,6 +81,9 @@ fn fresh(ctx: &Ctx<'_>, notes: &mut Notes) -> Fresh {
                 ade::import(test, &mut doc, &c.name, notes);
             }
         }
+        let dir = ctx.targets[k].dir.as_str();
+        let cellref = |l: &str, cl: &str| ctx.master(l, cl).cellref(dir);
+        let doc = super::config::import(doc, c, ctx.dump, &cellref, notes);
         docs.push(Some((doc, st, maestro)));
     }
     if pending.iter().any(|p| !p.is_empty()) {

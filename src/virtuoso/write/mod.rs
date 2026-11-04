@@ -110,6 +110,7 @@ pub fn export(
                 |p| inst_info(d, &plan, m, ci, p),
                 &mut notes,
             );
+            super::config::bind_test(&d.cells[ci], &mut b.records);
             if !b.records.is_empty() {
                 // §9.7: a view from Virtuoso goes back with its own setup (lane L1).
                 ade::with_stored(&d.cells[ci], &mut b.records);
@@ -309,6 +310,7 @@ fn cell_out(d: &Design, ci: usize, plan: &Plan, m: &Mapping, notes: &mut Notes) 
         FileKind::Shbench => {
             let sch = schematic_out(d, ci, plan, m, &mut ids, notes);
             out.cvs.push(keep(c, super::Part::Schematic, sch));
+            out.configs = super::config::export(d, ci, plan, notes);
         }
         k => unreachable!("design cells are cell files, got {k:?}"),
     }

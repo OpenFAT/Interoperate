@@ -52,7 +52,8 @@ pub const KINDS: &[(&str, Scope)] = &[
     ("maesdb", Scope::Maestro),
     ("maestate", Scope::Maestro),
     // ---- L2: label flags (no new kind: `label`'s arity)
-    // ---- L3: config
+    // ---- L3: config (read::dump files it into its cell, config::import maps it)
+    ("config", Scope::Cell),
     // ---- L4: job, value, pass
     // ---- L7: ADE L states
     // ---- L8: layout
