@@ -34,7 +34,7 @@ run=$!
 # Waits for a complete dump on the host and copies it here.
 fetch() {
   for _ in $(seq 400); do
-    ssh "$host" "bash -c 'test -s $work/out/$1 && tail -1 $work/out/$1 | grep -q end'" && break
+    ssh "$host" "bash -c 'test -s $work/out/$1 && tail -1 $work/out/$1 | grep -qx ..end..'" && break
     kill -0 $run 2>/dev/null || break
     sleep 3
   done
