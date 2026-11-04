@@ -12,7 +12,7 @@ Two interfaces: the **plugin** (`interop.wasm`, loaded by the editor) and, secon
 |---|---|
 | Virtuoso → Schemify | cells (symbol, schematic, CDF parameters, Verilog-A/Verilog views), PDK libraries (symbols, CDF, simInfo → netlist templates), maestro setups (variables, analyses, corners, outputs, specs) |
 | Schemify → Virtuoso | the same, plus gm/Id sizing intent that is solved on the target PDK (PDK-agnostic flow) |
-| xschem → Schemify | designs and PDK device libraries (`schemify-interop xschem-import`) |
+| xschem → Schemify | designs and PDK device libraries (`interop.xschem_import`, `schemify-interop xschem-import`) |
 | Schemify → xschem | `.sch`/`.sym`, core devices onto xschem's `devices/` symbols |
 
 Nothing Cadence-made is linked or shipped. Virtuoso runs one SKILL file, `schemify.il`, that
@@ -27,9 +27,16 @@ For yourself, in every project: add it to your Schemify config (`init.lua`) and 
 ```lua
 schemify.pack.add {
   { src = "https://github.com/OpenFAT/Interoperate", name = "interop",
-    grant = { "read_project", "write_project" }, fuel = 100000000000 },
+    grant = { "read_project", "write_project",
+              "read:ANALOG_ROOT", "read:XSCHEM_LIBRARY", "read:PDK_ROOT" },
+    fuel = 100000000000 },
 }
 ```
+
+The `read:<NAME>` grants are for the xschem import only: each lets the plugin read (never
+write) under the directory environment variable `<NAME>` names, as `${NAME}/…` paths
+([xschem](#xschem) below). Leave out the ones you do not use; the other commands need only
+`read_project` and `write_project`.
 
 Pin a release with `version = "v0.1.0"`. For one project (so everyone who opens it gets the
 plugin): copy `interop.wasm` into the project and add it to the project manifest:
@@ -38,6 +45,9 @@ plugin): copy `interop.wasm` into the project and add it to the project manifest
 plugin interop path plugins/interop.wasm
   grant read_project
   grant write_project
+  grant read:ANALOG_ROOT
+  grant read:XSCHEM_LIBRARY
+  grant read:PDK_ROOT
   fuel 100000000000
 ```
 
@@ -48,7 +58,8 @@ thread and the editor does not freeze while it converts. A conversion that runs 
 the status line (`interop: command interop.virtuoso_export: out of fuel (budget N), …`).
 
 In the editor the File menu gains **Export to Virtuoso (.sfyx)…**, **Import from Virtuoso
-(.sfyx)…**, **Export to xschem…** and **Write Virtuoso SKILL bridge (schemify.il)**. Without
+(.sfyx)…**, **Export to xschem…**, **Import from xschem…** and **Write Virtuoso SKILL bridge
+(schemify.il)**. Without
 the editor, the same conversions run from the command line:
 
 ```
@@ -232,6 +243,36 @@ differ in shape (spec §6.4, §8.2).
 and an `xschemrc` fragment. Core devices land on xschem's own `devices/*.sym`, and cells first
 imported from xschem point back at their original symbols. The test suite netlists the export
 with a real xschem and compares it with Schemify's netlist.
+
+The import runs in the editor (File ▸ **Import from xschem…**) or headless:
+
+```
+interop.xschem_import <lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--models <file>[:<section>]]... --out <out-dir>
+
+schemify cmd . interop.xschem_import '${XSCHEM_LIBRARY}/devices' '${ANALOG_ROOT}/design' \
+    --root '${XSCHEM_LIBRARY}' \
+    --xschemrc '${PDK_ROOT}/sky130A/libs.tech/xschem/xschemrc' --out imported
+```
+
+It is `schemify-interop xschem-import` (same job, same bytes out) without the command line's
+host-only inputs (`--spiceinit --tech --cdf --no-core`) and its output check. Every `.sym` and
+`.sch` under each `<lib-dir>` is converted; a `--root` only joins the search path, so the
+symbols it holds must also be under a `<lib-dir>`. Paths are project-relative, or `${NAME}/…`
+under a directory the plugin has the grant `read:<NAME>` for:
+
+| Grant | Reads |
+|---|---|
+| `read_project` | project-relative paths |
+| `read:ANALOG_ROOT` | `${ANALOG_ROOT}/…`: your design trees |
+| `read:XSCHEM_LIBRARY` | `${XSCHEM_LIBRARY}/…`: xschem's own libraries (`devices/`) |
+| `read:PDK_ROOT` | `${PDK_ROOT}/…`: a PDK's xschem library, `xschemrc` and model cards |
+| `write_project` | the output directory, inside the project |
+
+Any other variable works the same once granted. A path outside the project and every granted
+root (an absolute path, `..`, or `${NAME}` without its grant) is refused by Schemify before
+anything is read, and the plugin logs `interop: <path>: refused: outside the project and every
+granted read:<NAME> root`. Outputs land in `<out-dir>/<lib>/<cell>.<ext>`, with
+`schemify.project` and `import-report.{md,txt}`.
 
 ### PDK scan (remote PDKs)
 

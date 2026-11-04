@@ -3,7 +3,8 @@
 //! `job` and below, which the native tests exercise; this file only moves bytes.
 //!
 //! ```text
-//! command (path args) → Job::new → step → Read(paths): fs_read each → io_done → supply …
+//! command (path args) → Job::new → step → Read(paths) | List(dirs): fs_read / fs_list each
+//!                                        → io_done → supply …
 //!                                        → step … → Done: fs_write each → io_done … → log summary
 //! ```
 //!
@@ -13,9 +14,9 @@
 use std::cell::RefCell;
 
 use schemify_abi::guest::{self, Host};
-use schemify_abi::{Event, Kind, Level, Out, text};
+use schemify_abi::{Code, Event, Kind, Level, Out, text};
 
-use crate::job::{Command, Job, Step};
+use crate::job::{Command, Job, Step, XschemImport, models_arg};
 use crate::virtuoso::{ExportOptions, ImportOptions};
 
 guest::export!(on_event);
@@ -32,6 +33,10 @@ node file.interop_xexport item
   parent menu.file
   label \"Export to xschem…\"
   command interop.xschem_export
+node file.interop_ximport item
+  parent menu.file
+  label \"Import from xschem…\"
+  command interop.xschem_import
 node file.interop_skill item
   parent menu.file
   label \"Write Virtuoso SKILL bridge (schemify.il)\"
@@ -41,6 +46,7 @@ node file.interop_skill item
 const COMMANDS: &str = "command interop.virtuoso_export \"Export cells to Virtuoso (.sfyx)\"
 command interop.virtuoso_import \"Import a Virtuoso dump (.sfyx)\"
 command interop.xschem_export \"Export cells to xschem\"
+command interop.xschem_import \"Import xschem libraries\"
 command interop.install_skill \"Write schemify.il for Virtuoso\"
 command interop.close \"Close the interop panel\"
 ";
@@ -52,8 +58,8 @@ struct Running {
     job: Job,
     /// (handle, path) of reads in flight.
     reads: Vec<(u32, String)>,
-    /// Reads not issued yet.
-    queue: Vec<String>,
+    /// Reads not issued yet: (path, list a directory rather than read a file).
+    queue: Vec<(String, bool)>,
     /// Writes not issued yet, then the summary once all are done.
     writes: Vec<(String, Vec<u8>)>,
     writing: Vec<(u32, String)>,
@@ -85,6 +91,9 @@ fn prompt(cmd: &str) -> &'static str {
         "interop.virtuoso_import" => "The .sfyx dump to import (project-relative). Enter to run:",
         "interop.xschem_export" => {
             "Cell file(s) to export, then the output directory. Enter to run:"
+        }
+        "interop.xschem_import" => {
+            "xschem library dir(s), then --out <dir>; flags --root, --xschemrc, --models <file>[:<section>] (${VAR}/… paths need grant read:VAR). Enter to run:"
         }
         _ => "Output directory for schemify.il (Enter for interop/):",
     }
@@ -200,11 +209,40 @@ fn command(name: &str, w: &[String]) -> Option<Command> {
             };
             Some(Command::XschemExport { tops, out_dir })
         }
+        "interop.xschem_import" => xschem_import(w).map(|x| Command::XschemImport(Box::new(x))),
         "interop.install_skill" => Some(Command::InstallSkill {
             dir: paths.first().cloned().unwrap_or_else(|| "interop".into()),
         }),
         _ => None,
     }
+}
+
+/// `<lib-dir>... [--root <dir>]... [--xschemrc <file>]... [--models <file>[:<section>]]...
+/// --out <out-dir>`, the command line's `xschem-import` without its host-only side inputs.
+fn xschem_import(w: &[String]) -> Option<XschemImport> {
+    let trim = |p: &str| p.trim_end_matches('/').to_owned();
+    let mut x = XschemImport {
+        dirs: Vec::new(),
+        rcs: Vec::new(),
+        models: Vec::new(),
+        search_dirs: Vec::new(),
+        grid_pm: None,
+        cdf: None,
+        core: true,
+        out_dir: String::new(),
+    };
+    let mut it = w.iter();
+    while let Some(a) = it.next() {
+        match a.as_str() {
+            "--root" => x.dirs.push((trim(it.next()?), false)),
+            "--xschemrc" => x.rcs.push(it.next()?.clone()),
+            "--models" => x.models.push(models_arg(it.next()?)),
+            "--out" => x.out_dir = trim(it.next()?),
+            f if f.starts_with("--") => return None,
+            d => x.dirs.push((trim(d), true)),
+        }
+    }
+    (x.dirs.iter().any(|d| d.1) && !x.out_dir.is_empty()).then_some(x)
 }
 
 /// Steps the job until it waits for reads in flight, writes, or ends. Bounded by the job's
@@ -213,7 +251,14 @@ fn advance(run: &mut Running, host: &Host, out: &mut Out) {
     loop {
         match run.job.step() {
             Step::Read(paths) => {
-                run.queue = paths;
+                run.queue = paths.into_iter().map(|p| (p, false)).collect();
+                pump_reads(run, host, out);
+                if !(run.reads.is_empty() && run.queue.is_empty()) {
+                    return; // wait for io_done
+                }
+            }
+            Step::List(dirs) => {
+                run.queue = dirs.into_iter().map(|d| (d, true)).collect();
                 pump_reads(run, host, out);
                 if !(run.reads.is_empty() && run.queue.is_empty()) {
                     return; // wait for io_done
@@ -254,13 +299,31 @@ fn over(run: &Running, out: &mut Out) -> bool {
 
 fn pump_reads(run: &mut Running, host: &Host, out: &mut Out) {
     while run.reads.len() < WINDOW {
-        let Some(path) = run.queue.pop() else { break };
-        match host.fs_read(&path) {
+        let Some((path, list)) = run.queue.pop() else {
+            break;
+        };
+        let issued = if list {
+            host.fs_list(&path)
+        } else {
+            host.fs_read(&path)
+        };
+        match issued {
             Ok(h) => run.reads.push((h, path)),
-            Err(_) => run.job.supply(&path, None),
+            Err(code) => {
+                if code == Code::Denied {
+                    // The host read nothing: no grant covers the path (plugin ABI §5).
+                    out.log_at(
+                        Level::Error,
+                        &format!(
+                            "interop: {path}: refused: outside the project and every granted \
+                             read:<NAME> root (name it ${{NAME}}/… and grant read:NAME)"
+                        ),
+                    );
+                }
+                run.job.supply(&path, None);
+            }
         }
     }
-    let _ = out;
 }
 
 fn pump_writes(run: &mut Running, host: &Host, out: &mut Out) {

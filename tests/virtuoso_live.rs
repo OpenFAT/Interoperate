@@ -97,7 +97,7 @@ fn job(project: &Path, cmd: Command) -> Result<Vec<(String, Vec<u8>)>, Vec<Strin
                 }
             }
             Step::Done { writes, .. } => return Ok(writes),
-            Step::Failed(p) => return Err(p),
+            Step::List(p) | Step::Failed(p) => return Err(p),
         }
     }
     Err(vec!["the job did not finish".into()])

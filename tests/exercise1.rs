@@ -46,7 +46,7 @@ fn export() -> BTreeMap<String, String> {
                     .map(|(p, b)| (p, String::from_utf8(b).unwrap()))
                     .collect();
             }
-            Step::Failed(p) => panic!("{p:?}"),
+            Step::List(d) | Step::Failed(d) => panic!("{d:?}"),
         }
     }
     panic!("the job did not finish");

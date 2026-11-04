@@ -16,7 +16,10 @@
 //! ngspice `.spiceinit`: its `sourcepath` (`$VAR`s from the environment) is where model
 //! includes are looked up. A Magic `--tech` file's `include`s are read beside it. Writes the outputs
 //! (`<lib>/<cell>.<ext>`, `schemify.project`, `import-report.{md,txt}`) and prints a
-//! summary. Exit status: 0 ok, 1 an output failed its check, 2 usage or I/O error.
+//! summary. The reading and translating is `job::XschemImport`, the job the guest's
+//! `interop.xschem_import` runs; the side inputs and the check are this command's. Exit
+//! status: 0 ok, 1 an input could not be read or an output failed its check, 2 usage or I/O
+//! error.
 
 use super::*;
 
@@ -56,13 +59,7 @@ fn parse_args(args: &[String]) -> Option<Args> {
     while let Some(arg) = it.next() {
         match arg.as_str() {
             "--models" => {
-                let v = it.next()?;
-                let (path, section) = match v.rsplit_once(':') {
-                    Some((p, s)) if !s.contains('/') && !s.is_empty() => {
-                        (p.to_owned(), Some(s.to_owned()))
-                    }
-                    _ => (v, None),
-                };
+                let (path, section) = crate::job::models_arg(&it.next()?);
                 a.models.push((PathBuf::from(path), section));
             }
             "--root" => a.dirs.push((PathBuf::from(it.next()?), false)),
@@ -77,26 +74,6 @@ fn parse_args(args: &[String]) -> Option<Args> {
         }
     }
     (a.dirs.iter().any(|d| d.1) && !a.out.as_os_str().is_empty()).then_some(a)
-}
-
-/// Every `.sym`/`.sch` under `dir`, recursively, sorted, with the `.cir` files netlist
-/// text may include (side inputs, import spec §1).
-fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut v: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    v.sort();
-    for p in v {
-        if p.is_dir() {
-            walk(&p, out);
-        } else if p
-            .extension()
-            .is_some_and(|x| x == "sym" || x == "sch" || x == "cir")
-        {
-            out.push(p);
-        }
-    }
 }
 
 /// `text` with every `$NAME` / `${NAME}` replaced from the environment; `None` when one
@@ -126,48 +103,20 @@ fn expand_env(text: &str) -> Option<String> {
     Some(out)
 }
 
-/// `xschem-import` (module docs): `args` are the subcommand's arguments.
+/// `xschem-import` (module docs): `args` are the subcommand's arguments. The host-only side
+/// inputs (`--spiceinit --tech --cdf`) are read here; everything else is the job the guest's
+/// `interop.xschem_import` runs (`job::XschemImport`).
 pub(super) fn xschem_import(args: &[String]) -> u8 {
     let Some(args) = parse_args(args) else {
         return usage();
     };
-    let mut roots = Vec::new();
-    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
-    let mut seen = std::collections::HashSet::new();
+    let mut dirs = Vec::new();
     for (d, convert) in &args.dirs {
         let Ok(d) = std::fs::canonicalize(d) else {
             eprintln!("import: cannot open {}", d.display());
             return 2;
         };
-        roots.push(slash(&d));
-        if !convert {
-            continue;
-        }
-        let mut paths = Vec::new();
-        walk(&d, &mut paths);
-        for p in paths {
-            let key = slash(&p);
-            if seen.insert(key.clone()) {
-                match std::fs::read(&p) {
-                    Ok(b) => files.push((key, b)),
-                    Err(e) => eprintln!("import: {}: {e}", p.display()),
-                }
-            }
-        }
-    }
-    let mut vars = Vec::new();
-    let mut procs = Vec::new();
-    for rc in &args.rcs {
-        let Ok(text) = std::fs::read_to_string(rc) else {
-            eprintln!("import: cannot read {}", rc.display());
-            return 2;
-        };
-        for v in tcl::pdk_vars(&text) {
-            if !vars.iter().any(|(n, _): &(String, String)| *n == v.0) {
-                vars.push(v);
-            }
-        }
-        procs.extend(tcl::drc_procs(&text));
+        dirs.push((slash(&d), *convert));
     }
     let search_dirs: Vec<PathBuf> = args
         .spiceinit
@@ -182,27 +131,6 @@ pub(super) fn xschem_import(args: &[String]) -> u8 {
                 eprintln!("import: sourcepath {d}: undefined variable, skipped");
                 None
             }
-        })
-        .collect();
-    let scans: Vec<spice::ModelScan> = args
-        .models
-        .iter()
-        .map(|(p, section)| {
-            let opts = spice::ScanOptions {
-                section: section.as_deref(),
-                search_dirs: &search_dirs,
-            };
-            let s = spice::scan(p, &opts, |q| std::fs::read_to_string(q).ok());
-            eprintln!(
-                "models {} [{}]: {} files, {} models, {} bins, {} issues",
-                p.display(),
-                section.as_deref().unwrap_or("-"),
-                s.files.len(),
-                s.models.name.len(),
-                s.bins.model.len(),
-                s.issues.len()
-            );
-            s
         })
         .collect();
     let grid_pm = args.tech.as_ref().and_then(|t| {
@@ -229,33 +157,47 @@ pub(super) fn xschem_import(args: &[String]) -> u8 {
         .as_ref()
         .and_then(|p| std::fs::read_to_string(p).ok())
         .map(|t| crate::cdf::read(&t));
-    let opts = Options {
-        roots: &roots,
-        pdk_vars: &vars,
-        map_core: args.core,
-        models: &scans,
-        drc: &procs,
-        grid_pm,
-        cdf: cdf.as_ref(),
+    let mut job = crate::job::Job::new(crate::job::Command::XschemImport(Box::new(
+        crate::job::XschemImport {
+            dirs,
+            rcs: args.rcs.iter().map(|p| slash(p)).collect(),
+            models: args
+                .models
+                .iter()
+                .map(|(p, s)| (slash(p), s.clone()))
+                .collect(),
+            search_dirs,
+            grid_pm,
+            cdf,
+            core: args.core,
+            out_dir: slash(&args.out),
+        },
+    )));
+    let out = format!("{}/", slash(&args.out).trim_end_matches('/'));
+    let outputs: Vec<(String, Vec<u8>)> = match drive(Path::new(""), &mut job) {
+        Ok(w) => w
+            .into_iter()
+            .map(|(p, b)| (p.strip_prefix(&out).unwrap_or(&p).to_owned(), b))
+            .collect(),
+        Err(code) => return code,
     };
-    let inputs: Vec<(&str, &[u8])> = files
-        .iter()
-        .map(|(p, b)| (p.as_str(), b.as_slice()))
-        .collect();
-    let (outputs, report) = translate_library(&inputs, &opts);
-    for (rel, bytes) in &outputs {
-        let path = args.out.join(rel);
-        let ok = path
-            .parent()
-            .is_none_or(|d| std::fs::create_dir_all(d).is_ok())
-            && std::fs::write(&path, bytes).is_ok();
-        if !ok {
-            eprintln!("import: cannot write {}", path.display());
-            return 2;
-        }
+    let imp = job.imported().expect("a finished import");
+    for p in &imp.unread {
+        eprintln!("import: {p}: cannot read");
     }
-    summarize(&outputs, &report, procs.len(), grid_pm);
-    let problems = check_output(&outputs);
+    for ((p, section), s) in args.models.iter().zip(&imp.scans) {
+        eprintln!(
+            "models {} [{}]: {} files, {} models, {} bins, {} issues",
+            p.display(),
+            section.as_deref().unwrap_or("-"),
+            s.files.len(),
+            s.models.name.len(),
+            s.bins.model.len(),
+            s.issues.len()
+        );
+    }
+    summarize(&outputs, &imp.report, imp.drc_procs, grid_pm);
+    let problems = crate::check_output(&outputs);
     for p in problems.iter().take(60) {
         eprintln!("check: {p}");
     }

@@ -274,7 +274,8 @@ pub fn drc_procs(text: &str) -> Vec<DrcProc> {
         };
         let args = proc_args(rest.trim());
         let end = proc_end(&lines, i);
-        out.push(parse_proc(name, args, &lines[i + 1..end]));
+        // A proc on the last line ends there: its body is empty, not `lines[i + 1..i]`.
+        out.push(parse_proc(name, args, &lines[(i + 1).min(end)..end]));
         i = end + 1;
     }
     out
@@ -578,6 +579,13 @@ mod tests {
         assert_eq!(names, ["M"]);
         assert!(body.starts_with(".lib ${::M}/x.lib"), "{body}");
         assert_eq!(subst(&body, &vars).as_deref(), Ok(text));
+    }
+
+    #[test]
+    fn a_proc_on_the_last_line_has_an_empty_body() {
+        let p = drc_procs("set A 1\nproc d {} {}");
+        assert_eq!(p.len(), 1);
+        assert_eq!(p[0].name, "d");
     }
 
     #[test]

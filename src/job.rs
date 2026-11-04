@@ -3,16 +3,21 @@
 //! get identical results because neither holds any logic of its own.
 //!
 //! ```text
-//! Job::new(command) → loop { step() → Read(paths) → supply(path, bytes|None)…
+//! Job::new(command) → loop { step() → Read(paths) | List(dirs) → supply(path, bytes|None)…
 //!                                   | Done { writes, summary } | Failed(problems) }
 //! ```
 
 use std::collections::BTreeSet;
+use std::path::{Path, PathBuf};
 
+use crate::cdf::CdfDump;
 use crate::design::{Files, LoadError, load};
 use crate::map::Mapping;
 use crate::notes::Notes;
+use crate::report::Report;
+use crate::spice::{self, ModelScan};
 use crate::virtuoso::{self, ExportOptions, ImportOptions};
+use crate::{Options, tcl, translate_library};
 
 /// What to convert. Paths are project-relative.
 #[derive(Clone, Debug)]
@@ -45,6 +50,52 @@ pub enum Command {
         /// Output directory.
         dir: String,
     },
+    /// xschem libraries → Schemify libraries under `out_dir` (spec `import.md`).
+    XschemImport(Box<XschemImport>),
+}
+
+/// The inputs of an xschem import. Paths are as the driver reads them: absolute on the
+/// command line, project-relative or `${NAME}/…` in the guest.
+#[derive(Clone, Debug)]
+pub struct XschemImport {
+    /// The xschem library search path in order: (directory, convert every `.sym`/`.sch`
+    /// under it). A `false` element (`--root`) is only a prefix references resolve against.
+    pub dirs: Vec<(String, bool)>,
+    /// `xschemrc` files: PDK path variables and `drc` procs.
+    pub rcs: Vec<String>,
+    /// Model-card entry files, each with its `.lib` section.
+    pub models: Vec<(String, Option<String>)>,
+    /// Where relative model includes are also looked up (ngspice `sourcepath`).
+    pub search_dirs: Vec<PathBuf>,
+    /// Manufacturing grid in picometres (a tech file the command line read).
+    pub grid_pm: Option<u32>,
+    /// A Cadence `cdfDump` the command line read.
+    pub cdf: Option<CdfDump>,
+    /// Map xschem `devices/*.sym` to `core` (`--no-core` clears it).
+    pub core: bool,
+    /// Output directory.
+    pub out_dir: String,
+}
+
+/// What an xschem import produced beyond its writes, for the command line's summary.
+pub struct XschemImported {
+    /// The import report.
+    pub report: Report,
+    /// `drc` procs recognised in the `xschemrc` files.
+    pub drc_procs: usize,
+    /// One scan per [`XschemImport::models`] entry.
+    pub scans: Vec<ModelScan>,
+    /// Files under a converted directory that could not be read (left out).
+    pub unread: Vec<String>,
+}
+
+/// Splits a `--models` value `<file>[:<section>]`: the part after the last `:` is a section
+/// unless it is empty or holds a `/`.
+pub fn models_arg(v: &str) -> (String, Option<String>) {
+    match v.rsplit_once(':') {
+        Some((p, s)) if !s.contains('/') && !s.is_empty() => (p.to_owned(), Some(s.to_owned())),
+        _ => (v.to_owned(), None),
+    }
 }
 
 /// What the driver must do next.
@@ -52,6 +103,10 @@ pub enum Command {
 pub enum Step {
     /// Read these paths and [`Job::supply`] each (bytes, or `None` when absent).
     Read(Vec<String>),
+    /// List these directories and [`Job::supply`] each listing as the host's `fs_list`
+    /// answers it (one path relative to the directory per line, recursive, each directory's
+    /// entries by name, hidden entries and `target` left out), or `None` when absent.
+    List(Vec<String>),
     /// Write these files; the job is finished.
     Done {
         /// (project-relative path, bytes), sorted by path.
@@ -73,6 +128,7 @@ pub struct Job {
     absent: BTreeSet<String>,
     asked: BTreeSet<String>,
     rounds: u32,
+    imported: Option<XschemImported>,
 }
 
 impl Job {
@@ -84,7 +140,13 @@ impl Job {
             absent: BTreeSet::new(),
             asked: BTreeSet::new(),
             rounds: 0,
+            imported: None,
         }
+    }
+
+    /// The finished xschem import's report and check, once [`Step::Done`].
+    pub fn imported(&self) -> Option<&XschemImported> {
+        self.imported.as_ref()
     }
 
     /// Hands in the result of one read asked for by [`Step::Read`].
@@ -265,7 +327,134 @@ impl Job {
                     Err(p) => Step::Failed(p),
                 }
             }
+            Command::XschemImport(x) => self.xschem_import(&x),
         }
+    }
+
+    /// Lists the converted directories, reads their `.sym`/`.sch`/`.cir` files, the
+    /// `xschemrc`s and the model cards with their includes (one round per include level),
+    /// then translates. The import oracle ([`crate::check_output`]) is the command line's:
+    /// the guest leaves it out of the module (160 KB).
+    fn xschem_import(&mut self, x: &XschemImport) -> Step {
+        let converted: Vec<&str> = x
+            .dirs
+            .iter()
+            .filter(|d| d.1)
+            .map(|d| d.0.as_str())
+            .collect();
+        let need: Vec<String> = converted
+            .iter()
+            .filter(|d| !self.known(d))
+            .map(|d| d.to_string())
+            .collect();
+        if !need.is_empty() {
+            self.asked.extend(need.iter().cloned());
+            return Step::List(need);
+        }
+        let mut sources: Vec<String> = Vec::new();
+        let mut seen = BTreeSet::new();
+        for d in &converted {
+            let Some(list) = self.files.get(*d) else {
+                return Step::Failed(vec![format!("{d}: cannot open")]);
+            };
+            for rel in String::from_utf8_lossy(list).lines() {
+                let p = format!("{d}/{rel}");
+                if [".sym", ".sch", ".cir"].iter().any(|e| rel.ends_with(e))
+                    && seen.insert(p.clone())
+                {
+                    sources.push(p);
+                }
+            }
+        }
+        let need: Vec<String> = sources.iter().chain(&x.rcs).cloned().collect();
+        if need.iter().any(|p| !self.known(p)) {
+            return self.ask(need);
+        }
+        let mut vars: Vec<(String, String)> = Vec::new();
+        let mut procs = Vec::new();
+        for rc in &x.rcs {
+            let Some(text) = self.files.get(rc).and_then(|b| std::str::from_utf8(b).ok()) else {
+                return Step::Failed(vec![format!("{rc}: cannot read")]);
+            };
+            for v in tcl::pdk_vars(text) {
+                if !vars.iter().any(|(n, _)| *n == v.0) {
+                    vars.push(v);
+                }
+            }
+            procs.extend(tcl::drc_procs(text));
+        }
+        // A model card's includes are known only once it is read: scan with what is here,
+        // ask for every include not yet known, and scan again.
+        let mut missing = BTreeSet::new();
+        let scans: Vec<ModelScan> = x
+            .models
+            .iter()
+            .map(|(p, section)| {
+                let opts = spice::ScanOptions {
+                    section: section.as_deref(),
+                    search_dirs: &x.search_dirs,
+                };
+                spice::scan(Path::new(p), &opts, |q| {
+                    let k = q.to_string_lossy().replace('\\', "/");
+                    match self.files.get(&k) {
+                        Some(b) => String::from_utf8(b.clone()).ok(),
+                        None if self.absent.contains(&k) => None,
+                        None => {
+                            missing.insert(k);
+                            None
+                        }
+                    }
+                })
+            })
+            .collect();
+        if !missing.is_empty() {
+            return self.ask(missing.into_iter().collect());
+        }
+        let roots: Vec<String> = x.dirs.iter().map(|d| d.0.clone()).collect();
+        let opts = Options {
+            roots: &roots,
+            pdk_vars: &vars,
+            map_core: x.core,
+            models: &scans,
+            drc: &procs,
+            grid_pm: x.grid_pm,
+            cdf: x.cdf.as_ref(),
+        };
+        let unread: Vec<String> = sources
+            .iter()
+            .filter(|p| self.absent.contains(*p))
+            .cloned()
+            .collect();
+        let inputs: Vec<(&str, &[u8])> = sources
+            .iter()
+            .filter_map(|p| Some((p.as_str(), self.files.get(p)?.as_slice())))
+            .collect();
+        let (outputs, report) = translate_library(&inputs, &opts);
+        let dir = x.out_dir.trim_end_matches('/');
+        let join = |p: &str| {
+            if dir.is_empty() {
+                p.to_owned()
+            } else {
+                format!("{dir}/{p}")
+            }
+        };
+        let mut summary = format!(
+            "xschem import: {} files, {} report rows ({})",
+            outputs.len() - 2,
+            report.items.len(),
+            join("import-report.md")
+        );
+        if !unread.is_empty() {
+            summary.push_str(&format!("; unreadable, left out: {}", unread.join(", ")));
+        }
+        let writes = outputs.into_iter().map(|(p, b)| (join(&p), b)).collect();
+        self.imported = Some(XschemImported {
+            report,
+            drc_procs: procs.len(),
+            scans,
+            unread,
+        });
+        Step::Done { writes, summary }
     }
 
     fn known(&self, p: &str) -> bool {
@@ -333,6 +522,45 @@ mod tests {
             }
             s => panic!("{s:?}"),
         }
+    }
+
+    /// The import lists the converted directories, reads only their xschem files (and the
+    /// model includes, a round per level), and fails on a directory that is not there.
+    #[test]
+    fn xschem_import_lists_then_reads() {
+        let x = |dirs: &[&str]| {
+            Job::new(Command::XschemImport(Box::new(XschemImport {
+                dirs: dirs.iter().map(|d| (d.to_string(), true)).collect(),
+                rcs: Vec::new(),
+                models: vec![("m/top.lib".into(), None)],
+                search_dirs: Vec::new(),
+                grid_pm: None,
+                cdf: None,
+                core: true,
+                out_dir: "imp".into(),
+            })))
+        };
+        let mut j = x(&["lib"]);
+        assert_eq!(j.step(), Step::List(vec!["lib".into()]));
+        j.supply("lib", Some(b"a.sym\nnotes.txt\n".to_vec()));
+        assert_eq!(j.step(), Step::Read(vec!["lib/a.sym".into()]));
+        j.supply(
+            "lib/a.sym",
+            Some(b"v {xschem version=3.4.4 file_version=1.2}\n".to_vec()),
+        );
+        assert_eq!(j.step(), Step::Read(vec!["m/top.lib".into()]));
+        j.supply("m/top.lib", Some(b".include inc.lib\n".to_vec()));
+        assert_eq!(j.step(), Step::Read(vec!["m/inc.lib".into()]));
+        j.supply("m/inc.lib", None);
+        let Step::Done { writes, .. } = j.step() else {
+            panic!()
+        };
+        assert!(writes.iter().any(|w| w.0 == "imp/schemify.project"));
+        assert!(j.imported().is_some());
+        let mut j = x(&["gone"]);
+        assert!(matches!(j.step(), Step::List(_)));
+        j.supply("gone", None);
+        assert_eq!(j.step(), Step::Failed(vec!["gone: cannot open".into()]));
     }
 
     #[test]
