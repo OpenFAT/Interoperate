@@ -73,7 +73,7 @@ schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
 schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
-schemify-interop pdk-map         --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o interop.map   (PDK map below)
+schemify-interop pdk-map         --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o interop.map   (PDK map below)
 schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (PDK models below)
 schemify-interop ciel            <args>...      (ciel from PATH, else a private venv pinned to ciel 3.2.0 under Schemify's data directory, <data>/tools/ciel-3.2.0; needs python3; install output on stderr, ciel's exit status)
 ```
@@ -300,7 +300,7 @@ are followed for the selected section.
 
 ### PDK map (remote PDKs)
 
-`schemify-interop pdk-map --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o interop.map`
+`schemify-interop pdk-map --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o interop.map`
 writes the `interop.map` rows that send a scanned kit's cells to the kit's own Virtuoso
 cells, so the rows come from the kit rather than from someone's notes. `<dir>` holds the
 scanned `.shprim` cells of Schemify library `--lib` (default: the directory's name). The dump
@@ -318,19 +318,26 @@ other cell was not mapped (`needs_review:unmapped`: no candidate, or a pin-count
 The map passes `Mapping::parse` before it is written. It holds the kit's names, so keep it
 out of public repositories, like a mirror.
 
-After a remote scan refresh, PDK-Manager runs the dump on the kit host (`sh -s`, whatever
-the login shell) and maps locally:
+After a remote scan refresh, PDK-Manager makes the dump on the kit host and maps it
+locally in one command: `pdk-map --scan <cells> --host <ssh name> --vlib <vlib>... -o
+interop.map` runs `ssh <host> sh -s` (whatever the login shell) on a script that starts
+Virtuoso in batch there on `SfyCdfNames` and prints only the dump. `pdk-map
+--remote-script --vlib <vlib>...` prints that script, for a caller that runs ssh itself and
+passes the output to `--dump`. Nothing about the site is built in: the script takes these
+variables from the environment `pdk-map` runs in:
 
-```sh
-schemify-interop install-skill /tmp/sfy && scp /tmp/sfy/schemify.il host:/tmp/sfy-cdf.il
-ssh host sh -s <<'EOF'
-cd <a directory whose cds.lib defines the kit's libraries>   # with Cadence set up
-printf '(load "/tmp/sfy-cdf.il")\n(SfyCdfNames "/tmp/sfy-cdf.sfyx" (list "<vlib>"))\n(exit)\n' >/tmp/sfy-cdf-run.il
-virtuoso -nograph -restore /tmp/sfy-cdf-run.il </dev/null >/dev/null
-EOF
-scp host:/tmp/sfy-cdf.sfyx . && ssh host rm -f /tmp/sfy-cdf.il /tmp/sfy-cdf-run.il /tmp/sfy-cdf.sfyx /tmp/sfy-cdf.sfyx.log
-schemify-interop pdk-map --scan <scanned cells> --dump sfy-cdf.sfyx --lib <library> -o interop.map
-```
+| Variable | On the host |
+|---|---|
+| `SFY_CADENCE_ENV` | The site's or kit's Cadence setup script, sourced before Virtuoso starts: through `csh` (as `live/checks/run.sh` sources its `SFYCHECK_ENV`), or through `sh` when it ends in `.sh`. A relative path is relative to the login directory. |
+| `VIRTUOSO` | The Virtuoso command, with arguments (default `virtuoso`, from the setup's `PATH`); the script adds `-nograph -restore <file> -log <file>`. |
+| `CDS_LIC_FILE`, `CDS_LIC_ONLY` | Set after the setup script, so they win over it. Unset here: the setup's own. |
+| `SFY_CDS_DIR` | The directory whose `cds.lib` defines the libraries, where Virtuoso runs (default the login directory). |
+| `SFY_VIRTUOSO_TIMEOUT` | Seconds the session may take (default 1800). |
+
+When Virtuoso cannot start (no command after the setup, an unreadable setup script, no
+dump), the command fails with the reason and these variable names; the session log, if
+any, stays on the host and only its path is printed. The script's temporary directory is
+removed otherwise.
 
 ### PDK models (local kits)
 

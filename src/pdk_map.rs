@@ -16,6 +16,9 @@
 //! ```text
 //! ("cdfnames" lib cell model (termOrder ...) (param ...) (symbol terminal ...))
 //! ```
+//!
+//! [`remote_script`] makes that dump on the kit's host: `ssh <host> sh -s` reads it, starts
+//! Virtuoso in batch with the Cadence environment of [`ENV`] and prints only the dump.
 
 use std::collections::BTreeSet;
 
@@ -24,6 +27,59 @@ use schemify_format::RecordKind;
 use crate::map::Mapping;
 use crate::notes::Notes;
 use crate::sfyx;
+
+/// The POSIX `sh` body of [`remote_script`], below its settings.
+const REMOTE_BODY: &str = include_str!("pdk_cdf.sh");
+
+/// The settings [`remote_script`] takes from the environment where pdk-map runs:
+/// `(variable, the name the script holds it under)`. The licence variables are held aside
+/// so that the setup script cannot replace them.
+pub const ENV: [(&str, &str); 6] = [
+    ("VIRTUOSO", "VIRTUOSO"),
+    ("SFY_CADENCE_ENV", "SFY_CADENCE_ENV"),
+    ("SFY_CDS_DIR", "SFY_CDS_DIR"),
+    ("SFY_VIRTUOSO_TIMEOUT", "SFY_VIRTUOSO_TIMEOUT"),
+    ("CDS_LIC_FILE", "SFY_CDS_LIC_FILE"),
+    ("CDS_LIC_ONLY", "SFY_CDS_LIC_ONLY"),
+];
+
+/// The script `ssh <host> sh -s` runs to dump `libs` (in that order) with `SfyCdfNames`:
+/// each [`ENV`] variable `env` gives (`VIRTUOSO` defaults to `virtuoso`), `schemify.il` and
+/// the batch session's file, then `src/pdk_cdf.sh`. Its stdout is the dump only.
+pub fn remote_script(libs: &[String], env: impl Fn(&str) -> Option<String>) -> String {
+    const END: &str = "SFY_FILE_END";
+    let sh = |v: &str| format!("'{}'", v.replace('\'', "'\\''"));
+    let mut out = String::from("# schemify-interop pdk-map --remote-script\n");
+    for (var, held) in ENV {
+        let v = env(var)
+            .filter(|v| !v.is_empty())
+            .or_else(|| (var == "VIRTUOSO").then(|| "virtuoso".into()));
+        if let Some(v) = v {
+            out.push_str(&format!("{held}={}\nexport {held}\n", sh(&v)));
+        }
+    }
+    let mut run = String::from(
+        "(load (strcat (getShellEnvVar \"SFY_PDKMAP_DIR\") \"/schemify.il\"))\n\
+         (errset (SfyCdfNames (strcat (getShellEnvVar \"SFY_PDKMAP_DIR\") \"/cdf.sfyx\") (list",
+    );
+    for l in libs {
+        run.push(' ');
+        sfyx::write_str(l, &mut run);
+    }
+    run.push_str(")) t)\n(exit)\n");
+    let il = crate::skill::schemify_il();
+    assert!(
+        il.lines().all(|l| l != END),
+        "schemify.il holds the heredoc end"
+    );
+    out.push_str("sfy_files() {\n");
+    for (f, text) in [("schemify.il", il.as_str()), ("run.il", run.as_str())] {
+        out.push_str(&format!("cat >\"$sfy_t/{f}\" <<'{END}'\n{text}{END}\n"));
+    }
+    out.push_str("}\n");
+    out.push_str(REMOTE_BODY);
+    out
+}
 
 /// A scanned cell: what its netlist line needs.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]

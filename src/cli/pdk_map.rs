@@ -3,35 +3,71 @@
 
 use super::*;
 
-const USAGE: &str = "usage: schemify-interop pdk-map --scan <dir> --dump <cdfnames.sfyx> [--lib <name>] -o <interop.map>";
+const USAGE: &str = "usage: schemify-interop pdk-map --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o <interop.map>
+       schemify-interop pdk-map --remote-script --vlib <lib>...";
 
-/// `pdk-map --scan <dir> --dump <file> [--lib <name>] -o <file>`: maps every `.shprim` under
-/// `<dir>` (Schemify library `<name>`, default the directory's name) onto the dump's cells;
-/// writes the map and `<stem>.report.md|txt` beside it. 0 written (misses are report rows),
-/// 1 the map failed its own check, 2 usage, I/O or a malformed input.
+/// `pdk-map --scan <dir> (--dump <file> | --host <h> --vlib <l>...) [--lib <name>] -o <file>`:
+/// maps every `.shprim` under `<dir>` (Schemify library `<name>`, default the directory's
+/// name) onto the cells of a `SfyCdfNames` dump, read from `<file>` or made on host `<h>`
+/// (`ssh <h> sh -s` on [`crate::pdk_map::remote_script`], with this environment's
+/// [`crate::pdk_map::ENV`]); writes the map and `<stem>.report.md|txt` beside it.
+/// `--remote-script` prints that script instead. 0 written (misses are report rows), 1 the
+/// map failed its own check, 2 usage, I/O, a malformed input or a failed remote dump.
 pub(super) fn pdk_map(args: &[String]) -> u8 {
     use crate::pdk_map;
     let mut opt = std::collections::BTreeMap::new();
+    let (mut vlibs, mut script) = (Vec::new(), false);
     let mut it = args.iter();
     while let Some(a) = it.next() {
+        if a == "--remote-script" {
+            script = true;
+            continue;
+        }
         match (a.as_str(), it.next()) {
-            (k @ ("--scan" | "--dump" | "--lib" | "-o"), Some(v)) => opt.insert(k, v.as_str()),
+            ("--vlib", Some(v)) => vlibs.push(v.clone()),
+            (k @ ("--scan" | "--dump" | "--host" | "--lib" | "-o"), Some(v)) => {
+                opt.insert(k, v.as_str());
+            }
             _ => {
                 eprintln!("{USAGE}");
                 return 2;
             }
-        };
+        }
     }
-    let (Some(scan), Some(dump), Some(out)) = (opt.get("--scan"), opt.get("--dump"), opt.get("-o"))
-    else {
+    let env = |k: &str| std::env::var(k).ok();
+    if script {
+        if vlibs.is_empty() || !opt.is_empty() {
+            eprintln!("{USAGE}");
+            return 2;
+        }
+        print!("{}", pdk_map::remote_script(&vlibs, env));
+        return 0;
+    }
+    let (Some(scan), Some(out)) = (opt.get("--scan"), opt.get("-o")) else {
         eprintln!("{USAGE}");
         return 2;
     };
-    let (scan, dump, out) = (Path::new(scan), Path::new(dump), Path::new(out));
+    let (scan, out) = (Path::new(scan), Path::new(out));
     if !scan.is_dir() {
         eprintln!("schemify-interop: {}: not a directory", scan.display());
         return 2;
     }
+    let (dump, text) = match (opt.get("--dump"), opt.get("--host")) {
+        (Some(d), None) if vlibs.is_empty() => match std::fs::read_to_string(d) {
+            Ok(t) => (d.to_string(), t),
+            Err(e) => return io_err(Path::new(d), e),
+        },
+        (None, Some(h)) if !vlibs.is_empty() => {
+            match remote_dump(h, &pdk_map::remote_script(&vlibs, env)) {
+                Ok(t) => (format!("{h}: SfyCdfNames"), t),
+                Err(code) => return code,
+            }
+        }
+        _ => {
+            eprintln!("{USAGE}");
+            return 2;
+        }
+    };
     let lib = opt.get("--lib").map_or_else(
         || {
             std::fs::canonicalize(scan)
@@ -61,15 +97,12 @@ pub(super) fn pdk_map(args: &[String]) -> u8 {
             }
         }
     }
-    let kit = match std::fs::read_to_string(dump) {
-        Ok(t) => match pdk_map::read_dump(&t) {
-            Ok(k) => k,
-            Err(e) => {
-                eprintln!("schemify-interop: {}: {e}", dump.display());
-                return 2;
-            }
-        },
-        Err(e) => return io_err(dump, e),
+    let kit = match pdk_map::read_dump(&text) {
+        Ok(k) => k,
+        Err(e) => {
+            eprintln!("schemify-interop: {dump}: {e}");
+            return 2;
+        }
     };
     let (text, notes) = match pdk_map::map(&lib, &cells, &kit) {
         Ok(m) => m,
@@ -102,4 +135,39 @@ pub(super) fn pdk_map(args: &[String]) -> u8 {
         n.get("needs_review:unmapped").unwrap_or(&0)
     );
     0
+}
+
+/// The stdout of `ssh <host> sh -s` fed `script` (its stderr passes through); exit 2 when
+/// ssh cannot start or the script fails.
+fn remote_dump(host: &str, script: &str) -> Result<String, u8> {
+    use std::io::Write;
+    use std::process::{Command, Stdio};
+    let mut child = Command::new("ssh")
+        .args([host, "sh", "-s"])
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            eprintln!("schemify-interop: ssh: {e}");
+            2
+        })?;
+    let mut stdin = child.stdin.take().expect("piped stdin");
+    let script = script.to_owned();
+    let feed = std::thread::spawn(move || stdin.write_all(script.as_bytes()));
+    let out = child.wait_with_output().map_err(|e| {
+        eprintln!("schemify-interop: ssh: {e}");
+        2
+    })?;
+    let _ = feed.join();
+    if !out.status.success() {
+        eprintln!(
+            "schemify-interop: pdk-map: the dump on {host} failed ({})",
+            out.status
+        );
+        return Err(2);
+    }
+    String::from_utf8(out.stdout).map_err(|_| {
+        eprintln!("schemify-interop: pdk-map: the dump on {host} is not UTF-8");
+        2
+    })
 }

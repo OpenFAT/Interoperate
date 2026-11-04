@@ -208,3 +208,118 @@ fn the_map_remasters_in_a_virtuoso_export() {
     assert!(report.contains("remapped"), "{report}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A fake `ssh` (runs the remote command here) and a fake `virtuoso` (checks its
+/// arguments and the batch file, notes its environment in `seen`, writes `dump` as
+/// SfyCdfNames would) in `dir/bin`; returns that directory.
+fn fakes(dir: &Path, dump: &str) -> PathBuf {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(dir.join("dump.sfyx"), dump).unwrap();
+    let virtuoso = format!(
+        "#!/bin/sh\n[ \"$1\" = -nograph ] && [ \"$2\" = -restore ] || exit 9\n\
+         grep -q '(SfyCdfNames .* (list \"vkit\" \"vkit2\"))' \"$3\" || exit 9\n\
+         echo \"lic=$CDS_LIC_FILE only=${{CDS_LIC_ONLY:-}} setup=${{FAKE_SETUP:-}} pwd=$(pwd)\" >{seen}\n\
+         cp {dump} \"$SFY_PDKMAP_DIR/cdf.sfyx\"\necho PASS >\"$SFY_PDKMAP_DIR/cdf.sfyx.log\"\n",
+        seen = dir.join("seen").display(),
+        dump = dir.join("dump.sfyx").display(),
+    );
+    for (name, body) in [
+        ("ssh", "#!/bin/sh\nshift\nexec \"$@\"\n"),
+        ("virtuoso", &virtuoso),
+    ] {
+        let p = bin.join(name);
+        std::fs::write(&p, body).unwrap();
+        std::fs::set_permissions(&p, std::fs::Permissions::from_mode(0o755)).unwrap();
+    }
+    bin
+}
+
+/// `pdk-map --host` through the fakes, with `env` set and the other settings unset.
+fn host_map(dir: &Path, bin: &Path, env: &[(&str, String)]) -> std::process::Output {
+    let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_schemify-interop"));
+    c.args(["pdk-map", "--scan"])
+        .arg(fixture("scan"))
+        .args([
+            "--host", "kithost", "--vlib", "vkit", "--vlib", "vkit2", "--lib", "fkit", "-o",
+        ])
+        .arg(dir.join("interop.map"))
+        .env(
+            "PATH",
+            format!("{}:{}", bin.display(), std::env::var("PATH").unwrap()),
+        );
+    for (k, _) in interop::pdk_map::ENV {
+        c.env_remove(k);
+    }
+    c.envs(env.iter().map(|(k, v)| (k, v))).output().unwrap()
+}
+
+#[test]
+fn host_runs_the_dump_with_this_environment_and_maps_it() {
+    let mut i = mock();
+    let dir = tmp("host");
+    let bin = fakes(&dir, &names(&mut i, r#"(list "vkit" "vkit2")"#));
+    let cds = dir.join("cds");
+    std::fs::create_dir_all(&cds).unwrap();
+    std::fs::write(
+        dir.join("setup.sh"),
+        "CDS_LIC_FILE=from-setup\nFAKE_SETUP=yes\nexport CDS_LIC_FILE FAKE_SETUP\n",
+    )
+    .unwrap();
+    let out = host_map(
+        &dir,
+        &bin,
+        &[
+            ("VIRTUOSO", bin.join("virtuoso").display().to_string()),
+            (
+                "SFY_CADENCE_ENV",
+                dir.join("setup.sh").display().to_string(),
+            ),
+            ("SFY_CDS_DIR", cds.display().to_string()),
+            ("CDS_LIC_FILE", "it's given".into()),
+        ],
+    );
+    assert!(
+        out.status.success(),
+        "{}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+    // The setup ran, the licence given here won over the setup's, Virtuoso ran in the
+    // cds.lib directory.
+    assert_eq!(
+        std::fs::read_to_string(dir.join("seen")).unwrap(),
+        format!("lic=it's given only= setup=yes pwd={}\n", cds.display())
+    );
+    let map = std::fs::read_to_string(dir.join("interop.map")).unwrap();
+    assert!(
+        map.starts_with("map fkit:nfoo virtuoso vkit nfoo_b\n"),
+        "{map}"
+    );
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn host_without_virtuoso_names_the_variables_to_set() {
+    let dir = tmp("novirt");
+    let bin = fakes(&dir, "");
+    let out = host_map(
+        &dir,
+        &bin,
+        &[("VIRTUOSO", "/nonexistent/virtuoso -64".into())],
+    );
+    assert_eq!(out.status.code(), Some(2));
+    let err = String::from_utf8_lossy(&out.stderr);
+    for want in [
+        "no Virtuoso command `/nonexistent/virtuoso` on PATH",
+        "VIRTUOSO (the Virtuoso command)",
+        "SFY_CADENCE_ENV",
+        "CDS_LIC_FILE or CDS_LIC_ONLY",
+        "SFY_CDS_DIR",
+        "the dump on kithost failed",
+    ] {
+        assert!(err.contains(want), "{want}: {err}");
+    }
+    assert!(!dir.join("interop.map").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
