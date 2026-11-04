@@ -267,12 +267,14 @@ Every conversion lists its losses in the report. The main ones:
   them. What is not yet mapped into Schemify records (pending lanes L5 to L7): Monte Carlo,
   optimizer, multi-test setups and ADE L. They come back to Virtuoso unchanged but cannot be
   edited in Schemify.
-- PDK CDF callbacks inside Schemify. Derived parameters (`ad`, `as`, finger widths) stay
-  Virtuoso's: see "Derived parameters" above.
+- CDF callbacks: a design library's callbacks of the plain assignment form
+  (`cdfgData->w->value = …` over numbers, params and arithmetic) now cross as Schemify
+  `computed` math. The rest stay Virtuoso's, each with its reason in the report, and so do a
+  PDK's derived parameters (`ad`, `as`, finger widths): see "Derived parameters" above.
 - On a cellview you redraw, every surviving object keeps how Virtuoso drew it (label fonts,
   justification, flags and offsets, bus widths, noConn names). What does not: a multi-point
-  wire's segmentation (Virtuoso splits it into 2-point wires), and instance properties and
-  textDisplays, pending in the CDF lane.
+  wire's segmentation (Virtuoso splits it into 2-point wires). Instance properties and
+  textDisplays now survive the redraw too.
 - xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers.
 
 ## How this is tested without Virtuoso
