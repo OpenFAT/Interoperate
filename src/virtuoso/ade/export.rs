@@ -1,0 +1,746 @@
+//! A bench → one maestro test's records ([`export`], spec `interop.md` §9.1): its analysis
+//! block's lines (SPICE or Spectre) → analyses, model files, temperature and params; vars
+//! and sweeps; corners; outputs and specs.
+
+use super::*;
+
+/// Code languages whose text is SPICE (format.md rank 6).
+const SPICE_LANGS: [&str; 3] = ["spice", "ngspice", "xyce"];
+
+/// One bench's export: its maestro records and its OCEAN script (§9.6).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct BenchExport {
+    /// The maestro records in §9 order; empty for a bench with no simulation setup.
+    pub records: Vec<Record>,
+    /// The bench cell's name: the script's name and results directory.
+    pub cell: String,
+    /// The OCEAN script text; empty when `records` is.
+    pub ocean: String,
+    /// Definition files the script loads (`definitionFile`), `(file, text)`: the same
+    /// files as the `defn` records, written beside the script under `<cell>/`.
+    pub defns: Vec<(String, String)>,
+}
+
+/// The maestro records and the OCEAN script of bench cell `ci` (§9.1, §9.6), the
+/// `maestro` record naming Virtuoso library `vlib` (the plan's library of the cell) and the
+/// cell's name. `inst` answers the output translator's instance questions
+/// ([`InstInfo`]). Bench content §9.1 does not map is reported in `notes`
+/// (`needs_review:` `code sweep output spec plot expression design-variable montecarlo
+/// optimize config corner`); the caller stashes it (§7.3).
+///
+/// # Panics
+///
+/// When `ci` is not a `.shbench` of `d`.
+pub fn export<F: Fn(&str) -> Option<InstInfo>>(
+    d: &Design,
+    ci: usize,
+    vlib: &str,
+    inst: F,
+    notes: &mut Notes,
+) -> BenchExport {
+    let c = &d.cells[ci];
+    assert_eq!(
+        c.kind(),
+        FileKind::Shbench,
+        "{}: maestro is a bench's",
+        c.path
+    );
+    // A bench with no simulation setup (a schematic with no symbol, as a Virtuoso
+    // testbench without maestro imports) gets no maestro view: none is created in Virtuoso.
+    let setup = [
+        RecordKind::Var,
+        RecordKind::Corner,
+        RecordKind::Sweep,
+        RecordKind::Output,
+        RecordKind::Spec,
+        RecordKind::Code,
+        RecordKind::Montecarlo,
+        RecordKind::Optimize,
+        RecordKind::Config,
+        RecordKind::Test,
+        RecordKind::BenchParam,
+    ];
+    if !setup.iter().any(|k| c.records(*k).next().is_some()) {
+        return BenchExport::default();
+    }
+    let cell = c.path.as_str();
+    let vars: Vec<String> = c
+        .records(RecordKind::Var)
+        .map(|r| c.field(r, 0).to_owned())
+        .collect();
+    let src = analysis_source(c);
+    let mut t = Test {
+        name: safe_name(src.map_or(c.name.as_str(), |r| c.field(r, 0))),
+        lib: vlib.to_owned(),
+        cell: c.name.clone(),
+        view: "schematic".into(),
+        sim: "spectre".into(),
+        ..Test::default()
+    };
+    // Code blocks: the analysis block's lines, spectre text as definition files.
+    let mut codes: Vec<u32> = c.records(RecordKind::Code).collect();
+    codes.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
+    for r in codes {
+        let (name, lang) = (c.field(r, 0), c.field(r, 1));
+        let lines: Vec<&str> = c.doc.verbatim(r).collect();
+        if Some(r) == src {
+            let spice = SPICE_LANGS.contains(&lang);
+            // `.options errpreset=…` sets an option of the tran analysis: after the analyses.
+            let mut order: Vec<usize> = (0..lines.len()).collect();
+            order.sort_by_key(|&k| {
+                spice && matches!(spice_line(lines[k]), Some(SpiceLine::ErrPreset(_)))
+            });
+            for k in order {
+                let line = &lines[k];
+                if !source_line(line, spice, &vars, &mut t, cell, notes) && !line.trim().is_empty()
+                {
+                    notes.review(
+                        "code",
+                        cell,
+                        format!("code {name} line {}: `{}` has no maestro form", k + 1, line),
+                    );
+                }
+            }
+        } else if lang == "spectre" && !name.contains(['/', '\\']) {
+            let mut body = lines.join("\n");
+            body.push('\n');
+            t.defns.push((format!("{name}.scs"), body));
+        } else {
+            let why = if src.is_some() && SPICE_LANGS.contains(&lang) {
+                "only the analyses of the first analysis block map"
+            } else {
+                "no maestro form"
+            };
+            notes.review("code", cell, format!("code {name} {lang}: {why}"));
+        }
+    }
+    // Vars and their sweeps.
+    let mut swept: Vec<(String, String)> = Vec::new();
+    let mut sweeps: Vec<u32> = c.records(RecordKind::Sweep).collect();
+    sweeps.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
+    for r in sweeps {
+        let name = c.field(r, 0);
+        let var = c.attr(r, "var").unwrap_or("");
+        let points = if name != var || !vars.iter().any(|v| v == var) {
+            Err("a sweep maps only when named after its bench var".to_owned())
+        } else if swept.iter().any(|x| x.0 == var) {
+            Err("a second sweep of the var".to_owned())
+        } else {
+            sweep_list(c, r, &vars)
+        };
+        match points {
+            Ok(list) => swept.push((var.to_owned(), list)),
+            Err(why) => notes.review("sweep", cell, format!("sweep {name}: {why}")),
+        }
+    }
+    for r in c.records(RecordKind::Var) {
+        let name = c.field(r, 0);
+        if c.attr(r, "enable") == Some("false") {
+            notes.review(
+                "var",
+                cell,
+                format!("var {name} enable false: exported enabled"),
+            );
+        }
+        if t.vars.iter().any(|v| v.0 == name && v.2.is_empty()) {
+            notes.review(
+                "code",
+                cell,
+                format!("var {name}: also set by the analysis block"),
+            );
+            continue;
+        }
+        let value = match swept.iter().find(|x| x.0 == name) {
+            Some((_, list)) => Some(list.clone()),
+            None => to_ael(c.field(r, 1), &vars, cell, notes),
+        };
+        if let Some(v) = value {
+            t.vars.push((name.to_owned(), v, String::new()));
+        }
+    }
+    // Corners.
+    for r in c.records(RecordKind::Corner) {
+        let corner = c.field(r, 0).to_owned();
+        t.corners
+            .push((corner.clone(), c.attr(r, "enable") != Some("false")));
+        for a in c.doc.attrs(r) {
+            let vals: Vec<&str> = c.doc.attr_values(a).collect();
+            match (c.doc.attr_key(a), vals.as_slice()) {
+                ("lib", [p, sec]) => t
+                    .models
+                    .push((corner.clone(), path_to_ade(p), (*sec).into())),
+                ("include", [p]) => t
+                    .models
+                    .push((corner.clone(), path_to_ade(p), String::new())),
+                ("set", [var, e]) => {
+                    if let Some(v) = to_ael(e, &vars, cell, notes) {
+                        t.vars.push(((*var).into(), v, corner.clone()));
+                    }
+                }
+                ("temp", [e]) => {
+                    if let Some(v) = to_ael(e, &vars, cell, notes) {
+                        t.vars.push(("temperature".into(), v, corner.clone()));
+                    }
+                }
+                ("enable", _) => {}
+                (k, _) => notes.review(
+                    "code",
+                    cell,
+                    format!("corner {corner}: `{k}` has no maestro form"),
+                ),
+            }
+        }
+    }
+    // Outputs (maestro and OCEAN spellings) and their plots.
+    let letter = signal_letter(&t.analyses);
+    let mut scope = OutScope {
+        vars: &vars,
+        letter,
+        inst,
+    };
+    let mut ocean_outs: Vec<(String, String)> = Vec::new();
+    for r in c.records(RecordKind::Output) {
+        let (name, e) = (c.field(r, 0), c.field(r, 1));
+        if c.attr(r, "enable") == Some("false") {
+            notes.review(
+                "output",
+                cell,
+                format!("output {name} enable false: exported enabled"),
+            );
+        }
+        // `analysis <a>` picks the dataset (format.md rank 6), else the test's default.
+        scope.letter = match c.attr(r, "analysis") {
+            None => letter,
+            Some(a) => match analysis_letter(a, &t.analyses) {
+                Some(l) => l,
+                None => {
+                    notes.review(
+                        "output",
+                        cell,
+                        format!("output {name}: analysis `{a}` is not one the test runs"),
+                    );
+                    continue;
+                }
+            },
+        };
+        // One spelling serves both: OCEAN evaluates ADE's expression functions.
+        match out_expr(e, &scope) {
+            Some(x) => {
+                t.outputs.push((name.to_owned(), "point".into(), x.clone()));
+                ocean_outs.push((name.to_owned(), x));
+            }
+            _ => notes.review(
+                "output",
+                cell,
+                format!("output {name}: `{e}` has no ADE form"),
+            ),
+        }
+    }
+    let mut plots: Vec<(String, String)> = Vec::new();
+    for r in c.records(RecordKind::Output) {
+        let (name, Some(x)) = (c.field(r, 0), c.attr(r, "vs")) else {
+            continue;
+        };
+        if !ocean_outs.iter().any(|o| o.0 == name) || !ocean_outs.iter().any(|o| o.0 == x) {
+            notes.review(
+                "plot",
+                cell,
+                format!("output {name} vs {x}: an output of the plot does not map"),
+            );
+            continue;
+        }
+        plots.push((name.to_owned(), x.to_owned()));
+        notes.review(
+            "plot",
+            cell,
+            format!(
+                "output {name} vs {x}: plotted by the OCEAN script only (a maestro output is \
+                 one value per point; the plot spans the sweep)"
+            ),
+        );
+    }
+    for r in c.records(RecordKind::Spec) {
+        let out = c.field(r, 0);
+        if !t.outputs.iter().any(|o| o.0 == out) {
+            notes.review("spec", cell, format!("spec {out}: its output does not map"));
+            continue;
+        }
+        for (key, op) in [("min", "gt"), ("max", "lt")] {
+            let Some(e) = c.attr(r, key) else { continue };
+            // A bound over bench vars (`min A0_spec/(1+A0_spec)`) is folded to its number
+            // (an ADE spec target is a value); one over a swept var varies per point and has
+            // no single target.
+            let idents: Vec<String> = Program::compile(e, Mode::Scalar)
+                .map(|p| p.idents().map(str::to_owned).collect())
+                .unwrap_or_default();
+            if idents.is_empty() {
+                if let Some(v) = to_ael(e, &vars, cell, notes) {
+                    t.specs.push((out.to_owned(), op.into(), v));
+                }
+            } else if let Some(s) = idents.iter().find(|n| swept.iter().any(|x| &x.0 == *n)) {
+                notes.review(
+                    "spec",
+                    cell,
+                    format!("spec {out} {key} `{e}`: depends on swept var {s}; not sent"),
+                );
+            } else if let Some(x) = cell_value(d, ci, e) {
+                let mut v = String::new();
+                write_num(&mut v, x);
+                t.specs.push((out.to_owned(), op.into(), v));
+            } else {
+                notes.review(
+                    "spec",
+                    cell,
+                    format!("spec {out} {key} `{e}`: does not evaluate over the bench vars"),
+                );
+            }
+        }
+    }
+    for (k, reason) in [
+        (RecordKind::Montecarlo, "montecarlo"),
+        (RecordKind::Optimize, "optimize"),
+        (RecordKind::Config, "config"),
+        (RecordKind::Test, "test"),
+        (RecordKind::BenchParam, "param"),
+    ] {
+        for r in c.records(k) {
+            notes.review(
+                reason,
+                cell,
+                format!("{reason} {}: not mapped (§9.3)", c.field(r, 0)),
+            );
+        }
+    }
+    for rows in [
+        t.vars.len(),
+        t.models.len(),
+        t.outputs.len(),
+        t.specs.len(),
+        t.defns.len(),
+    ] {
+        assert!(
+            rows <= ROWS_MAX,
+            "{cell}: a bench holds at most 2^22 records"
+        );
+    }
+    let default_corner = c
+        .header("corner")
+        .map(str::to_owned)
+        .or_else(|| t.corners.first().map(|x| x.0.clone()));
+    if t.corners.len() > 1 {
+        notes.review(
+            "corner",
+            cell,
+            format!(
+                "the OCEAN script runs corner {} only (maestro has all {})",
+                default_corner.as_deref().unwrap_or(""),
+                t.corners.len()
+            ),
+        );
+    }
+    let ocean = ocean_script(
+        &t,
+        cell,
+        &swept,
+        &ocean_outs,
+        &plots,
+        default_corner.as_deref(),
+        notes,
+    );
+    BenchExport {
+        records: t.records(),
+        cell: t.cell.clone(),
+        ocean,
+        defns: t.defns.clone(),
+    }
+}
+
+/// The code block whose analyses map: the first (by name) SPICE block with a line that is
+/// an analysis, or spectre block whose every line but comments has a maestro form and one
+/// is an analysis (the import's own Spectre form, §9.2).
+fn analysis_source(c: &Cell) -> Option<u32> {
+    let mut codes: Vec<u32> = c.records(RecordKind::Code).collect();
+    codes.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
+    codes.into_iter().find(|&r| {
+        let lines: Vec<&str> = c.doc.verbatim(r).collect();
+        match c.field(r, 1) {
+            l if SPICE_LANGS.contains(&l) => lines
+                .iter()
+                .any(|x| matches!(spice_line(x), Some(SpiceLine::Analysis(..)))),
+            "spectre" => {
+                lines
+                    .iter()
+                    .any(|x| matches!(spectre_line(x), Some(SpectreLine::Analysis(..))))
+                    && lines.iter().all(|x| {
+                        let t = x.trim();
+                        t.is_empty() || t.starts_with("//") || spectre_line(x).is_some()
+                    })
+            }
+            _ => false,
+        }
+    })
+}
+
+/// A Virtuoso-safe test name: `[A-Za-z0-9_]`, others `_`.
+fn safe_name(n: &str) -> String {
+    let out: String = n
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_alphanumeric() || ch == '_' {
+                ch
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if out.is_empty() { "test".into() } else { out }
+}
+
+/// Adds the maestro form of one line of the analysis block to `t`; false when it has none.
+fn source_line(
+    line: &str,
+    spice: bool,
+    vars: &[String],
+    t: &mut Test,
+    cell: &str,
+    notes: &mut Notes,
+) -> bool {
+    let parsed = if spice {
+        spice_line(line)
+    } else {
+        spectre_line(line).map(|l| match l {
+            SpectreLine::Analysis(n, o) => SpiceLine::Analysis(n, o),
+            SpectreLine::Model(f, sec) => SpiceLine::Model(f, sec),
+            SpectreLine::Temp(v) => SpiceLine::Temp(v),
+        })
+    };
+    let has_global = |t: &Test, n: &str| t.vars.iter().any(|v| v.0 == n && v.2.is_empty());
+    match parsed {
+        None => false,
+        Some(SpiceLine::ErrPreset(p)) => match t.analyses.iter_mut().find(|a| a.0 == "tran") {
+            Some(a) if !a.2.iter().any(|o| o.0 == "errpreset") => {
+                a.2.push(kv("errpreset", &p));
+                true
+            }
+            _ => false,
+        },
+        Some(SpiceLine::Analysis(name, opts)) => {
+            let op_only = |o: &[(String, String)]| o.len() == 1 && o[0].0 == "saveOppoint";
+            match t.analyses.iter_mut().find(|a| a.0 == name) {
+                None => {
+                    t.analyses.push((name, true, opts));
+                    true
+                }
+                // `.op` and `.dc` share ADE's one dc analysis.
+                Some(a) if name == "dc" && (op_only(&a.2) != op_only(&opts)) => {
+                    if op_only(&a.2) {
+                        let keep = std::mem::take(&mut a.2);
+                        a.2 = opts;
+                        a.2.extend(keep);
+                    } else {
+                        a.2.extend(opts);
+                    }
+                    true
+                }
+                Some(_) => false,
+            }
+        }
+        Some(SpiceLine::Model(f, sec)) => {
+            t.models.push((String::new(), path_to_ade(&f), sec));
+            true
+        }
+        Some(SpiceLine::Temp(v))
+            if !has_global(t, "temperature") && !vars.iter().any(|x| x == "temperature") =>
+        {
+            let v = if spice {
+                to_ael(&v, vars, cell, notes)
+            } else {
+                Some(v)
+            };
+            v.map(|v| t.vars.push(("temperature".into(), v, String::new())))
+                .is_some()
+        }
+        Some(SpiceLine::Temp(_)) => false,
+        Some(SpiceLine::Param(kvs)) => {
+            if kvs
+                .iter()
+                .any(|(k, _)| has_global(t, k) || vars.iter().any(|x| x == k))
+            {
+                return false;
+            }
+            let mut rows = Vec::new();
+            for (k, e) in kvs {
+                match to_ael(&e, vars, cell, notes) {
+                    Some(v) => rows.push((k, v, String::new())),
+                    None => return false,
+                }
+            }
+            t.vars.extend(rows);
+            true
+        }
+    }
+}
+
+/// What one line of an analysis block means.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum SpiceLine {
+    /// `.options errpreset=<preset>`: the transient analysis's accuracy preset.
+    ErrPreset(String),
+    /// An ADE analysis and its options (values already AEL).
+    Analysis(String, Vec<(String, String)>),
+    /// A model file and section (`""` for `.include`).
+    Model(String, String),
+    /// The temperature (Schemify expression for SPICE, AEL for Spectre lines).
+    Temp(String),
+    /// `.param k=v …` (Schemify expressions).
+    Param(Vec<(String, String)>),
+}
+
+/// AC/noise sweep options of `dec|lin n f1 f2` (values SPICE numbers).
+fn freq_opts(ty: &str, n: &str, f1: &str, f2: &str) -> Option<Vec<(String, String)>> {
+    let (f1, f2, n) = (
+        ael::number_to_ael(f1)?,
+        ael::number_to_ael(f2)?,
+        ael::number_to_ael(n)?,
+    );
+    let mut o = vec![kv("start", &f1), kv("stop", &f2)];
+    match ty.to_ascii_lowercase().as_str() {
+        "dec" => o.extend([
+            kv("incrType", "Logarithmic"),
+            kv("stepTypeLog", "Points Per Decade"),
+            kv("dec", &n),
+        ]),
+        "lin" => o.extend([
+            kv("incrType", "Linear"),
+            kv("stepTypeLin", "Number of Steps"),
+            kv("lin", &n),
+        ]),
+        _ => return None,
+    }
+    Some(o)
+}
+
+/// The maestro meaning of one SPICE line, `None` for lines §9.1 does not map (anything
+/// that does not parse exactly: extra words such as `uic`, expressions, two-source `.dc`).
+fn spice_line(line: &str) -> Option<SpiceLine> {
+    let w: Vec<&str> = line.split_whitespace().collect();
+    let num = |x: &str| ael::number_to_ael(x);
+    let dir = w.first()?.to_ascii_lowercase();
+    Some(match (dir.as_str(), &w[1..]) {
+        (".tran", [_, stop, rest @ ..]) if rest.len() <= 2 => {
+            let mut o = vec![kv("stop", &num(stop)?)];
+            if let Some(st) = rest.first() {
+                o.push(kv("start", &num(st)?));
+            }
+            if let Some(m) = rest.get(1) {
+                o.push(kv("maxstep", &num(m)?));
+            }
+            num(w[1])?;
+            SpiceLine::Analysis("tran".into(), o)
+        }
+        (".ac", [ty, n, f1, f2]) => SpiceLine::Analysis("ac".into(), freq_opts(ty, n, f1, f2)?),
+        (".dc", [src, a, b, st]) if is_ident(src) => SpiceLine::Analysis(
+            "dc".into(),
+            vec![
+                kv("sweep", "Component Parameter"),
+                kv("dev", &format!("/{src}")),
+                kv("param", "dc"),
+                kv("start", &num(a)?),
+                kv("stop", &num(b)?),
+                kv("step", &num(st)?),
+            ],
+        ),
+        (".op", []) => SpiceLine::Analysis("dc".into(), vec![kv("saveOppoint", "t")]),
+        (".noise", [out, src, ty, n, f1, f2]) if is_ident(src) => {
+            let node = out
+                .strip_prefix("v(")
+                .or_else(|| out.strip_prefix("V("))
+                .and_then(|x| x.strip_suffix(')'))
+                .filter(|x| is_ident(x))?;
+            let mut o = freq_opts(ty, n, f1, f2)?;
+            o.push(kv("oprobe", &format!("/{node}")));
+            o.push(kv("iprobe", &format!("/{src}")));
+            SpiceLine::Analysis("noise".into(), o)
+        }
+        (".temp", [t]) => SpiceLine::Temp((*t).to_owned()),
+        (".param", kvs) if !kvs.is_empty() => {
+            let mut out = Vec::new();
+            for p in kvs {
+                let (k, v) = p.split_once('=')?;
+                if !is_ident(k) || v.is_empty() || Program::compile(v, Mode::Scalar).is_err() {
+                    return None;
+                }
+                out.push((k.to_owned(), v.to_owned()));
+            }
+            SpiceLine::Param(out)
+        }
+        (".options" | ".option", [kv]) => {
+            let p = kv.strip_prefix("errpreset=")?;
+            SpiceLine::ErrPreset(
+                ERRPRESETS
+                    .iter()
+                    .find(|x| x.eq_ignore_ascii_case(p))?
+                    .to_string(),
+            )
+        }
+        (".include" | ".inc", [f]) => SpiceLine::Model(unquote_path(f), String::new()),
+        (".lib", [f, sec]) => SpiceLine::Model(unquote_path(f), (*sec).to_owned()),
+        _ => return None,
+    })
+}
+
+fn unquote_path(f: &str) -> String {
+    f.strip_prefix('"')
+        .and_then(|x| x.strip_suffix('"'))
+        .unwrap_or(f)
+        .to_owned()
+}
+
+/// What one line of a Spectre analysis block (the import's own form, §9.2) means.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(super) enum SpectreLine {
+    /// `<kind> <kind> k=v …`.
+    Analysis(String, Vec<(String, String)>),
+    /// `include "<file>" [section=<s>]`.
+    Model(String, String),
+    /// `temp options temp=<t>`.
+    Temp(String),
+}
+
+/// Splits a Spectre line into words; a `"…"` (with `\"` and `\\`) may sit inside a word.
+pub(super) fn spectre_words(line: &str) -> Option<Vec<String>> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut started = false;
+    let mut it = line.chars();
+    while let Some(ch) = it.next() {
+        match ch {
+            '"' => {
+                started = true;
+                loop {
+                    match it.next()? {
+                        '"' => break,
+                        '\\' => cur.push(it.next()?),
+                        o => cur.push(o),
+                    }
+                }
+            }
+            ch if ch.is_whitespace() => {
+                if started {
+                    out.push(std::mem::take(&mut cur));
+                    started = false;
+                }
+            }
+            ch => {
+                started = true;
+                cur.push(ch);
+            }
+        }
+    }
+    if started {
+        out.push(cur);
+    }
+    Some(out)
+}
+
+fn spectre_line(line: &str) -> Option<SpectreLine> {
+    let w = spectre_words(line)?;
+    let opts = |rest: &[String]| -> Option<Vec<(String, String)>> {
+        rest.iter()
+            .map(|p| {
+                p.split_once('=')
+                    .map(|(k, v)| kv(k, v))
+                    .filter(|(k, _)| is_ident(k))
+            })
+            .collect()
+    };
+    match w.as_slice() {
+        [inc, f, rest @ ..] if inc == "include" && rest.len() <= 1 => {
+            let sec = match rest.first() {
+                Some(x) => x.strip_prefix("section=")?.to_owned(),
+                None => String::new(),
+            };
+            Some(SpectreLine::Model(f.clone(), sec))
+        }
+        [a, b, t] if a == "temp" && b == "options" => {
+            Some(SpectreLine::Temp(t.strip_prefix("temp=")?.to_owned()))
+        }
+        [a, b, rest @ ..] if a == b && is_ident(a) => {
+            Some(SpectreLine::Analysis(a.clone(), opts(rest)?))
+        }
+        _ => None,
+    }
+}
+
+/// A bench value as AEL (§3.4: bench vars bare), its review reason noted; `None` (noted
+/// `expression`) when it has no AEL form.
+fn to_ael(e: &str, vars: &[String], cell: &str, notes: &mut Notes) -> Option<String> {
+    let r = ael::to_ael(e, |n| {
+        if vars.iter().any(|v| v == n) {
+            Name::BenchVar
+        } else {
+            Name::Unknown
+        }
+    });
+    match r {
+        Ok(t) => {
+            if let Some(why) = t.review {
+                notes.review(why, cell, format!("`{e}` → `{}`", t.text));
+            }
+            Some(t.text)
+        }
+        Err(why) => {
+            notes.review(why, cell, format!("`{e}` has no AEL form"));
+            None
+        }
+    }
+}
+
+/// The comma list of a sweep's points (run.md §2): `values` entries through §3.4, `lin`/
+/// `log` points as canonical number text.
+fn sweep_list(c: &Cell, r: u32, vars: &[String]) -> Result<String, String> {
+    let shape = |k: &str| {
+        c.doc
+            .find_attr(r, k)
+            .map(|a| c.doc.attr_values(a).collect::<Vec<_>>())
+    };
+    let points: Vec<String> = match (shape("values"), shape("lin"), shape("log")) {
+        (Some(v), None, None) => {
+            let mut out = Vec::new();
+            for e in v {
+                let t = ael::to_ael(e, |n| {
+                    if vars.iter().any(|x| x == n) {
+                        Name::BenchVar
+                    } else {
+                        Name::Unknown
+                    }
+                })
+                .map_err(|_| format!("`{e}` has no AEL form"))?;
+                if t.review.is_some() || top_level_split(&t.text).len() != 1 {
+                    return Err(format!("`{e}` has no comma-list form"));
+                }
+                out.push(t.text);
+            }
+            out
+        }
+        (None, Some(a), None) | (None, None, Some(a)) if a.len() == 3 => {
+            let bound = |x: &str| {
+                ael::fold_numeric(x)
+                    .and_then(|t| t.parse::<f64>().ok())
+                    .ok_or(format!("bound `{x}` is not a constant"))
+            };
+            let n: u32 = a[2]
+                .parse()
+                .ok()
+                .filter(|n| (1..=SWEEP_POINTS_MAX).contains(n))
+                .ok_or("count out of range")?;
+            grid(bound(a[0])?, bound(a[1])?, n, shape("log").is_some())
+                .ok_or("log bounds must be nonzero with one sign")?
+        }
+        _ => return Err("needs exactly one of values, lin, log".into()),
+    };
+    if points.len() < 2 {
+        return Err("one point is the var's value, not a sweep".into());
+    }
+    Ok(points.join(","))
+}
