@@ -364,7 +364,7 @@ fn disabled_vars_and_outputs_go_to_maestro_and_come_back() {
     assert_eq!(dis.lines().nth(1), Some("  enable false"), "{b}");
 
     // Both enabled again in Schemify: K by `varenable 1` over the stored disabled var, dis
-    // by its Plot set in the stored state.
+    // by `outenable 1` over its stored Plot off.
     let mut files = files;
     let edited = b.replace("var K 7\n  enable false\n", "var K 7\n");
     let (head, tail) = edited.split_once("output dis ").unwrap();
@@ -375,9 +375,13 @@ fn disabled_vars_and_outputs_go_to_maestro_and_come_back() {
     let (text, notes) = export(&files, "tb.shbench");
     let ve = records(&text, "varenable");
     assert_eq!((ve.len(), ve[0].str(0), ve[0].int(1)), (1, Ok("K"), Ok(1)));
-    assert!(records(&text, "outenable").is_empty(), "{}", notes.text());
-    let st = records(&text, "maestate")[0].text(1).unwrap();
-    assert!(!st.contains("Type=\"list\">nil</field>"), "{st}");
+    let oe = records(&text, "outenable");
+    assert_eq!(
+        (oe.len(), oe[0].str(0), oe[0].int(1)),
+        (1, Ok("dis"), Ok(1)),
+        "{}",
+        notes.text()
+    );
     i.files.insert("/t/e.sfyx".into(), text);
     let ok = run(&mut i, r#"(SfyImport "/t/e.sfyx" ?overwrite t)"#);
     assert!(ok.truthy(), "{}", i.files["/t/e.sfyx.log"]);

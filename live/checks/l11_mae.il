@@ -134,7 +134,8 @@ chkThat("schemify-interop virtuoso-export (edited)" chkCliRun("export2" sprintf(
 chkC = strcat(chkDir "/proj/c.sfyx")
 system(sprintf(nil "cp %s %s/l11m_c.sfyx" chkC chkOut))
 chkThat("load the edit" SfyImport(chkC ?overwrite t))
-system(sprintf(nil "cp %s.log %s/l11m_c.log" chkC chkOut))
+system(sprintf(nil "cp %s.log %s/l11m_c.log; cp %s/active.state %s/l11m_after2.state; ls -la /tmp/sfy_%s_maesdb > %s/l11m_scratch.txt 2>&1"
+  chkC chkOut chkView chkOut getShellEnvVar("USER") chkOut))
 chkAfter2 = chkLine("after2" chkRead())
 chkThat("after2: A is 2 and dis Plot on, R1, start and K's disable kept"
   chkAfter2 == list(car(chkBefore) cadr(chkBefore) caddr(chkBefore) "2" '(("dis" t) ("vmax" t))))

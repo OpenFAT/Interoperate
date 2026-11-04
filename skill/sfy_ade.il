@@ -616,13 +616,8 @@
 (procedure (SfyAdeFill test tlib cell sess)
   (let ((restore sfyAdeRestore) (m (cadr (car test))) (name nil) (sdb nil) (models nil) (defs nil) (specs nil)
         (used nil) (opts nil) (f nil) (line nil) (c nil) (mh nil) (mn nil) (id nil) (p nil)
-        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil)
-        (off nil))
+        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil))
     (setq name (nth 1 m))
-    ;; The outputs created with Plot off (outenable 0).
-    (setq off (mapcar (lambda (lr) (nth 1 (cadr lr)))
-                (setof lr (cdr test)
-                  (and (equal (car (cadr lr)) "outenable") (equal (nth 2 (cadr lr)) 0)))))
     (prog ()
       (setq have (member name (car (errset (maeGetSetup ?session sess)))))
       (when (and have (not restore))
@@ -691,8 +686,12 @@
             ("varenable"
               (setq c (and sdb (axlGetVar sdb (nth 0 f))))
               (and c (axlSetEnabled c (equal (nth 1 f) 1))))
-            ;; An output's Plot check box, given to the output when it is created.
-            ("outenable" t)
+            ;; An output's Plot check box (spec 9.11), on the session's own struct of the
+            ;; output: axlImportSetup restores Plot from elsewhere than active.state (live).
+            ("outenable"
+              (setq c (car (setof so (car (errset (maeGetTestOutputs name ?session sess)))
+                             (equal (getSGq so name) (nth 0 f)))))
+              (and c (progn (setSGq c (equal (nth 1 f) 1) plot) t)))
             ;; A device parameter of the test's design, "lib/cell/view/inst[/inst...]/prop"
             ;; (the form the probe and lane L1's live check set it by), globally or in one
             ;; corner.
@@ -718,10 +717,8 @@
               (cond
                 ((not (member (nth 0 f) old))
                   (if (equal (nth 1 f) "net")
-                    (maeAddOutput (nth 0 f) name ?outputType "net" ?signalName (nth 2 f)
-                      ?plot (not (member (nth 0 f) off)) ?session sess)
-                    (maeAddOutput (nth 0 f) name ?outputType "point" ?expr (nth 2 f)
-                      ?plot (not (member (nth 0 f) off)) ?session sess)))
+                    (maeAddOutput (nth 0 f) name ?outputType "net" ?signalName (nth 2 f) ?session sess)
+                    (maeAddOutput (nth 0 f) name ?outputType "point" ?expr (nth 2 f) ?session sess)))
                 ((member (nth 2 f) (SfyAdeOutTexts sess name (nth 0 f))) t)
                 (t
                   (SfyRefuse line (sprintf nil "maestro %s: output %s was changed in Schemify; Maestro keeps its own (edit it there)"

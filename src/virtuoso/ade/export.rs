@@ -398,7 +398,7 @@ fn export_test<F: Fn(&str) -> Option<InstInfo>>(
         .collect();
     for &r in &outputs {
         let (name, e) = (c.field(r, 0), c.field(r, 1));
-        // §9.11: Plot off (`patch_states` sets a stored state's flag).
+        // §9.11: Plot off (`out_flags` compares it with a stored state).
         if c.attr(r, "enable") == Some("false") {
             t.out_enable.push((name.to_owned(), false));
         }

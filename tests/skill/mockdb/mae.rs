@@ -232,6 +232,9 @@ pub struct Mae {
     /// it gives the session nothing the saved setup lacks.
     written: BTreeMap<String, String>,
     handles: Vec<Handle>,
+    /// `(object, session, test, output)` of each struct `maeGetTestOutputs` answered: a
+    /// `plot` set on one is the output's Plot (live: the session's own struct).
+    out_objs: Vec<(u32, usize, String, String)>,
 }
 
 type Kw = Vec<(String, V)>;
@@ -333,6 +336,19 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
         return None;
     }
     db.mae.calls.push(name.to_owned());
+    for (id, k, t, o) in db.mae.out_objs.clone() {
+        let on = db.get_attr(id, "plot").truthy();
+        if let Some(x) = db.mae.sessions.get_mut(k).and_then(Option::as_mut)
+            && let Some(out) = x
+                .setup
+                .tests
+                .iter_mut()
+                .find(|x| x.name == t)
+                .and_then(|x| x.outputs.iter_mut().find(|x| x.name == o))
+        {
+            out.off = !on;
+        }
+    }
     let (a, kw) = split(args);
     let s0 = |i: usize| st(a.get(i)).unwrap_or_default();
     let m = &mut db.mae;
@@ -736,8 +752,10 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                         // `o~>signal o~>expression` live); `~>expr`/`~>signalName` are nil.
                         ("signal", opt(&o.signal)),
                         ("expression", opt(&o.expr)),
+                        ("plot", tf(!o.off)),
                     ],
                 );
+                db.mae.out_objs.push((id, k, s0(0), o.name.clone()));
                 objs.push(V::Obj(id));
             }
             Ok(V::list(objs))

@@ -187,8 +187,8 @@ pub fn with_stored(c: &Cell, records: &mut Vec<Record>) {
         }
     }
     records.splice(1..1, extra);
-    // §9.11: the outputs' enable into the stored states (lane L11).
-    disabled::patch_states(c, records);
+    // §9.11: the outputs' enable where it differs from the stored states (lane L11).
+    disabled::out_flags(c, records);
 }
 
 /// Export side, after the image import: when bench `c` carries its Maestro setup

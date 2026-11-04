@@ -4,9 +4,11 @@
 //! added with `?plot nil` gets no value in the `.rdb` and is `visible 0` there). The flag
 //! lives only in the test's state, as the `plot` field of its `sevOutputStruct`
 //! (`<field Name="plot" Type="list">nil</field>`), which `maestate` carries: the import reads
-//! it there, and the export writes a changed flag back into the stored state, which the
-//! loader restores before the session opens (G40). An output the stored state does not have
-//! goes as `outenable <name> 0`, which the loader passes to `maeAddOutput ?plot`.
+//! it there. The export sends `outenable <name> 0|1` where the bench differs from the
+//! stored state, and the loader sets the output's `plot` (`maeGetTestOutputs` answers the
+//! session's own structs). Not through the state: `axlImportSetup … 'overwrite` gives the
+//! tests their states from elsewhere than the view's `active.state` (live ICADVM20.1, probe
+//! l11: a Plot set there came back off; G40 holds for what the session reads at open only).
 
 use super::*;
 
@@ -62,69 +64,51 @@ pub(super) fn plot_off(el: &str) -> Vec<String> {
         .collect()
 }
 
-/// `el` with the plot field of each output in `set` (`(name, on)`) set, where it differs.
-fn set_plots(el: &str, set: &[(&str, bool)]) -> Option<String> {
-    let at: Vec<(usize, bool)> = plots(el)
-        .into_iter()
-        .filter_map(|(n, k, on)| {
-            let want = set.iter().find(|s| s.0 == n)?.1;
-            (want != on).then_some((k, want))
+/// Export side, after `with_stored`: in `records` (one view's tests, each from its
+/// `maestro` record), one `outenable <name> 0|1` per output whose enable in bench `c`
+/// differs from its Plot in the test's stored state (`maestate`), or that is disabled and
+/// has no stored state; none for the others.
+pub(super) fn out_flags(c: &Cell, records: &mut Vec<Record>) {
+    let states: Vec<(String, Vec<(String, bool)>)> = records
+        .iter()
+        .filter(|r| r.tag == "maestate")
+        .filter_map(|r| {
+            let el = r.text(1).ok()?;
+            let plots = plots(&el).into_iter().map(|p| (p.0, p.2)).collect();
+            Some((r.str(0).ok()?.to_owned(), plots))
         })
         .collect();
-    if at.is_empty() {
-        return None;
-    }
-    let mut out = String::with_capacity(el.len());
-    for (k, l) in el.split_inclusive('\n').enumerate() {
-        match at.iter().find(|x| x.0 == k) {
-            Some(&(_, on)) => {
-                let indent = &l[..l.len() - l.trim_start().len()];
-                let v = if on {
-                    "Type=\"symbol\">t"
-                } else {
-                    "Type=\"list\">nil"
-                };
-                out.push_str(&format!("{indent}<field Name=\"plot\" {v}</field>\n"));
-            }
-            None => out.push_str(l),
-        }
-    }
-    Some(out)
-}
-
-/// Export side, after `with_stored`: each stored `maestate` of `records` (one view's tests,
-/// each from its `maestro` record) with the Plot of every output the test sends set to
-/// bench `c`'s enable of that output.
-pub(super) fn patch_states(c: &Cell, records: &mut [Record]) {
-    let mut want: Vec<(String, String, bool)> = Vec::new();
+    let mut out: Vec<Record> = Vec::with_capacity(records.len());
+    let mut flags: Vec<Record> = Vec::new();
     let mut test = String::new();
-    for r in records.iter() {
+    for r in std::mem::take(records) {
         match r.tag.as_str() {
-            "maestro" => test = r.str(0).unwrap_or("").to_owned(),
+            "outenable" => continue,
+            "maestro" => {
+                out.append(&mut flags);
+                test = r.str(0).unwrap_or("").to_owned();
+            }
             "output" => {
-                let Ok(n) = r.str(0) else { continue };
+                let n = r.str(0).unwrap_or("").to_owned();
                 let on = c
                     .records(RecordKind::Output)
                     .find(|&k| c.field(k, 0) == n)
                     .is_none_or(|k| c.attr(k, "enable") != Some("false"));
-                want.push((test.clone(), n.to_owned(), on));
+                let was = states
+                    .iter()
+                    .find(|s| s.0 == test)
+                    .and_then(|s| s.1.iter().find(|p| p.0 == n))
+                    .map(|p| p.1);
+                if was.map_or(!on, |w| w != on) {
+                    flags.push(Record::new("outenable", vec![s(&n), i(i32::from(on))]));
+                }
             }
             _ => {}
         }
+        out.push(r);
     }
-    for r in records.iter_mut().filter(|r| r.tag == "maestate") {
-        let (Ok(t), Ok(el)) = (r.str(0).map(str::to_owned), r.text(1)) else {
-            continue;
-        };
-        let set: Vec<(&str, bool)> = want
-            .iter()
-            .filter(|w| w.0 == t)
-            .map(|w| (w.1.as_str(), w.2))
-            .collect();
-        if let Some(el) = set_plots(&el, &set) {
-            r.fields[1] = text(&el);
-        }
-    }
+    out.append(&mut flags);
+    *records = out;
 }
 
 #[cfg(test)]
@@ -134,24 +118,15 @@ mod tests {
     const EL: &str = "\t<Test Name=\"T1\">\n\t\t<field Name=\"outputList\" Type=\"skillList\">\n\t\t\t<field Name=\"outputList_0\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"vmax\"</field>\n\t\t\t\t<field Name=\"waveSpec\" Type=\"skillDpl\">\n\t\t\t\t\t<field Name=\"plot\" Type=\"list\">nil</field>\n\t\t\t\t</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t\t<field Name=\"outputList_1\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"dis\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"list\">nil</field>\n\t\t\t</field>\n\t\t</field>\n\t</Test>\n";
 
     #[test]
-    fn plot_flags_read_and_set_by_output_only() {
+    fn plot_flags_read_by_output_only() {
+        // The nested `waveSpec` plot field is not the output's.
         assert_eq!(plot_off(EL), ["dis"]);
-        let on = set_plots(EL, &[("dis", true), ("vmax", false)]).unwrap();
-        assert_eq!(plot_off(&on), ["vmax"]);
-        // Only the two struct-level lines changed; the nested field kept its text.
-        let changed = EL.lines().zip(on.lines()).filter(|(a, b)| a != b).count();
-        assert_eq!((changed, EL.lines().count()), (2, on.lines().count()));
-        assert_eq!(set_plots(&on, &[("dis", true)]), None);
         assert_eq!(
-            set_plots(
-                &set_plots(&on, &[("dis", false), ("vmax", true)]).unwrap(),
-                &[]
-            ),
-            None
-        );
-        assert_eq!(
-            set_plots(&on, &[("dis", false), ("vmax", true)]).unwrap(),
-            EL
+            plot_off(&EL.replace(
+                "list\">nil</field>\n\t\t\t</field>\n\t\t</field>",
+                "symbol\">t</field>\n\t\t\t</field>\n\t\t</field>"
+            )),
+            Vec::<String>::new()
         );
     }
 }

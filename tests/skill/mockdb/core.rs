@@ -1589,6 +1589,8 @@ impl MockDb {
             | ("inst", "orient" | "xy" | "name")
             | ("textDisplay", "orient" | "xy")
             | ("cellView", "DBUPerUU" | "userUnits")
+            // An output's Plot check box (live: maeGetTestOutputs answers the session's struct).
+            | ("sevOutputStruct", "plot")
             | ("cdf", _) => {
                 if matches!(attr, "startAngle" | "stopAngle") && num(&v).is_none() {
                     return Err(format!("*Error* {attr}: expected a number"));
