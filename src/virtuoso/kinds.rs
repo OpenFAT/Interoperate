@@ -58,7 +58,8 @@ pub const KINDS: &[(&str, Scope)] = &[
     // ---- L3: config (read::dump files it into its cell, config::import maps it)
     ("config", Scope::Cell),
     // ---- L4: job, value, pass
-    // ---- L7: ADE L states
+    // ---- L7: ADE L states (`adel`, `adelfile`: `adel::split` turns them into a maestro
+    // test before the reader sees them, so they have no row)
     // ---- L8: layout
 ];
 

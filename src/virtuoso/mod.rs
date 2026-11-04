@@ -2,7 +2,8 @@
 //!
 //! Spine ([`export`], [`import`]): see the spec's §1 table. Submodules: `read` (records →
 //! Design), `write` (Design → records), `ael` (values, §3.4), `devices` (§6.5–§6.6),
-//! `ade` (maestro ⇄ bench, §9), `kinds` (the record kinds, §4.2), and the lane slots
+//! `ade` (maestro ⇄ bench, §9), `adel` (ADE L states, §9.8), `kinds` (the record kinds,
+//! §4.2), and the lane slots
 //! `config` (config views) and `results` (maestro results), empty so far.
 
 use schemify_format::{Document, RecordKind};
@@ -13,6 +14,7 @@ use crate::merge;
 use crate::notes::Notes;
 
 pub mod ade;
+pub mod adel;
 pub mod ael;
 pub mod characterize;
 pub mod config;
@@ -58,7 +60,9 @@ pub fn export(
     map: &Mapping,
     opts: &ExportOptions,
 ) -> Result<Export, Vec<String>> {
-    write::export(d, tops, map, opts)
+    let mut e = write::export(d, tops, map, opts)?;
+    adel::restore(d, &mut e);
+    Ok(e)
 }
 
 /// Import settings.
@@ -92,7 +96,7 @@ pub struct Import {
 ///
 /// The text is not a complete `.sfyx` file.
 pub fn import_targets(sfyx: &str) -> Result<Vec<String>, Vec<String>> {
-    read::targets(sfyx)
+    read::targets(&adel::split(sfyx)?.0)
 }
 
 /// Converts a `.sfyx` dump into Schemify files, merging with `existing` (§7.3).
@@ -106,7 +110,10 @@ pub fn import(
     map: &Mapping,
     opts: &ImportOptions,
 ) -> Result<Import, Vec<String>> {
-    read::import(sfyx, existing, map, opts)
+    let (sfyx, states) = adel::split(sfyx)?;
+    let mut imp = read::import(&sfyx, existing, map, opts)?;
+    adel::attach(&states, &mut imp, existing, opts);
+    Ok(imp)
 }
 
 /// The part of a cell one Virtuoso cellview carries.
