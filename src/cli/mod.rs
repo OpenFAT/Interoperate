@@ -13,12 +13,14 @@
 //! | `pdk-scan` | `pdk_scan` |
 //! | `maestro-results` | `maestro_results` |
 //! | `layout-export`, `layout-import` | `layout` |
+//! | `ciel` | `ciel` |
 
 use std::path::{Path, PathBuf};
 
 use crate::report::Class;
 use crate::{Options, check_output, spice, tcl, tech, translate_library};
 
+mod ciel;
 mod jobs;
 mod layout;
 mod maestro_results;
@@ -28,6 +30,7 @@ mod pdk_scan;
 mod virtuoso_refresh;
 mod xschem_import;
 
+use ciel::*;
 use jobs::*;
 use layout::*;
 use maestro_results::*;
@@ -63,6 +66,8 @@ pub fn run(args: &[String]) -> u8 {
         Some((cmd, rest)) if cmd == "maestro-results" => maestro_results(rest),
         // Lane L8: layout through KLayout.
         Some((cmd, rest)) if cmd == "layout-export" || cmd == "layout-import" => layout(cmd, rest),
+        // PDK-Manager's kit installs: ciel from PATH, else a pinned private copy.
+        Some((cmd, rest)) if cmd == "ciel" => ciel(rest),
         _ => {
             eprintln!("usage: schemify-interop xschem-import <args>...\n{JOB_USAGE}");
             2
