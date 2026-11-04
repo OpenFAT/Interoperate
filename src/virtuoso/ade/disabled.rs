@@ -18,11 +18,13 @@ fn field<'t>(t: &'t str, key: &str) -> Option<&'t str> {
     rest.split_once("\">")?.1.strip_suffix("</field>")
 }
 
+/// An output struct being read: (indent of its line, name, (plot field's line, plot on)).
+type Open = (usize, Option<String>, Option<(usize, bool)>);
+
 /// Each output struct of state element `el`: `(name, line of its plot field, plot on)`.
 fn plots(el: &str) -> Vec<(String, usize, bool)> {
     let mut out = Vec::new();
-    // (indent of the struct line, name, (plot line, on)).
-    let mut cur: Option<(usize, Option<String>, Option<(usize, bool)>)> = None;
+    let mut cur: Option<Open> = None;
     for (k, l) in el.split_inclusive('\n').enumerate() {
         let t = l.trim();
         let indent = l.len() - l.trim_start().len();
