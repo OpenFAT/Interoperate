@@ -1072,8 +1072,11 @@
 (procedure (SfyLoadParams sfyInst sfyCdf sfyG)
   (let ((sfySent nil) (sfyDone nil) (sfyLocked nil) (sfyLr nil) (sfyTy nil) (sfyV nil)
         (sfyNow nil) (sfyNames nil) (sfyBad nil) (sfyFresh nil) (sfyQ nil))
+    ;; A property of a type the CDF does not store (an ILExpr such as iPar("w")*2) keeps
+    ;; its type: dbReplaceProp, even when it names a CDF parameter.
     (foreach sfyR sfyG
-      (if (cdfFindParamByName sfyCdf (nth 2 (cadr sfyR)))
+      (if (and (cdfFindParamByName sfyCdf (nth 2 (cadr sfyR)))
+               (not (member (nth 3 (cadr sfyR)) (list "time" "ILExpr" "NLPExpr"))))
         (setq sfySent (cons sfyR sfySent))
         (SfyReplaceProp sfyInst sfyR)))
     (foreach sfyP (getSGq sfyCdf parameters)

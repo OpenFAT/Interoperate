@@ -50,6 +50,7 @@
     (dbReplaceProp i0 "nf" "int" 2)
     (dbReplaceProp i0 "wf" "float" 0.0000015)
     (dbReplaceProp i0 "note" "ILExpr" "1+2")
+    (dbReplaceProp i0 "l" "ILExpr" "iPar(\"w\")*2")
     (dbReplaceProp i0 "stamp" "time" "Nov  4 12:00:00 2026")
     (dbReplaceProp i0 "count" "int" 7)
     (dbReplaceProp i0 "tag" "string" "x")
