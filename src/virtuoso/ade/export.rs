@@ -1,6 +1,7 @@
-//! A bench → one maestro test's records ([`export`], spec `interop.md` §9.1): its analysis
-//! block's lines (SPICE or Spectre) → analyses, model files, temperature and params; vars
-//! and sweeps; corners; outputs and specs.
+//! A bench → its maestro tests' records ([`export`], spec `interop.md` §9.1): one test, or
+//! one per `test` record; per test its analysis block's lines (SPICE or Spectre) →
+//! analyses, model files, temperature and params; vars and sweeps, the test's own values;
+//! corners; device parameters; outputs and specs.
 
 use super::*;
 
@@ -10,7 +11,8 @@ const SPICE_LANGS: [&str; 3] = ["spice", "ngspice", "xyce"];
 /// One bench's export: its maestro records and its OCEAN script (§9.6).
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct BenchExport {
-    /// The maestro records in §9 order; empty for a bench with no simulation setup.
+    /// The maestro records in §9 order, test after test (each from its `maestro` record);
+    /// empty for a bench with no simulation setup.
     pub records: Vec<Record>,
     /// The bench cell's name: the script's name and results directory.
     pub cell: String,
@@ -21,12 +23,26 @@ pub struct BenchExport {
     pub defns: Vec<(String, String)>,
 }
 
-/// The maestro records and the OCEAN script of bench cell `ci` (§9.1, §9.6), the
+/// One test's export: its table, its sweeps, outputs and plots as the OCEAN script takes
+/// them.
+struct TestExport {
+    t: Test,
+    swept: Vec<(String, String)>,
+    ocean_outs: Vec<(String, String)>,
+    plots: Vec<(String, String)>,
+}
+
+/// The maestro records and the OCEAN script of bench cell `ci` (§9.1, §9.6), each
 /// `maestro` record naming Virtuoso library `vlib` (the plan's library of the cell) and the
-/// cell's name. `inst` answers the output translator's instance questions
-/// ([`InstInfo`]). Bench content §9.1 does not map is reported in `notes`
-/// (`needs_review:` `code sweep output spec plot expression design-variable montecarlo
-/// optimize config corner`); the caller stashes it (§7.3).
+/// cell's name. A bench without `test` records is one test; with them, one test per
+/// record (by name), each running its `code` blocks and outputs, with its `set` lines as
+/// its own var values (`testvar`), `enable false` as `testenable`, and `config` as its
+/// design view. The bench's device parameters (`param`, corner `param`) go with the first
+/// test. A bench whose header keeps the view's setup XML (§9.7) sends a test's enable and
+/// a parameter only when they differ from it. `inst` answers the output translator's
+/// instance questions ([`InstInfo`]). Bench content §9.1 does not map is reported in
+/// `notes` (`needs_review:` `code sweep output spec plot expression design-variable
+/// montecarlo optimize config corner`); the caller stashes it (§7.3).
 ///
 /// # Panics
 ///
@@ -64,21 +80,198 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         return BenchExport::default();
     }
     let cell = c.path.as_str();
+    let stored = c
+        .attr_values(0, VMAESDB)
+        .get(1)
+        .and_then(|x| mae_xml::Setup::from_xml(x).ok());
+    let mut tests: Vec<u32> = c.records(RecordKind::Test).collect();
+    tests.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
+    let mut done: Vec<TestExport> = Vec::new();
+    if tests.is_empty() {
+        done.push(export_test(
+            d,
+            ci,
+            vlib,
+            &inst,
+            None,
+            stored.as_ref(),
+            notes,
+        ));
+    }
+    for (k, &r) in tests.iter().enumerate() {
+        // Each test sees the bench's shared setup: a note about it is made once.
+        let mut own = Notes::default();
+        let mut te = export_test(d, ci, vlib, &inst, Some(r), stored.as_ref(), &mut own);
+        if k > 0 {
+            te.t.params.clear();
+        }
+        for n in own.rows {
+            if !notes.rows.contains(&n) {
+                notes.add(&n.class, &n.cell, n.detail);
+            }
+        }
+        if done.iter().any(|x| x.t.name == te.t.name) {
+            notes.review(
+                "config",
+                cell,
+                format!(
+                    "test {}: a second test of that maestro name; not sent",
+                    te.t.name
+                ),
+            );
+            continue;
+        }
+        done.push(te);
+    }
+    // With tests, a block or output none of them lists is no test's (format.md rank 6).
+    for r in c.records(RecordKind::Code) {
+        let b = c.field(r, 0);
+        let listed = |t: u32| {
+            let l = attr_words(c, t, "code");
+            l.contains(&b) || (l.is_empty() && !attr_words(c, t, VNONE).contains(&"code"))
+        };
+        if !tests.is_empty() && !tests.iter().any(|&t| listed(t)) {
+            notes.review(
+                "code",
+                cell,
+                format!("code {b} {}: no test runs it; not sent", c.field(r, 1)),
+            );
+        }
+    }
+    for r in c.records(RecordKind::Output) {
+        let o = c.field(r, 0);
+        let listed = |t: u32| {
+            let l = attr_words(c, t, "output");
+            l.contains(&o) || (l.is_empty() && !attr_words(c, t, VNONE).contains(&"output"))
+        };
+        if !tests.is_empty() && !tests.iter().any(|&t| listed(t)) {
+            notes.review(
+                "output",
+                cell,
+                format!("output {o}: no test runs it; not sent"),
+            );
+            if c.records(RecordKind::Spec).any(|x| c.field(x, 0) == o) {
+                notes.review("spec", cell, format!("spec {o}: no test runs its output"));
+            }
+        }
+    }
+    for (k, reason) in [
+        (RecordKind::Montecarlo, "montecarlo"),
+        (RecordKind::Optimize, "optimize"),
+    ] {
+        for r in c.records(k) {
+            notes.review(
+                reason,
+                cell,
+                format!("{reason} {}: not mapped (§9.3)", c.field(r, 0)),
+            );
+        }
+    }
+    // The OCEAN script runs one test: the first enabled one.
+    let pick = done
+        .iter()
+        .position(|x| x.t.enable != Some(false))
+        .unwrap_or(0);
+    if done.len() > 1 {
+        notes.review(
+            "config",
+            cell,
+            format!(
+                "the OCEAN script runs test {} only (maestro has all {})",
+                done[pick].t.name,
+                done.len()
+            ),
+        );
+    }
+    let te = &done[pick];
+    let default_corner = c
+        .header("corner")
+        .map(str::to_owned)
+        .or_else(|| te.t.corners.first().map(|x| x.0.clone()));
+    if te.t.corners.len() > 1 {
+        notes.review(
+            "corner",
+            cell,
+            format!(
+                "the OCEAN script runs corner {} only (maestro has all {})",
+                default_corner.as_deref().unwrap_or(""),
+                te.t.corners.len()
+            ),
+        );
+    }
+    let ocean = ocean_script(
+        &te.t,
+        cell,
+        &te.swept,
+        &te.ocean_outs,
+        &te.plots,
+        default_corner.as_deref(),
+        notes,
+    );
+    BenchExport {
+        records: done.iter().flat_map(|x| x.t.records()).collect(),
+        cell: te.t.cell.clone(),
+        ocean,
+        defns: te.t.defns.clone(),
+    }
+}
+
+/// The words of every attribute `key` of record `r`, in order (`output a b`, `output c`).
+fn attr_words<'c>(c: &'c Cell, r: u32, key: &str) -> Vec<&'c str> {
+    c.doc
+        .attrs(r)
+        .filter(|&a| c.doc.attr_key(a) == key)
+        .flat_map(|a| c.doc.attr_values(a))
+        .collect()
+}
+
+/// One maestro test of bench `ci` (§9.1): the implicit one (`rec` `None`), else that of
+/// `test` record `rec`; `stored` is the view's setup the bench header keeps (§9.7).
+fn export_test<F: Fn(&str) -> Option<InstInfo>>(
+    d: &Design,
+    ci: usize,
+    vlib: &str,
+    inst: &F,
+    rec: Option<u32>,
+    stored: Option<&mae_xml::Setup>,
+    notes: &mut Notes,
+) -> TestExport {
+    let c = &d.cells[ci];
+    let cell = c.path.as_str();
     let vars: Vec<String> = c
         .records(RecordKind::Var)
         .map(|r| c.field(r, 0).to_owned())
         .collect();
-    let src = analysis_source(c);
+    // The test's code blocks and outputs (default: every one of the bench).
+    let none = |r: u32, key: &str| attr_words(c, r, VNONE).contains(&key);
+    let codes_of = rec.map(|r| (attr_words(c, r, "code"), none(r, "code")));
+    let outs_of = rec.map(|r| (attr_words(c, r, "output"), none(r, "output")));
+    let listed = |of: &Option<(Vec<&str>, bool)>, name: &str| {
+        of.as_ref()
+            .is_none_or(|(l, none)| l.contains(&name) || (l.is_empty() && !none))
+    };
+    let runs = |name: &str| listed(&codes_of, name);
+    let src = analysis_source(c, &runs);
+    let name = match rec {
+        Some(r) => safe_name(c.field(r, 0)),
+        None => safe_name(src.map_or(c.name.as_str(), |r| c.field(r, 0))),
+    };
     let mut t = Test {
-        name: safe_name(src.map_or(c.name.as_str(), |r| c.field(r, 0))),
+        name,
         lib: vlib.to_owned(),
         cell: c.name.clone(),
         view: "schematic".into(),
         sim: "spectre".into(),
         ..Test::default()
     };
+    if let Some(r) = rec {
+        test_attrs(c, r, &vars, stored, &mut t, notes);
+    }
     // Code blocks: the analysis block's lines, spectre text as definition files.
-    let mut codes: Vec<u32> = c.records(RecordKind::Code).collect();
+    let mut codes: Vec<u32> = c
+        .records(RecordKind::Code)
+        .filter(|&r| runs(c.field(r, 0)))
+        .collect();
     codes.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
     for r in codes {
         let (name, lang) = (c.field(r, 0), c.field(r, 1));
@@ -182,6 +375,15 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
                         t.vars.push(("temperature".into(), v, corner.clone()));
                     }
                 }
+                ("param", [p, e]) => match (param_to_virtuoso(p), to_ael(e, &vars, cell, notes)) {
+                    (Some(p), Some(v)) => t.params.push((p, v, corner.clone())),
+                    (None, _) => notes.review(
+                        "config",
+                        cell,
+                        format!("corner {corner} param {p}: no Virtuoso instance path"),
+                    ),
+                    _ => {}
+                },
                 ("enable", _) => {}
                 (k, _) => notes.review(
                     "code",
@@ -197,9 +399,14 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         vars: &vars,
         letter,
         inst,
+        test: &t.name.clone(),
     };
     let mut ocean_outs: Vec<(String, String)> = Vec::new();
-    for r in c.records(RecordKind::Output) {
+    let outputs: Vec<u32> = c
+        .records(RecordKind::Output)
+        .filter(|&r| listed(&outs_of, c.field(r, 0)))
+        .collect();
+    for &r in &outputs {
         let (name, e) = (c.field(r, 0), c.field(r, 1));
         if c.attr(r, "enable") == Some("false") {
             notes.review(
@@ -237,7 +444,7 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         }
     }
     let mut plots: Vec<(String, String)> = Vec::new();
-    for r in c.records(RecordKind::Output) {
+    for &r in &outputs {
         let (name, Some(x)) = (c.field(r, 0), c.attr(r, "vs")) else {
             continue;
         };
@@ -261,6 +468,9 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
     }
     for r in c.records(RecordKind::Spec) {
         let out = c.field(r, 0);
+        if !outputs.iter().any(|&o| c.field(o, 0) == out) {
+            continue; // another test's
+        }
         if !t.outputs.iter().any(|o| o.0 == out) {
             notes.review("spec", cell, format!("spec {out}: its output does not map"));
             continue;
@@ -296,20 +506,42 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
             }
         }
     }
-    for (k, reason) in [
-        (RecordKind::Montecarlo, "montecarlo"),
-        (RecordKind::Optimize, "optimize"),
-        (RecordKind::Config, "config"),
-        (RecordKind::Test, "test"),
-        (RecordKind::BenchParam, "param"),
-    ] {
-        for r in c.records(k) {
-            notes.review(
-                reason,
+    // Device parameters: the bench's `param` records.
+    for r in c.records(RecordKind::BenchParam) {
+        let (p, e) = (c.field(r, 0), c.field(r, 1));
+        match (param_to_virtuoso(p), to_ael(e, &vars, cell, notes)) {
+            (Some(p), Some(v)) => t.params.push((p, v, String::new())),
+            (None, _) => notes.review(
+                "config",
                 cell,
-                format!("{reason} {}: not mapped (§9.3)", c.field(r, 0)),
-            );
+                format!("param {p}: no Virtuoso instance path"),
+            ),
+            _ => {}
         }
+    }
+    // A view from Virtuoso keeps its parameters in the setup XML: only a changed or new one
+    // is sent, and one the bench no longer has stays.
+    if let Some(su) = stored {
+        let mut old: Vec<(String, String, String)> = Vec::new();
+        let scoped = su.params.iter().map(|p| (p, "")).chain(
+            su.corners
+                .iter()
+                .flat_map(|k| k.params.iter().map(move |p| (p, k.name.as_str()))),
+        );
+        for (p, sc) in scoped {
+            let loc = p.location.splitn(4, '/').nth(3).unwrap_or("");
+            old.push((format!("{loc}/{}", p.name), p.value.clone(), sc.to_owned()));
+        }
+        for (p, _, sc) in &old {
+            if !t.params.iter().any(|x| &x.0 == p && &x.2 == sc) {
+                notes.review(
+                    "config",
+                    cell,
+                    format!("maestro parameter {p} ({sc}) is not in the bench: Maestro keeps it"),
+                );
+            }
+        }
+        t.params.retain(|x| !old.contains(x));
     }
     for rows in [
         t.vars.len(),
@@ -317,49 +549,143 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         t.outputs.len(),
         t.specs.len(),
         t.defns.len(),
+        t.own.len(),
+        t.params.len(),
     ] {
         assert!(
             rows <= ROWS_MAX,
             "{cell}: a bench holds at most 2^22 records"
         );
     }
-    let default_corner = c
-        .header("corner")
-        .map(str::to_owned)
-        .or_else(|| t.corners.first().map(|x| x.0.clone()));
-    if t.corners.len() > 1 {
+    TestExport {
+        t,
+        swept,
+        ocean_outs,
+        plots,
+    }
+}
+
+/// A bench `param` path (`inst[/inst…]/prop`, Schemify instance names) as Virtuoso's; `None`
+/// when an instance name has no Virtuoso form.
+fn param_to_virtuoso(p: &str) -> Option<String> {
+    let (insts, prop) = p.rsplit_once('/')?;
+    let insts: Vec<String> = insts
+        .split('/')
+        .map(crate::profile::inst_to_virtuoso)
+        .collect::<Option<_>>()?;
+    (!prop.is_empty()).then(|| format!("{}/{prop}", insts.join("/")))
+}
+
+/// The attributes of `test` record `r` onto `t` (format.md rank 6): `set` → its own var
+/// values, `enable false` → `testenable` (with a stored setup, only when it differs),
+/// `config` → its design view; `omit`, a `corner` selection and `design` have no record
+/// and are reported unless the stored setup already holds them.
+fn test_attrs(
+    c: &Cell,
+    r: u32,
+    vars: &[String],
+    stored: Option<&mae_xml::Setup>,
+    t: &mut Test,
+    notes: &mut Notes,
+) {
+    let cell = c.path.as_str();
+    let name = t.name.clone();
+    let mut omit: Vec<&str> = Vec::new();
+    let mut enable = true;
+    for a in c.doc.attrs(r) {
+        let vals: Vec<&str> = c.doc.attr_values(a).collect();
+        match (c.doc.attr_key(a), vals.as_slice()) {
+            ("set", [v, e]) => {
+                if let Some(x) = to_ael(e, vars, cell, notes) {
+                    t.own.push(((*v).to_owned(), x));
+                }
+            }
+            ("omit", [v]) => omit.push(v),
+            ("enable", [e]) => enable = *e != "false",
+            ("config", [k]) => {
+                if c.records(RecordKind::Config).any(|x| c.field(x, 0) == *k) {
+                    t.view = (*k).to_owned();
+                } else {
+                    notes.review(
+                        "config",
+                        cell,
+                        format!("test {name} config {k}: no such config; runs the schematic"),
+                    );
+                }
+            }
+            ("code" | "output", _) => {}
+            (VNONE, _) => {}
+            ("corner", list) => {
+                let all: Vec<&str> = c
+                    .records(RecordKind::Corner)
+                    .filter(|&k| c.attr(k, "enable") != Some("false"))
+                    .map(|k| c.field(k, 0))
+                    .collect();
+                if all.iter().any(|x| !list.contains(x)) {
+                    notes.review(
+                        "corner",
+                        cell,
+                        format!(
+                            "test {name} corner {}: maestro runs every enabled corner",
+                            list.join(" ")
+                        ),
+                    );
+                }
+            }
+            (k, _) => notes.review(
+                "config",
+                cell,
+                format!("test {name}: `{k}` has no maestro form"),
+            ),
+        }
+    }
+    // Without the test's own config, the bench's (header `config`) is its design.
+    if !c.doc.attrs(r).any(|a| c.doc.attr_key(a) == "config")
+        && let Some(k) = c.header("config")
+        && c.records(RecordKind::Config).any(|x| c.field(x, 0) == k)
+    {
+        t.view = k.to_owned();
+    }
+    let was = stored.and_then(|su| su.test(&name));
+    t.enable = match was {
+        Some(x) if x.enabled == enable => None,
+        None if enable => None,
+        _ => Some(enable),
+    };
+    let mut before: Vec<String> = stored.map_or(Vec::new(), |su| {
+        su.vars
+            .iter()
+            .filter(|v| v.dependents.iter().any(|d| d.0 == name && d.1))
+            .map(|v| v.name.clone())
+            .collect()
+    });
+    before.sort();
+    omit.sort_unstable();
+    if before != omit {
         notes.review(
-            "corner",
+            "design-variable",
             cell,
             format!(
-                "the OCEAN script runs corner {} only (maestro has all {})",
-                default_corner.as_deref().unwrap_or(""),
-                t.corners.len()
+                "test {name} omit {}: not sent (maestro keeps {})",
+                omit.join(" "),
+                if before.is_empty() {
+                    "none omitted".to_owned()
+                } else {
+                    before.join(" ")
+                }
             ),
         );
-    }
-    let ocean = ocean_script(
-        &t,
-        cell,
-        &swept,
-        &ocean_outs,
-        &plots,
-        default_corner.as_deref(),
-        notes,
-    );
-    BenchExport {
-        records: t.records(),
-        cell: t.cell.clone(),
-        ocean,
-        defns: t.defns.clone(),
     }
 }
 
 /// The code block whose analyses map: the first (by name) SPICE block with a line that is
 /// an analysis, or spectre block whose every line but comments has a maestro form and one
-/// is an analysis (the import's own Spectre form, §9.2).
-fn analysis_source(c: &Cell) -> Option<u32> {
-    let mut codes: Vec<u32> = c.records(RecordKind::Code).collect();
+/// is an analysis (the import's own Spectre form, §9.2), among the blocks `runs` takes.
+fn analysis_source(c: &Cell, runs: &dyn Fn(&str) -> bool) -> Option<u32> {
+    let mut codes: Vec<u32> = c
+        .records(RecordKind::Code)
+        .filter(|&r| runs(c.field(r, 0)))
+        .collect();
     codes.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
     codes.into_iter().find(|&r| {
         let lines: Vec<&str> = c.doc.verbatim(r).collect();

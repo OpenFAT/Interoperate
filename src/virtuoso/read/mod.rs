@@ -73,13 +73,19 @@ fn fresh(ctx: &Ctx<'_>, notes: &mut Notes) -> Fresh {
         let (mut doc, st) = build(ctx, k, &mut p, notes);
         pending.push(p);
         let c = &ctx.dump.cells[k];
-        let mut maestro = false;
-        for test in &ctx.dump.maestro {
-            let m = &test[0];
-            if m.str(1).ok() == Some(c.lib.as_str()) && m.str(2).ok() == Some(c.name.as_str()) {
-                maestro = true;
-                ade::import(test, &mut doc, &c.name, notes);
-            }
+        let tests: Vec<&[Record]> = ctx
+            .dump
+            .maestro
+            .iter()
+            .filter(|t| {
+                t[0].str(1).ok() == Some(c.lib.as_str())
+                    && t[0].str(2).ok() == Some(c.name.as_str())
+            })
+            .map(Vec::as_slice)
+            .collect();
+        let maestro = !tests.is_empty();
+        if maestro {
+            ade::import(&tests, &mut doc, &c.name, notes);
         }
         let dir = ctx.targets[k].dir.as_str();
         let cellref = |l: &str, cl: &str| ctx.master(l, cl).cellref(dir);

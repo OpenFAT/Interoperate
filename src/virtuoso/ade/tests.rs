@@ -62,6 +62,9 @@ fn tests() -> impl Strategy<Value = Test> {
                     .map(|(n, (net, e, _))| (n, if net { "net" } else { "point" }.into(), e))
                     .collect(),
                 defns: defns.into_iter().collect(),
+                own: vec![("x".into(), "2".into())],
+                enable: Some(corners.len().is_multiple_of(2)),
+                params: vec![("I0/I1/w".into(), "1u".into(), scope(0))],
             }
         })
 }
@@ -82,6 +85,7 @@ proptest! {
                 "corner" => recs.iter().any(|x| {
                     (x.tag == "var" && x.str(2).ok() == Some(named))
                         || (x.tag == "model" && x.str(0).ok() == Some(named))
+                        || (x.tag == "parameter" && x.str(2).ok() == Some(named))
                 }),
                 "output" => recs
                     .iter()
@@ -224,6 +228,7 @@ fn calculator_outputs_map_to_ade_functions() {
                 vars: &vars,
                 letter,
                 inst: info,
+                test: "",
             },
         )
     };
@@ -341,4 +346,39 @@ fn sweeps_recover_their_shape() {
         grid(1.0, 1000.0, 4, true).unwrap(),
         ["1", "10", "100", "1000"]
     );
+}
+
+/// Cross-test and dependent outputs (expr.md §5 `result`): `calcVal("o" "T")` both ways, a
+/// bare name of the test's own output as `result(o, <test>)`.
+#[test]
+fn other_outputs_read_as_result() {
+    let own = ["vmax", "gain"];
+    for (ade, calc) in [
+        (
+            r#"(calcVal("vmax" "T1") * 2)"#,
+            r#"(result("vmax", "T1") * 2)"#,
+        ),
+        ("(vmax * 2)", r#"(result("vmax", "T2") * 2)"#),
+        (
+            r#"calcVal("vmax" "T1") - gain"#,
+            r#"result("vmax", "T1") - result("gain", "T2")"#,
+        ),
+    ] {
+        assert_eq!(
+            out_from_ade_in(ade, "T2", &own).as_deref(),
+            Some(calc),
+            "{ade}"
+        );
+        let scope = OutScope {
+            vars: &[],
+            letter: "T",
+            inst: |_: &str| None,
+            test: "T2",
+        };
+        assert_eq!(out_expr(calc, &scope).as_deref(), Some(ade), "{calc}");
+    }
+    // Keywords, an unknown bare name, and a bare name outside any test have no form.
+    assert!(out_from_ade_in(r#"calcVal("vmax" "T1" ?historyName "h")"#, "T2", &own).is_none());
+    assert!(out_from_ade_in("(bw * 2)", "T2", &own).is_none());
+    assert!(out_from_ade("(vmax * 2)").is_none());
 }

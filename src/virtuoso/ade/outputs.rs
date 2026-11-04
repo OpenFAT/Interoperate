@@ -49,6 +49,9 @@ pub struct OutScope<'a, F: Fn(&str) -> Option<InstInfo>> {
     /// Instance path (segments joined by `/`) → its facts; `None` when the path names no
     /// instance (then `i()` reads terminal `PLUS` and `op()` the path as written).
     pub inst: F,
+    /// The maestro test the output belongs to: `result(o, <it>)` is its dependent output
+    /// `o`, read by name.
+    pub test: &'a str,
 }
 
 /// The signal letter of an output's `analysis <a>` attribute: `tran` `T`, `ac` `F`, `dc` (a
@@ -197,6 +200,7 @@ pub(super) fn out_to_ade(e: &str, vars: &[String], letter: &str) -> Option<Strin
             vars,
             letter,
             inst: |_: &str| None,
+            test: "",
         },
     )
 }
@@ -405,6 +409,18 @@ fn emit<F: Fn(&str) -> Option<InstInfo>>(
                 }
                 out.push_str(&acc);
             }
+            // Another output: by name in its own test (a dependent output), else calcVal.
+            ("result", [o, test]) => {
+                let (o, test) = (word_arg(t, *o)?, word_arg(t, *test)?);
+                if !is_ident(o) || test.is_empty() {
+                    return None;
+                }
+                if test == s.test {
+                    out.push_str(o);
+                } else {
+                    out.push_str(&format!("calcVal(\"{o}\" \"{test}\")"));
+                }
+            }
             ("op", [inst, param]) => {
                 let (inst, param) = (word_arg(t, *inst)?, word_arg(t, *param)?);
                 let segs: Vec<&str> = inst.strip_prefix('/').unwrap_or(inst).split('/').collect();
@@ -485,10 +501,18 @@ fn ade_number(t: &str) -> String {
     }
 }
 
-/// `value(y x)`, `cross(y l n "edge")`, `xval(y)` or `OP("/path" "param")`, the call of
-/// ADE function `f` between tokens `open` and `close` of `e`, as the calculator expression
-/// export turned into it.
-fn ade_call_back(e: &str, t: &[(Tk, &str)], f: &str, open: usize, close: usize) -> Option<String> {
+/// `value(y x)`, `cross(y l n "edge")`, `xval(y)`, `OP("/path" "param")` or `calcVal("o"
+/// "T")`, the call of ADE function `f` between tokens `open` and `close` of `e`, as the
+/// calculator expression export turned into it (`own`: see [`out_from_ade_in`]).
+fn ade_call_back(
+    e: &str,
+    t: &[(Tk, &str)],
+    f: &str,
+    open: usize,
+    close: usize,
+    own: (&str, &[&str]),
+) -> Option<String> {
+    let back = |x: &str| out_from_ade_in(x, own.0, own.1);
     // Arguments are separated by white space at depth 0 between two operands (`a - b`
     // stays one argument).
     let offset = |s: &str| s.as_ptr() as usize - e.as_ptr() as usize;
@@ -529,7 +553,7 @@ fn ade_call_back(e: &str, t: &[(Tk, &str)], f: &str, open: usize, close: usize) 
             .map(str::to_owned)
     };
     Some(match (f, args.as_slice()) {
-        ("value", [y, x0]) => format!("at({}, {})", out_from_ade(y)?, out_from_ade(x0)?),
+        ("value", [y, x0]) => format!("at({}, {})", back(y)?, back(x0)?),
         ("xval", [_]) => "x()".to_owned(),
         ("cross", [y, l, n, edge]) => {
             let e = match unquote(edge)?.as_str() {
@@ -538,7 +562,7 @@ fn ade_call_back(e: &str, t: &[(Tk, &str)], f: &str, open: usize, close: usize) 
                 "falling" => "-1",
                 _ => return None,
             };
-            let (y, l) = (out_from_ade(y)?, out_from_ade(l)?);
+            let (y, l) = (back(y)?, back(l)?);
             match (*n, e) {
                 ("1", "0") => format!("cross({y}, {l})"),
                 ("1", _) => format!("cross({y}, {l}, {e})"),
@@ -552,11 +576,25 @@ fn ade_call_back(e: &str, t: &[(Tk, &str)], f: &str, open: usize, close: usize) 
             let (path, param) = (unquote(path)?, unquote(param)?);
             format!("op(\"{}\", \"{param}\")", path.strip_prefix('/')?)
         }
+        // Keywords (`?historyName`, `?cornerName`) have no Schemify form.
+        ("calcVal", [o, test]) => {
+            let (o, test) = (unquote(o)?, unquote(test)?);
+            (is_ident(&o) && !test.is_empty() && !test.contains(['[', ']']))
+                .then(|| format!("result(\"{o}\", \"{test}\")"))?
+        }
         _ => return None,
     })
 }
 
+#[cfg(test)]
 pub(super) fn out_from_ade(e: &str) -> Option<String> {
+    out_from_ade_in(e, "", &[])
+}
+
+/// [`out_from_ade`] for an output of maestro test `test`, whose outputs are `outs`: a bare
+/// name of one of them (a dependent output) reads as `result("<name>", "<test>")`
+/// (expr.md §5).
+pub(super) fn out_from_ade_in(e: &str, test: &str, outs: &[&str]) -> Option<String> {
     let t = out_tokens(e)?;
     let mut out = String::with_capacity(e.len());
     let mut k = 0;
@@ -610,16 +648,18 @@ pub(super) fn out_from_ade(e: &str) -> Option<String> {
                 }
                 // The calls export writes with several space-separated arguments, back to
                 // their calculator form (§9.1 outputs table read backwards).
-                if matches!(x, "value" | "cross" | "xval" | "OP")
+                if matches!(x, "value" | "cross" | "xval" | "OP" | "calcVal")
                     && t.get(open).is_some_and(|n| n.1 == "(")
                 {
                     let close = close_of(&t, open)?;
-                    out.push_str(&ade_call_back(e, &t, x, open, close)?);
+                    out.push_str(&ade_call_back(e, &t, x, open, close, (test, outs))?);
                     k = close + 1;
                     continue;
                 }
                 if t.get(open).is_some_and(|n| n.1 == "(") {
                     out.push_str(OUT_FNS.iter().find(|f| f.1 == x)?.0);
+                } else if outs.contains(&x) && !test.is_empty() {
+                    out.push_str(&format!("result(\"{x}\", \"{test}\")"));
                 } else {
                     return None;
                 }

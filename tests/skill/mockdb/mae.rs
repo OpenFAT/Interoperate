@@ -87,6 +87,8 @@ pub const ROWS: &[(&str, &str)] = &[
     ("axlGetSpecWeight", "x"),
     ("maeGetCurrentRunMode", "?session"),
     ("maeSetCurrentRunMode", "?runMode ?session"),
+    ("maeSetSetup", "?tests ?corners ?enabled ?session"),
+    ("maeSetParameter", "t t ?typeName ?typeValue ?session"),
 ];
 
 /// First `axl*` handle number (handles look like the reference's `7918`).
@@ -111,6 +113,9 @@ pub struct Setup {
     /// The current run mode, `None` for the default (`maeSetCurrentRunMode`); no export
     /// holds it (live: maestro.sdb's `<currentmode>` only).
     pub run_mode: Option<String>,
+    /// Device parameters `(location, property, value, corner)` in creation order, corner
+    /// `""` global (`maeSetParameter`, `<parameters>`).
+    pub params: Vec<(String, String, String, String)>,
 }
 
 /// An analysis `(name, enabled, options)`, options in the order set.
@@ -139,6 +144,8 @@ pub struct Test {
     /// The `<Test>` element of `active.state` read for this test when it is not the mock's
     /// own (a real Maestro state, kept as it is); `None`: the mock writes its own.
     pub state: Option<String>,
+    /// Disabled (`maeSetSetup ?tests ?enabled nil`, `<disabledtests>`).
+    pub disabled: bool,
 }
 
 /// One output of a test.
@@ -590,6 +597,64 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
             }
             Ok(V::T)
         }
+        // ?tests with ?enabled sets those tests' enable (the probe's call).
+        "maeSetSetup" => {
+            let Some(k) = m.session(&kw) else {
+                return Some(Ok(V::Nil));
+            };
+            let (Some(ts), Some(en)) = (key(&kw, "tests").and_then(strs), key(&kw, "enabled"))
+            else {
+                return Some(Err(
+                    "*Error* maeSetSetup: the mock takes ?tests and ?enabled".into(),
+                ));
+            };
+            let en = en.truthy();
+            if ts.iter().any(|t| m.test(k, t).is_none()) {
+                return Some(Ok(V::Nil));
+            }
+            for t in ts {
+                m.test(k, &t).expect("checked").disabled = !en;
+            }
+            Ok(V::T)
+        }
+        // "lib/cell/view/inst[/inst…]/prop" and a string value, globally or per corner.
+        "maeSetParameter" => {
+            let Some(k) = m.session(&kw) else {
+                return Some(Ok(V::Nil));
+            };
+            let (path, v) = (s0(0), s0(1));
+            let Some((loc, prop)) = path
+                .rsplit_once('/')
+                .filter(|x| x.0.split('/').count() >= 4)
+            else {
+                return Some(Err(format!("*Error* maeSetParameter: path {path}")));
+            };
+            let corners = match st(key(&kw, "typeName")).as_deref() {
+                None => vec![String::new()],
+                Some("corner") => match key(&kw, "typeValue").and_then(strs) {
+                    Some(cs)
+                        if cs
+                            .iter()
+                            .all(|c| m.setup(k).corners.iter().any(|x| &x.name == c)) =>
+                    {
+                        cs
+                    }
+                    _ => return Some(Ok(V::Nil)),
+                },
+                Some(t) => return Some(Err(format!("*Error* maeSetParameter: ?typeName {t}"))),
+            };
+            let ps = &mut m.setup(k).params;
+            for c in corners {
+                match ps
+                    .iter_mut()
+                    .find(|p| p.0 == loc && p.1 == prop && p.3 == c)
+                {
+                    Some(p) => p.2 = v.clone(),
+                    None => ps.push((loc.to_owned(), prop.to_owned(), v.clone(), c)),
+                }
+            }
+            Ok(V::T)
+        }
         "maeAddOutput" => {
             let Some(k) = m.session(&kw) else {
                 return Some(Ok(V::Nil));
@@ -844,7 +909,8 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
         },
         "axlGetEnabled" => match m.resolve(&a[0]) {
             Some(Handle::Corner(k, c)) => Ok(tf(m.corner(k, &c).is_some_and(|x| x.enabled))),
-            _ => Err("*Error* axlGetEnabled: the mock models corner handles only".into()),
+            Some(Handle::Test(k, t)) => Ok(tf(m.test(k, &t).is_some_and(|x| !x.disabled))),
+            _ => Err("*Error* axlGetEnabled: the mock models corner and test handles only".into()),
         },
         "axlGetModels" => match m.resolve(&a[0]) {
             // (handle names), the names in setup order, as axlGetVars (live ICADVM20.1
@@ -1307,6 +1373,7 @@ pub fn call_files(
                     .iter_mut()
                     .find(|t| t.name == xt.name)
                     .expect("made");
+                t.disabled = !xt.enabled;
                 for (n, v) in xt.vars.iter().filter(|v| !v.1.is_empty()) {
                     match t.vars.iter_mut().find(|x| &x.0 == n) {
                         Some(x) => x.1 = v.clone(),
@@ -1340,6 +1407,24 @@ pub fn call_files(
                     }
                 }
             }
+            su.params = x
+                .params
+                .iter()
+                .map(|p| (p, ""))
+                .chain(
+                    x.corners
+                        .iter()
+                        .flat_map(|c| c.params.iter().map(move |p| (p, c.name.as_str()))),
+                )
+                .map(|(p, c)| {
+                    (
+                        p.location.clone(),
+                        p.name.clone(),
+                        p.value.clone(),
+                        c.to_owned(),
+                    )
+                })
+                .collect();
             for sp in &x.specs {
                 if let Some(w) = &sp.weight {
                     su.weights.insert(sp.name.clone(), w.clone());
@@ -1424,6 +1509,7 @@ fn export_tree(su: &Setup, stem: &str) -> Node {
             .unwrap_or_else(|| Node::leaf("corner", &c.name));
         el.attrs = vec![("enabled".into(), if c.enabled { "1" } else { "0" }.into())];
         sync_vars(&mut el, &c.vars, &var, &set_value);
+        sync_params(&mut el, &su.params, &c.name);
         corners.push(el);
     }
     active.children[k].children = corners;
@@ -1487,6 +1573,21 @@ fn export_tree(su: &Setup, stem: &str) -> Node {
             .unwrap_or_else(|| var(n, ""));
         set_value(&mut el, v);
         active.children[k].children.push(el);
+    }
+    sync_params(active, &su.params, "");
+    let disabled: Vec<Node> = su
+        .tests
+        .iter()
+        .filter(|t| t.disabled)
+        .map(|t| Node::leaf("test", &t.name))
+        .collect();
+    match active.child_mut("disabledtests") {
+        Some(d) => d.children = disabled,
+        None if !disabled.is_empty() => active.children.push(Node {
+            children: disabled,
+            ..Node::leaf("disabledtests", "")
+        }),
+        None => {}
     }
     // Specs: those of the mock's outputs, in place where the tree has them.
     let k = section(active, "specs");
@@ -1566,9 +1667,47 @@ fn export_tree(su: &Setup, stem: &str) -> Node {
     active.children.retain(|c| {
         !(c.text.is_empty()
             && c.children.is_empty()
-            && matches!(c.name.as_str(), "vars" | "specs" | "tests"))
+            && matches!(
+                c.name.as_str(),
+                "vars" | "specs" | "tests" | "disabledtests"
+            ))
     });
     root
+}
+
+/// Sets the `<parameters>` of `el` (a corner, or `<active>` for `corner` `""`) to the
+/// parameters of `params` in that scope, grouped by location as Maestro writes them, in
+/// place where it has them (after `<vars>`, else last).
+fn sync_params(el: &mut Node, params: &[(String, String, String, String)], corner: &str) {
+    let mut locs: Vec<Node> = Vec::new();
+    for (loc, prop, v, _) in params.iter().filter(|p| p.3 == corner) {
+        let p = Node {
+            name: "parameter".into(),
+            text: prop.clone(),
+            children: vec![Node::leaf("value", v)],
+            ..Node::default()
+        };
+        match locs.iter_mut().find(|l| &l.text == loc) {
+            Some(l) => l.children.push(p),
+            None => locs.push(Node {
+                children: vec![p],
+                ..Node::leaf("location", loc)
+            }),
+        }
+    }
+    if locs.is_empty() {
+        el.children.retain(|c| c.name != "parameters");
+        return;
+    }
+    if el.child("parameters").is_none() {
+        let at = el
+            .children
+            .iter()
+            .position(|c| c.name == "vars")
+            .map_or(el.children.len(), |p| p + 1);
+        el.children.insert(at, Node::leaf("parameters", ""));
+    }
+    el.child_mut("parameters").expect("made").children = locs;
 }
 
 /// Sets the `<vars>` of `el` to `vars`, in place where it has them.

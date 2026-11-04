@@ -101,7 +101,11 @@ fn tables(text: &str) -> BTreeMap<String, String> {
     let mut out = BTreeMap::new();
     for r in 1..d.record_count() {
         let w = d.record_word(r);
-        if !["var", "sweep", "corner", "output", "spec", "code"].contains(&w) {
+        if ![
+            "var", "sweep", "corner", "output", "spec", "code", "test", "param",
+        ]
+        .contains(&w)
+        {
             continue;
         }
         let mut t: Vec<String> = d.fields(r).map(str::to_owned).collect();
@@ -244,10 +248,17 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
         t.push_str("montecarlo mc\n  samples 10\n");
         lost.push("montecarlo mc".into());
     }
-    // A maestro test of its own and an instance override: Schemify's, reported, kept.
-    if g.coin() {
-        t.push_str("test t1\n  output vmax\nparam x1/w 2u\n");
-        lost.extend(["test t1".into(), "param x1/w".into()]);
+    // Two maestro tests sharing the analysis block, the second disabled with a var of its
+    // own, and a device parameter globally and in a corner (every other seed: the SKILL
+    // tests below take seed 5, one test).
+    if seed.is_multiple_of(2) {
+        t.push_str(
+            "test sim\n  code sim models\n  output gain vmax\n\
+             test t2\n  code sim\n  output vmax\n  set vdd 2\n  enable false\n\
+             param x1/w 2u\n",
+        );
+        t = t.replace("  temp 27\n", "  temp 27\n  param x1/w 3u\n");
+        exact.extend(["test sim".into(), "test t2".into(), "param x1/w".into()]);
     }
     Bench {
         text: canonical(&t),
@@ -290,9 +301,34 @@ fn generated_benches_round_trip_through_maestro_records() {
         if b.text.contains("montecarlo") {
             assert!(classes.contains("needs_review:montecarlo"));
         }
-        if b.text.contains("test t1") {
-            assert!(classes.contains("needs_review:test"), "{}", notes.text());
-            assert!(classes.contains("needs_review:param"), "{}", notes.text());
+        if b.text.contains("test t2") {
+            let tests: Vec<&str> = rec
+                .iter()
+                .filter(|r| r.tag == "maestro")
+                .map(|r| r.str(0).unwrap())
+                .collect();
+            assert_eq!(tests, ["sim", "t2"], "seed {seed}");
+            let t2: Vec<String> = rec
+                .iter()
+                .skip_while(|r| r.str(0) != Ok("t2"))
+                .filter(|r| matches!(r.tag.as_str(), "testvar" | "testenable"))
+                .map(|r| {
+                    let mut t = String::new();
+                    sfyx::write_record(&Record::new(&r.tag, r.fields.clone()), &mut t);
+                    t
+                })
+                .collect();
+            assert_eq!(
+                t2,
+                ["(\"testvar\" \"vdd\" \"2\")\n", "(\"testenable\" 0)\n"]
+            );
+            let params = rec.iter().filter(|r| r.tag == "parameter").count();
+            assert_eq!(
+                params,
+                2,
+                "seed {seed}: the params go with the first test\n{text}\n{}",
+                notes.text()
+            );
         }
         if b.text.contains("sweep s2") {
             assert!(classes.contains("needs_review:sweep"));
@@ -657,8 +693,11 @@ fn the_exported_model_list_replaces_the_session_defaults() {
     }
 }
 
+/// A test's own value of a global (`testvar`, lane L6) overrides it in that test only, on
+/// both sides: dumped apart from the global, imported as the test's `set`, loaded as a
+/// test variable, so the other test of the view keeps seeing the global.
 #[test]
-fn test_variables_override_globals_and_one_view_takes_several_tests() {
+fn test_variables_override_globals_in_their_test_only() {
     let (text, _) = export(&project(&canonical(&gen_bench(5, false).text)));
     // The same test twice under two names, in one maestro view.
     let k = text.find("(\"maestro\" \"sim\"").expect("a maestro test");
@@ -679,24 +718,56 @@ fn test_variables_override_globals_and_one_view_takes_several_tests() {
         &mut i,
         r#"(SfyExport "/t/out.sfyx" "schemify" (list "tb"))"#,
     );
+    let dumped = i.files["/t/out.sfyx"].clone();
     let mut test = String::new();
     let mut vdd = Vec::new();
-    for r in sfyx::read(&i.files["/t/out.sfyx"]).unwrap() {
+    for r in sfyx::read(&dumped).unwrap() {
         match r.tag.as_str() {
             "maestro" => test = r.str(0).unwrap().to_owned(),
-            "var" if r.str(0) == Ok("vdd") && r.str(2) == Ok("") => {
-                vdd.push((test.clone(), r.str(1).unwrap().to_owned()));
+            "var" | "testvar" if r.str(0) == Ok("vdd") && r.str(2).unwrap_or("").is_empty() => {
+                vdd.push((test.clone(), r.tag.clone(), r.str(1).unwrap().to_owned()));
             }
             _ => {}
         }
     }
+    let row = |t: &str, k: &str, v: &str| (t.to_owned(), k.to_owned(), v.to_owned());
     assert_eq!(
         vdd,
         [
-            ("sim".to_owned(), "2.5".to_owned()),
-            ("sim2".into(), "1.8".into())
+            row("sim", "var", "1.8"),
+            row("sim", "testvar", "2.5"),
+            row("sim2", "var", "1.8")
         ]
     );
+    // Schemify: one bench, the global var and each test's record, sim's with its own vdd.
+    let man: Files = project("schemify 1 shbench\n")
+        .into_iter()
+        .filter(|(p, _)| p == "schemify.project")
+        .collect();
+    let (bench, notes) = import(&strip_stash(&dumped), &man);
+    let t = tables(&bench);
+    assert_eq!(t["var vdd"], "vdd 1.8", "{bench}");
+    assert!(
+        t["test sim"].contains("set=vdd,2.5"),
+        "{bench}\n{}",
+        notes.text()
+    );
+    assert!(!t["test sim2"].contains("set="), "{bench}");
+    // Loaded back into a fresh view: the global and sim's own value, and no conflict.
+    let (back, _) = export(&project(&bench));
+    let mut j = interp();
+    j.files.insert("/t/back.sfyx".into(), back);
+    let ok = run(&mut j, r#"(SfyImport "/t/back.sfyx")"#);
+    let log = j.files["/t/back.sfyx.log"].clone();
+    assert!(ok.truthy() && !log.contains("conflict"), "{log}");
+    let su = &j.host.mae.saved[&key];
+    assert_eq!(
+        su.vars.iter().find(|v| v.0 == "vdd").map(|v| v.1.as_str()),
+        Some("1.8")
+    );
+    let own = |n: &str| su.tests.iter().find(|t| t.name == n).unwrap().vars.clone();
+    assert_eq!(own("sim"), [("vdd".to_owned(), "2.5".to_owned())]);
+    assert!(own("sim2").is_empty());
 }
 
 #[test]
@@ -855,9 +926,10 @@ fn unknown_analyses_are_reported_and_kept_as_spectre() {
     let (bench, _) = import(&native, &Files::new());
     let rec = maestro(&export(&project(&bench)).0);
     assert_eq!(rec[0].str(0).unwrap(), "AC");
-    assert_eq!(rec.iter().filter(|r| r.tag == "analysis").count(), 2);
+    let ac: Vec<&Record> = rec[1..].iter().take_while(|r| r.tag != "maestro").collect();
+    assert_eq!(ac.iter().filter(|r| r.tag == "analysis").count(), 2);
     assert_eq!(
-        rec.iter().filter(|r| r.tag == "defn").count(),
+        ac.iter().filter(|r| r.tag == "defn").count(),
         1,
         "only stimuli.scs"
     );

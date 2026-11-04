@@ -1,6 +1,7 @@
 //! Maestro (ADE Explorer/Assembler) ⇄ bench tables (spec `interop.md` §9).
 //!
-//! Spine of [`export`]: the bench's analysis block (`analysis_source`) → its lines
+//! A bench is one maestro test, or one per `test` record (lane L6); per test, the spine of
+//! [`export`]: the test's analysis block (`analysis_source`) → its lines
 //! (analyses, test model files, `.temp`, `.param`) → the other code blocks (spectre text as
 //! definition files) → vars and their sweeps → corners → outputs and specs → reports for
 //! the rest → `Test::records` (§9 order). Spine of [`import`]: `parse` (every record
@@ -48,6 +49,7 @@ mod tests;
 
 pub use export::*;
 pub use import::*;
+use mae_xml::Setup;
 use ocean::*;
 pub use outputs::*;
 pub use restore::{VMAEREC, VMAESDB, VMAESTATE, only_changed, with_stored};
@@ -86,13 +88,20 @@ struct Test {
     specs: Vec<(String, String, String)>,
     /// `(file, text)`.
     defns: Vec<(String, String)>,
+    /// `(name, value)`: the test's own values of global vars (`testvar`).
+    own: Vec<(String, String)>,
+    /// `testenable`: `Some(false)` disables the test, `Some(true)` enables it again.
+    enable: Option<bool>,
+    /// `(path, value, scope)`: device parameters (`parameter`), path `inst[/inst…]/prop`
+    /// under the test's design, scope `""` global, else a corner name.
+    params: Vec<(String, String, String)>,
 }
 
 impl Test {
-    /// The records of the test in §9 order: `maestro`; global `var`s by name; `analysis`
-    /// by name; the test's `model`s in order; per corner (by name) `corner`, its `model`s in
-    /// order and its `var`s by name; `output`s by name; `spec`s by (output, op); `defn`s by
-    /// file.
+    /// The records of the test in §9 order: `maestro`; global `var`s by name; `testvar`s
+    /// by name; `testenable`; `analysis` by name; the test's `model`s in order; per corner
+    /// (by name) `corner`, its `model`s in order and its `var`s by name; `parameter`s by
+    /// (scope, path); `output`s by name; `spec`s by (output, op); `defn`s by file.
     fn records(&self) -> Vec<Record> {
         let by_name = |a: &(String, String, String), b: &(String, String, String)| {
             (&a.0, &a.2).cmp(&(&b.0, &b.2))
@@ -124,6 +133,16 @@ impl Test {
             ],
         )];
         out.extend(vars.iter().filter(|v| v.2.is_empty()).map(var));
+        let mut own = self.own.clone();
+        own.sort();
+        out.extend(
+            own.iter()
+                .map(|(n, v)| Record::new("testvar", vec![s(n), s(v)])),
+        );
+        out.extend(
+            self.enable
+                .map(|en| Record::new("testenable", vec![i(i32::from(en))])),
+        );
         for (n, en, opts) in &analyses {
             let kv = pairs(opts.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             out.push(Record::new("analysis", vec![s(n), i(i32::from(*en)), kv]));
@@ -134,6 +153,13 @@ impl Test {
             out.extend(self.models.iter().filter(|m| &m.0 == c).map(model));
             out.extend(vars.iter().filter(|v| &v.2 == c).map(var));
         }
+        let mut params = self.params.clone();
+        params.sort_by(|a, b| (&a.2, &a.0).cmp(&(&b.2, &b.0)));
+        out.extend(
+            params
+                .iter()
+                .map(|(p, v, sc)| Record::new("parameter", vec![s(p), s(v), s(sc)])),
+        );
         for (n, k, e) in &outputs {
             out.push(Record::new("output", vec![s(n), s(k), s(e)]));
         }
@@ -149,7 +175,10 @@ impl Test {
             + self.models.len()
             + self.outputs.len()
             + self.specs.len()
-            + self.defns.len();
+            + self.defns.len()
+            + self.own.len()
+            + usize::from(self.enable.is_some())
+            + self.params.len();
         assert_eq!(out.len(), n + 1, "every row is one record");
         out
     }

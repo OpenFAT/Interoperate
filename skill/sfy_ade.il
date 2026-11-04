@@ -17,8 +17,9 @@
 ;; ================================================================ export
 
 ;; Writes the maestro records (spec 9) of every cell of cells (names in library lib, sorted)
-;; that has a maestro view: per test (by name) maestro, global vars, enabled analyses,
-;; test model files, corners with their models and vars, outputs, specs, definition files.
+;; that has a maestro view: per test (by name) maestro, global vars, the test's own vars,
+;; enabled analyses, test model files, corners with their models and vars, outputs, specs,
+;; definition files.
 (procedure (SfyAdeExport port lib cells)
   (foreach cell cells
     (when (ddGetObj lib cell "maestro")
@@ -169,22 +170,26 @@
     (setq th (car (errset (axlGetTest sdb test))))
     (SfyPut port "maestro" (list test lib cell (SfyAdeTestView th) "spectre"))
     (foreach r stored (SfyPut port (car r) (cdr r)))
-    ;; The variables this test sees: the global ones (GUESS(G18): maeGetSetup ?typeName
-    ;; "variables" lists their names), then the test's own, which override a global of the
-    ;; same name; the test temperature (simulator option temp, GUESS(G28)) as the var
-    ;; "temperature", which the Rust side reads as the test temperature.
+    ;; The global variables (GUESS(G18): maeGetSetup ?typeName "variables" lists their
+    ;; names) and the test temperature (simulator option temp, GUESS(G28)) as the var
+    ;; "temperature", which the Rust side reads as the test temperature; then the test's own
+    ;; values (axlGetVars of the test: (handle names)), which override a global of the same
+    ;; name in this test only.
     (setq vl nil)
     (foreach n (car (errset (maeGetSetup ?typeName "variables" ?session sess)))
       (setq vl (cons (list n (SfyAtomStr (car (errset (maeGetVar n ?session sess))))) vl)))
-    (when th
-      (foreach n (cadr (car (errset (axlGetVars th))))
-        (setq vl (cons (list n (SfyAtomStr (car (errset (axlGetVarValue (axlGetVar th n))))))
-                   (setof x vl (nequal (car x) n))))))
     (setq tp (car (errset (maeGetSimOption test ?option "temp" ?session sess))))
     (when (and (stringp tp) (nequal tp ""))
       (setq vl (cons (list "temperature" tp) (setof x vl (nequal (car x) "temperature")))))
     (foreach x (SfySortByKey vl)
       (SfyPut port "var" (list (car x) (cadr x) "")))
+    (setq vl nil)
+    (when th
+      (foreach n (cadr (car (errset (axlGetVars th))))
+        (setq vl (cons (list n (SfyAtomStr (car (errset (axlGetVarValue (axlGetVar th n))))))
+                   vl))))
+    (foreach x (SfySortByKey vl)
+      (SfyPut port "testvar" x))
     (unless (errset (progn
     (foreach a (sort (copy (maeGetEnabledAnalysis test ?session sess)) nil)
       (SfyPut port "analysis"
@@ -289,7 +294,7 @@
 ;; lib, else the record's library); an existing maestro view is refused unless sfyOverwrite,
 ;; which replaces the test of the same name. Each refused call is logged with its line.
 (procedure (SfyAdeImport recs lib)
-  (let ((tests nil) (cur nil) (made nil) (sfyAdeGlobals nil))
+  (let ((tests nil) (cur nil) (made nil) (sfyAdeRestored nil))
     (foreach lr recs
       (if (equal (car (cadr lr)) "maestro")
         (progn
@@ -306,7 +311,9 @@
 ;; A test with the view's own setup (a maesdb record, spec 9.7) restores it first: the test
 ;; states go into the view's active.state before the session opens, the setup XML through
 ;; axlImportSetup ... 'overwrite, which replaces in place (G32); the records then hold only
-;; what Schemify changed, applied without deleting any test.
+;; what Schemify changed, applied without deleting any test. The view's later tests
+;; (sfyAdeRestored, bound by SfyAdeImport, lists the restored views) are applied the same
+;; way: in place, never deleted.
 (procedure (SfyAdeLoadTest test lib made)
   (let ((line (car (car test))) (m (cadr (car test))) (tlib nil) (cell nil) (sess nil)
         (sdbRec nil) (from nil))
@@ -335,9 +342,12 @@
             ((and sdbRec (not (SfyAdeRestore sess (cadr sdbRec) from tlib)))
               (SfyRefuse (car sdbRec) (sprintf nil "maestro %s: axlImportSetup did not restore the setup of %s/%s/maestro"
                                         (nth 1 m) tlib cell)))
-            ((not (let ((sfyAdeRestore (and sdbRec t))) (errset (SfyAdeFill test tlib cell sess) t)))
+            ((not (let ((sfyAdeRestore (or (and sdbRec t)
+                                           (and (member (strcat tlib "/" cell) sfyAdeRestored) t))))
+                    (errset (SfyAdeFill test tlib cell sess) t)))
               (SfyRefuse line (sprintf nil "maestro %s: SKILL error %s" (nth 1 m) (SfyErrMsg)))))
           (SfyAdeClose sess))
+        (when sdbRec (setq sfyAdeRestored (cons (strcat tlib "/" cell) sfyAdeRestored)))
         (setq made (cons (strcat tlib "/" cell) made))))
     made))
 
@@ -556,15 +566,6 @@
                 ((and (equal (nth 2 f) "") (equal (nth 0 f) "temperature"))
                   (maeSetSimOption name ?options (list (list "temp" (nth 1 f))) ?session sess))
                 ((equal (nth 2 f) "")
-                  ;; Test-level variables were dumped as each test's own globals: two
-                  ;; tests of one view that disagree now share the later value.
-                  (setq id (strcat tlib "/" cell "/" (nth 0 f)))
-                  (when (and (assoc id sfyAdeGlobals)
-                             (nequal (cadr (assoc id sfyAdeGlobals)) (nth 1 f)))
-                    (SfyCount "maestro var conflict")
-                    (SfyLog (sprintf nil "warning line %d: maestro %s: global var %s is %s in an earlier test of this view and %s here; both now see %s"
-                              line name (nth 0 f) (cadr (assoc id sfyAdeGlobals)) (nth 1 f) (nth 1 f))))
-                  (setq sfyAdeGlobals (cons (list id (nth 1 f)) sfyAdeGlobals))
                   (maeSetVar (nth 0 f) (nth 1 f) ?session sess))
                 (t
                   (maeSetVar (nth 0 f) (nth 1 f) ?typeName "corner" ?typeValue (list (nth 2 f))
@@ -581,6 +582,20 @@
                              (nth 2 f))
                   ?session sess)
                 nil))
+            ;; The test's own value of a global: it overrides the global in this test only.
+            ("testvar"
+              (maeSetVar (nth 0 f) (nth 1 f) ?typeName "test" ?typeValue (list name) ?session sess))
+            ("testenable"
+              (maeSetSetup ?tests (list name) ?enabled (equal (nth 0 f) 1) ?session sess))
+            ;; A device parameter of the test's design, "lib/cell/view/inst[/inst...]/prop"
+            ;; (the form the probe and lane L1's live check set it by), globally or in one
+            ;; corner.
+            ("parameter"
+              (if (equal (nth 2 f) "")
+                (maeSetParameter (strcat tlib "/" cell "/schematic/" (nth 0 f)) (nth 1 f)
+                  ?session sess)
+                (maeSetParameter (strcat tlib "/" cell "/schematic/" (nth 0 f)) (nth 1 f)
+                  ?typeName "corner" ?typeValue (list (nth 2 f)) ?session sess)))
             ("corner" (maeSetCorner (nth 0 f) ?enabled (equal (nth 1 f) 1) ?session sess))
             ("model"
               (if (equal (nth 0 f) "")

@@ -564,7 +564,7 @@
             (setq cv nil)
             (setq ade (cons lr ade)))
           ((member tag (list "var" "analysis" "corner" "model" "output" "spec" "defn" "maesdb"
-                             "maestate"))
+                             "maestate" "testvar" "testenable" "parameter"))
             (if inAde (setq ade (cons lr ade)) (setq err (strcat tag " outside a maestro test"))))
           ((null cv) (setq err (strcat tag " outside a cellview")))
           (t (setarray cv "recs" (cons lr (arrayref cv "recs"))))))

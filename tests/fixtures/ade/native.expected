@@ -14,6 +14,13 @@ output vavg avg(v(OUT))
 spec vavg
   max 0.5
 
+test AC
+  code AC stimuli
+  output vavg
+test TRAN2
+  code TRAN2
+  vnone output
+
 code AC spectre
   | include "/pdk/models/toplevel.scs"
   | pss pss fund=1G harms=10 errpreset=conservative
@@ -21,6 +28,8 @@ code AC spectre
   | // ade output BW point: bandwidth(mag(VF("/OUT")) 3 "low")
   | // ade output OutPlot net: /OUT
   | // ade output gm point: deriv(IT("/M1/D"))
+code TRAN2 spice
+  | .tran 1e-9 1u
 code stimuli spectre
   | // stimuli
   | V1 (in 0) vsource dc=0.45
@@ -28,7 +37,7 @@ code stimuli spectre
 --- report
 needs_review:code	tb	analysis noise is disabled in maestro: dropped
 needs_review:code	tb	analysis pss has no SPICE form: kept in the spectre block
-needs_review:config	tb	maestro test TRAN2: only the first test of a view maps
+needs_review:config	tb	maestro test TRAN2 has no output: a Schemify run gives it every one
 needs_review:design-variable	tb	`foo*2` → `foo*2`
 needs_review:expression	tb	corner fast var VDD: a sweep list
 needs_review:output	tb	output BW (point) `bandwidth(mag(VF("/OUT")) 3 "low")` has no calculator form

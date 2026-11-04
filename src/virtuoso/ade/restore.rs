@@ -8,8 +8,10 @@
 //! [`only_changed`]):
 //! - `vmaesdb <test> <xml>`: the mapped test's name and the setup XML, verbatim;
 //! - `vmaestate <test> <xml>`: one per test of the view;
-//! - `vmaerec <digest> <tag> <key>…`: one per record of the mapped test as Virtuoso had it
-//!   (FNV-1a of its canonical form): what "unchanged" means on export.
+//! - `vmaerec <digest> <tag> <key>…`: one per record of each test as Virtuoso had it
+//!   (FNV-1a of its canonical form): what "unchanged" means on export. A test's rows follow
+//!   its row `vmaerec <digest> maestro <test>`; rows before any such row are the mapped
+//!   test's (a bench imported before tests had rows of their own).
 
 use std::collections::BTreeSet;
 
@@ -26,7 +28,9 @@ pub const VMAEREC: &str = "vmaerec";
 fn rec_key(r: &Record) -> Option<Vec<String>> {
     let f = |k: usize| r.str(k).ok().map(str::to_owned);
     let keys = match r.tag.as_str() {
-        "var" => vec![f(0)?, f(2)?],
+        "var" | "parameter" => vec![f(0)?, f(2)?],
+        "testvar" => vec![f(0)?],
+        "testenable" => vec![],
         "model" => vec![f(0)?, f(1)?],
         "spec" => vec![f(0)?, f(1)?],
         "analysis" | "corner" | "output" | "defn" => vec![f(0)?],
@@ -54,22 +58,45 @@ fn group(key: &[String]) -> String {
     }
 }
 
-/// The `(digest, key)` rows of `records` (one test's, `maestro` first).
+/// The `(digest, key)` rows of `records` (one test's, `maestro` first): the test's own
+/// row `(digest maestro <test>)`, then one per keyed record.
 fn digests(records: &[Record]) -> Vec<Vec<String>> {
-    records
-        .iter()
-        .filter_map(|r| {
+    let head = records.first().and_then(|m| {
+        let n = m.str(0).ok()?;
+        Some(vec![rec_digest(m), "maestro".to_owned(), n.to_owned()])
+    });
+    head.into_iter()
+        .chain(records.iter().skip(1).filter_map(|r| {
             let k = rec_key(r)?;
             Some(std::iter::once(rec_digest(r)).chain(k).collect())
-        })
+        }))
         .collect()
 }
 
-/// Import side: when `records` (one test's, `maestro` first; `t` their parse) carry the
-/// view's `maesdb`, the bench header gains `vmaesdb`, a `vmaestate` per test and the
-/// `vmaerec` rows of this test: those the `maesdb` record holds (a Rust export carries the
-/// rows it was restored from), else this dump's own. Nothing changes without `maesdb`.
-pub(super) fn attach(records: &[Record], t: &Test, bench: &mut Document<'static>) {
+/// `rows` (each `digest tag key…`) by test: `(test, (digest, key))`, a row before any
+/// `maestro` row belonging to `first`.
+fn by_test(rows: Vec<Vec<String>>, first: &str) -> Vec<(String, String, Vec<String>)> {
+    let mut test = first.to_owned();
+    let mut out = Vec::new();
+    for row in rows.into_iter().filter(|row| row.len() >= 2) {
+        if row[1] == "maestro" {
+            test = row.get(2).cloned().unwrap_or_default();
+            continue;
+        }
+        out.push((test.clone(), row[0].clone(), row[1..].to_vec()));
+    }
+    out
+}
+
+/// Import side: when the first of `tests` (one view's, each `maestro` first; `ts` their
+/// parse) carries the view's `maesdb`, the bench header gains `vmaesdb`, a `vmaestate` per
+/// test and the `vmaerec` rows of every test: those the `maesdb` record holds (a Rust
+/// export carries the rows it was restored from), else this dump's own. Nothing changes
+/// without `maesdb`.
+pub(super) fn attach(tests: &[&[Record]], ts: &[Test], bench: &mut Document<'static>) {
+    let (Some(records), Some(t)) = (tests.first(), ts.first()) else {
+        return;
+    };
     let Some(sdb) = records.iter().find(|r| r.tag == "maesdb") else {
         return;
     };
@@ -87,7 +114,7 @@ pub(super) fn attach(records: &[Record], t: &Test, bench: &mut Document<'static>
         })
         .collect();
     let rows = if carried.is_empty() {
-        digests(&t.records())
+        ts.iter().flat_map(|t| digests(&t.records())).collect()
     } else {
         carried
     };
@@ -145,7 +172,8 @@ pub fn with_stored(c: &Cell, records: &mut Vec<Record>) {
         return;
     }
     let name = records[0].str(0).unwrap_or("").to_owned();
-    if name != test && !c.records(RecordKind::Code).any(|r| c.field(r, 0) == name) {
+    let one = records.iter().filter(|r| r.tag == "maestro").count() == 1;
+    if one && name != test && !c.records(RecordKind::Code).any(|r| c.field(r, 0) == name) {
         records[0].fields[0] = s(test);
     }
     let rows: Vec<Value> = header_rows(c, VMAEREC)
@@ -162,29 +190,74 @@ pub fn with_stored(c: &Cell, records: &mut Vec<Record>) {
 }
 
 /// Export side, after the image import: when bench `c` carries its Maestro setup
-/// (`vmaesdb`), `records` keep only what Schemify changed since the import, since the
-/// loader restores the rest from the XML: `maestro`, `maesdb`, `maestate`, then every
-/// record of a group (see `group`) holding a record whose digest is not stored.
+/// (`vmaesdb`), each test of `records` (one after another, each from its `maestro` record)
+/// keeps only what Schemify changed since the import, since the loader restores the rest
+/// from the XML: `maestro`, `maesdb`, `maestate`, then every record of a group (see
+/// `group`) holding a record whose digest is not stored for that test. A test with no
+/// stored rows (one made in Schemify) is sent whole.
 ///
 /// A stored record that is not exported (removed in Schemify, or one the import could not
 /// map) is reported (`needs_review`) and Maestro keeps it: nothing is deleted on the
-/// Virtuoso side for it. A changed test model list or output (with its specs) missing such
-/// a record is not sent either, since the loader replaces those whole.
+/// Virtuoso side for it, nor for a stored test the bench no longer has. A changed test
+/// model list or output (with its specs) missing such a record is not sent either, since
+/// the loader replaces those whole.
 pub fn only_changed(c: &Cell, records: &mut Vec<Record>, notes: &mut Notes) {
     if c.header(VMAESDB).is_none() || records.get(1).is_none_or(|r| r.tag != "maesdb") {
         return;
     }
     let cell = c.path.as_str();
-    let stored: Vec<(String, Vec<String>)> = header_rows(c, VMAEREC)
-        .into_iter()
-        .filter(|row| row.len() >= 3)
-        .map(|row| {
-            (
-                row[0].to_owned(),
-                row[1..].iter().map(|x| (*x).to_owned()).collect(),
-            )
-        })
+    let first = records[0].str(0).unwrap_or("").to_owned();
+    let stored = by_test(
+        header_rows(c, VMAEREC)
+            .into_iter()
+            .map(|row| row.into_iter().map(str::to_owned).collect())
+            .collect(),
+        &first,
+    );
+    let mut tests: Vec<Vec<Record>> = Vec::new();
+    for r in std::mem::take(records) {
+        match tests.last_mut() {
+            Some(t) if r.tag != "maestro" => t.push(r),
+            _ => tests.push(vec![r]),
+        }
+    }
+    let mut seen: BTreeSet<String> = BTreeSet::new();
+    for mut t in tests {
+        let name = t[0].str(0).unwrap_or("").to_owned();
+        let mine: Vec<(String, Vec<String>)> = stored
+            .iter()
+            .filter(|x| x.0 == name)
+            .map(|x| (x.1.clone(), x.2.clone()))
+            .collect();
+        if !mine.is_empty() || name == first {
+            changed_only(cell, &name, &mut t, &mine, notes);
+        }
+        seen.insert(name);
+        records.extend(t);
+    }
+    let gone: BTreeSet<&str> = stored
+        .iter()
+        .map(|x| x.0.as_str())
+        .filter(|n| !seen.contains(*n))
         .collect();
+    for n in gone {
+        notes.review(
+            "config",
+            cell,
+            format!("maestro test {n} is not in the bench: Maestro keeps it"),
+        );
+    }
+}
+
+/// [`only_changed`] for one test's `records` (`maestro` first) against its `stored`
+/// `(digest, key)` rows.
+fn changed_only(
+    cell: &str,
+    test: &str,
+    records: &mut Vec<Record>,
+    stored: &[(String, Vec<String>)],
+    notes: &mut Notes,
+) {
     let head = records
         .iter()
         .take_while(|r| matches!(r.tag.as_str(), "maestro" | "maesdb" | "maestate"))
@@ -205,7 +278,7 @@ pub fn only_changed(c: &Cell, records: &mut Vec<Record>, notes: &mut Notes) {
             changed.insert(group(k));
         }
     }
-    for (_, k) in &stored {
+    for (_, k) in stored {
         if keyed.iter().any(|(_, x)| x.as_ref() == Some(k)) {
             continue;
         }
@@ -214,8 +287,9 @@ pub fn only_changed(c: &Cell, records: &mut Vec<Record>, notes: &mut Notes) {
             if k[0] == "output" || k[0] == "spec" { "output" } else { "code" },
             cell,
             format!(
-                "maestro {} is not in the bench (removed, or it has no Schemify form): Maestro keeps it",
-                k.join(" ")
+                "maestro {}{} is not in the bench (removed, or it has no Schemify form): Maestro keeps it",
+                k.join(" "),
+                if k[0] == "testvar" || k[0] == "testenable" { format!(" of {test}") } else { String::new() }
             ),
         );
         if (g == "models" || g.starts_with("output ")) && changed.remove(&g) {

@@ -1,7 +1,8 @@
-//! One maestro test's records → bench records ([`import`], spec `interop.md` §9.2): the
-//! records parsed and checked ([`check`], the reader's boundary), then vars and sweeps,
-//! corners, the analysis block (SPICE when every analysis has a SPICE form, else Spectre),
-//! outputs and specs, and definition files.
+//! A maestro view's tests' records → bench records ([`import`], spec `interop.md` §9.2):
+//! each test's records parsed and checked ([`check`], the reader's boundary), then the
+//! view's vars and sweeps, device parameters and corners, then per test its analysis block
+//! (SPICE when every analysis has a SPICE form, else Spectre), outputs and specs,
+//! definition files and, for a view of several tests, its `test` record.
 
 use super::*;
 
@@ -47,7 +48,9 @@ fn flag(r: &Record, k: usize) -> Result<bool, Error> {
 /// types, `enable` 0/1, options as `(key value)` strings, a `var`/`model` scope naming a
 /// corner declared before it, a `spec` naming an output before it with op `lt`/`gt`, output
 /// kinds `point`/`net`, no name twice per kind, at most [`ROWS_MAX`] rows per kind; the
-/// view's `maesdb` (text, digest rows) at most once and a `maestate` (test, text) per test.
+/// view's `maesdb` (text, digest rows) at most once and a `maestate` (test, text) per test;
+/// `testvar` (name, value) once per name, `testenable` 0/1 once, `parameter` (path
+/// `inst[/inst…]/prop`, value, scope) once per path and scope.
 pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
     let m = records.first().ok_or(Error {
         line: 0,
@@ -190,6 +193,33 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                 }
                 states.push(n);
             }
+            "testvar" => {
+                r.arity(2)?;
+                let (n, v) = (r.str(0)?, r.str(1)?);
+                if n.is_empty() || t.own.iter().any(|x| x.0 == n) {
+                    return Err(r.err(format!("testvar `{n}` empty or twice")));
+                }
+                t.own.push((n.into(), v.into()));
+            }
+            "testenable" => {
+                r.arity(1)?;
+                if t.enable.replace(flag(r, 0)?).is_some() {
+                    return Err(r.err("testenable twice"));
+                }
+            }
+            "parameter" => {
+                r.arity(3)?;
+                let (p, v, sc) = (r.str(0)?, r.str(1)?, r.str(2)?);
+                if p.split('/').count() < 2 || p.split('/').any(str::is_empty) {
+                    return Err(r.err(format!("parameter `{p}`: not inst[/inst…]/prop")));
+                }
+                if !scope_ok(&t, sc) || t.params.iter().any(|x| x.0 == p && x.2 == sc) {
+                    return Err(r.err(format!(
+                        "parameter {p} in scope `{sc}`: twice, or no such corner before it"
+                    )));
+                }
+                t.params.push((p.into(), v.into(), sc.into()));
+            }
             "maestro" => return Err(r.err("a second test in one test's records")),
             o => return Err(r.err(format!("`{o}` is not a maestro record"))),
         }
@@ -198,6 +228,8 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
             t.analyses.len(),
             t.corners.len(),
             t.models.len(),
+            t.own.len(),
+            t.params.len(),
         ];
         if rows
             .iter()
@@ -223,80 +255,190 @@ pub fn check(records: &[Record]) -> Result<(), Error> {
     parse(records).map(|_| ())
 }
 
+/// Test record attribute: `vnone code|output`, the test runs no code block (no output),
+/// which a missing `code` (`output`) attribute cannot say.
+pub(super) const VNONE: &str = "vnone";
+
 /// Kinds that mean a test was already imported into the bench being built.
-const BENCH_KINDS: [RecordKind; 6] = [
+const BENCH_KINDS: [RecordKind; 8] = [
     RecordKind::Var,
     RecordKind::Corner,
     RecordKind::Sweep,
     RecordKind::Output,
     RecordKind::Spec,
     RecordKind::Code,
+    RecordKind::Test,
+    RecordKind::BenchParam,
 ];
 
-/// Appends the bench records (`var`, `sweep`, `corner`, `output`, `spec`, `code`) that
-/// `records` (one maestro test and its records, in file order) describe to `bench` (§9.2).
+/// `v` (AEL) as a Schemify expression, `globals` the bench vars; `None` (noted
+/// `expression`) when it has none.
+fn from_ael(v: &str, globals: &[String], cell: &str, notes: &mut Notes) -> Option<String> {
+    let r = ael::from_ael(
+        v,
+        |n| {
+            if globals.iter().any(|g| g == n) {
+                AelName::BenchVar
+            } else {
+                AelName::Unknown
+            }
+        },
+        |_| None,
+    );
+    match r {
+        Some(tr) if Program::compile(&tr.text, Mode::Scalar).is_ok() => {
+            if let Some(why) = tr.review {
+                notes.review(why, cell, format!("`{v}` → `{}`", tr.text));
+            }
+            Some(tr.text)
+        }
+        _ => {
+            notes.review("expression", cell, format!("`{v}` has no Schemify form"));
+            None
+        }
+    }
+}
+
+/// A device parameter's Maestro location (`lib/cell/view/inst[/inst…]`) and property as the
+/// `parameter` record's path (`inst[/inst…]/prop`), when it is an instance of test `t`'s
+/// design cell.
+fn param_path(location: &str, prop: &str, t: &Test) -> Option<String> {
+    let mut seg = location.split('/');
+    let (lib, cell, _view) = (seg.next()?, seg.next()?, seg.next()?);
+    let insts: Vec<&str> = seg.collect();
+    (lib == t.lib && cell == t.cell && !insts.is_empty() && !prop.is_empty())
+        .then(|| format!("{}/{prop}", insts.join("/")))
+}
+
+/// A `parameter` path (Virtuoso instance names) as the bench's (`inst[/inst…]/prop`,
+/// format.md rank 6).
+fn param_from_virtuoso(p: &str) -> String {
+    let (insts, prop) = p.rsplit_once('/').expect("parse checked inst/prop");
+    let insts: Vec<String> = insts
+        .split('/')
+        .map(crate::profile::inst_from_virtuoso)
+        .collect();
+    format!("{}/{prop}", insts.join("/"))
+}
+
+/// The device parameters of a view, `(path, value, scope)`: the setup XML's (global, and
+/// per corner) as `parameter` paths, overridden by the first test's `parameter` records (a
+/// Rust export read back without Virtuoso). A parameter on another cell, or of Nominal,
+/// is reported.
+fn view_params(
+    setup: Option<&Setup>,
+    first: &Test,
+    cell: &str,
+    notes: &mut Notes,
+) -> Vec<(String, String, String)> {
+    let mut out: Vec<(String, String, String)> = Vec::new();
+    if let Some(su) = setup {
+        let scoped = su.params.iter().map(|p| (p, "")).chain(
+            su.corners
+                .iter()
+                .flat_map(|c| c.params.iter().map(move |p| (p, c.name.as_str()))),
+        );
+        for (p, sc) in scoped {
+            match param_path(&p.location, &p.name, first) {
+                Some(path) if sc != "_default" => out.push((path, p.value.clone(), sc.into())),
+                _ => notes.review(
+                    "config",
+                    cell,
+                    format!(
+                        "maestro parameter {}/{} ({}): not an instance of the bench, or of \
+                         Nominal; kept in the setup XML",
+                        p.location,
+                        p.name,
+                        if sc.is_empty() { "global" } else { sc }
+                    ),
+                ),
+            }
+        }
+    }
+    for p in &first.params {
+        match out.iter_mut().find(|x| x.0 == p.0 && x.2 == p.2) {
+            Some(x) => x.1 = p.1.clone(),
+            None => out.push(p.clone()),
+        }
+    }
+    out
+}
+
+/// Appends the bench records that `tests` (the maestro tests of one view, each its
+/// `maestro` record and the records after it, in file order) describe to `bench` (§9.2):
+/// from the first test the view's `var`s, `sweep`s and `corner`s (the setup every test
+/// sees), the view's device parameters as `param` records and corner `param` lines; from
+/// every test its analysis block (`code <test>`), outputs, specs and definition files.
+/// A view of several tests, or of one that is disabled, has vars of its own or omits a
+/// global, also gets a `test` record per test (format.md rank 6): `code`, `output`, `set`
+/// (`testvar`), `omit` and `enable false` (from the setup XML), `config` (its view when not
+/// `schematic`). A test's dependent outputs (another of its outputs by name) and
+/// cross-test outputs (`calcVal`) become `result(output, test)`.
+///
 /// What cannot come back is reported in `notes` under `cell`: an analysis without a SPICE
 /// form (the block is then Spectre), an output whose ADE expression does not translate (a
-/// comment in the analysis block), a disabled analysis, a value without a
-/// Schemify form, a second test of the same view (only the first maps). The view's own
+/// comment in the analysis block), an output or definition file of a name another test
+/// already took, a disabled analysis, a value without a Schemify form. The view's own
 /// setup (`maesdb`, `maestate`) goes into the bench header (`restore`, §9.7).
 ///
-/// Records [`check`] refuses are reported (`needs_review:code`) and nothing is added; the
-/// reader checks them first, so this happens only for records built in memory.
-pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, notes: &mut Notes) {
-    let t = match parse(records) {
-        Ok(t) => t,
-        Err(e) => {
-            notes.review("code", cell, format!("maestro refused: {e}"));
-            return;
+/// Records [`check`] refuses are reported (`needs_review:code`) and that test is skipped;
+/// the reader checks them first, so this happens only for records built in memory.
+pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, notes: &mut Notes) {
+    let mut ts: Vec<Test> = Vec::new();
+    let mut ok: Vec<&[Record]> = Vec::new();
+    for recs in tests {
+        match parse(recs) {
+            Ok(t) => {
+                ts.push(t);
+                ok.push(recs);
+            }
+            Err(e) => notes.review("code", cell, format!("maestro refused: {e}")),
         }
-    };
-    restore::attach(records, &t, bench);
+    }
+    let Some(first) = ts.first() else { return };
     if (1..bench.record_count()).any(|r| BENCH_KINDS.contains(&bench.record_kind(r))) {
         notes.review(
             "config",
             cell,
             format!(
-                "maestro test {}: only the first test of a view maps",
-                t.name
+                "maestro test {}: the bench already holds a maestro view",
+                first.name
             ),
         );
         return;
     }
+    restore::attach(&ok, &ts, bench);
     let before = bench.record_count();
-    let globals: Vec<String> = t
+    let setup = ok[0]
+        .iter()
+        .find(|r| r.tag == "maesdb")
+        .and_then(|r| r.text(0).ok())
+        .and_then(|x| Setup::from_xml(&x).ok());
+    let enabled = |t: &Test| {
+        t.enable
+            .or_else(|| setup.as_ref()?.test(&t.name).map(|x| x.enabled))
+            .unwrap_or(true)
+    };
+    let omitted = |t: &Test| -> Vec<String> {
+        setup.as_ref().map_or(Vec::new(), |su| {
+            su.vars
+                .iter()
+                .filter(|v| v.dependents.iter().any(|d| d.0 == t.name && d.1))
+                .map(|v| v.name.clone())
+                .collect()
+        })
+    };
+    let several =
+        ts.len() > 1 || !first.own.is_empty() || !enabled(first) || !omitted(first).is_empty();
+    let globals: Vec<String> = first
         .vars
         .iter()
         .filter(|v| v.2.is_empty() && v.0 != "temperature")
         .map(|v| v.0.clone())
         .collect();
-    let from = |v: &str, notes: &mut Notes| -> Option<String> {
-        let r = ael::from_ael(
-            v,
-            |n| {
-                if globals.iter().any(|g| g == n) {
-                    AelName::BenchVar
-                } else {
-                    AelName::Unknown
-                }
-            },
-            |_| None,
-        );
-        match r {
-            Some(tr) if Program::compile(&tr.text, Mode::Scalar).is_ok() => {
-                if let Some(why) = tr.review {
-                    notes.review(why, cell, format!("`{v}` → `{}`", tr.text));
-                }
-                Some(tr.text)
-            }
-            _ => {
-                notes.review("expression", cell, format!("`{v}` has no Schemify form"));
-                None
-            }
-        }
-    };
+    let from = |v: &str, notes: &mut Notes| from_ael(v, &globals, cell, notes);
     // Vars and sweeps.
-    for (n, v, sc) in t
+    for (n, v, sc) in first
         .vars
         .iter()
         .filter(|v| v.2.is_empty() && v.0 != "temperature")
@@ -329,10 +471,21 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
             );
         }
     }
+    // Device parameters.
+    let params = view_params(setup.as_ref(), first, cell, notes);
+    for (p, v, _) in params.iter().filter(|x| x.2.is_empty()) {
+        if let Some(x) = from(v, notes) {
+            push_record(
+                bench,
+                RecordKind::BenchParam,
+                &[&param_from_virtuoso(p), &x],
+            );
+        }
+    }
     // Corners.
-    for (c, en) in &t.corners {
+    for (c, en) in &first.corners {
         push_record(bench, RecordKind::Corner, &[c]);
-        for (_, f, sec) in t.models.iter().filter(|m| &m.0 == c) {
+        for (_, f, sec) in first.models.iter().filter(|m| &m.0 == c) {
             let sec = sec
                 .strip_prefix('"')
                 .and_then(|x| x.strip_suffix('"'))
@@ -344,7 +497,7 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
             }
         }
         let mut temp = None;
-        for (n, v, _) in t.vars.iter().filter(|v| &v.2 == c) {
+        for (n, v, _) in first.vars.iter().filter(|v| &v.2 == c) {
             if top_level_split(v).len() > 1 {
                 notes.review(
                     "expression",
@@ -363,10 +516,97 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
         if let Some(x) = temp {
             push_attr(bench, "temp", &[&x]);
         }
+        for (p, v, _) in params.iter().filter(|x| &x.2 == c) {
+            if let Some(x) = from(v, notes) {
+                push_attr(bench, "param", &[&param_from_virtuoso(p), &x]);
+            }
+        }
         if !en {
             push_attr(bench, "enable", &["false"]);
         }
     }
+    // Each test: its analysis block, outputs, specs and definition files, then its record.
+    let mut taken = Taken {
+        names: ts.iter().map(|t| t.name.clone()).collect(),
+        ..Taken::default()
+    };
+    for t in &ts {
+        let (codes, outs) = import_test(t, &globals, bench, cell, &mut taken, notes);
+        if !several {
+            continue;
+        }
+        push_record(bench, RecordKind::Test, &[&t.name]);
+        // An empty list has no attribute form (a test record without one runs them all):
+        // `vnone <key>` keeps it for the way back.
+        for (key, list) in [("code", &codes), ("output", &outs)] {
+            if list.is_empty() {
+                notes.review(
+                    "config",
+                    cell,
+                    format!(
+                        "maestro test {} has no {key}: a Schemify run gives it every one",
+                        t.name
+                    ),
+                );
+                push_attr(bench, VNONE, &[key]);
+            } else {
+                push_attr(bench, key, list);
+            }
+        }
+        for (n, v) in &t.own {
+            if top_level_split(v).len() > 1 {
+                notes.review(
+                    "expression",
+                    cell,
+                    format!("test {} var {n}: a sweep list", t.name),
+                );
+            } else if let Some(x) = from(v, notes) {
+                push_attr(bench, "set", &[n, &x]);
+            }
+        }
+        for o in omitted(t) {
+            push_attr(bench, "omit", &[&o]);
+        }
+        if t.view != "schematic" {
+            push_attr(bench, "config", &[&t.view]);
+        }
+        if !enabled(t) {
+            push_attr(bench, "enable", &["false"]);
+        }
+    }
+    assert!(bench.record_count() >= before, "the import only appends");
+}
+
+/// One output's spec bounds `(op, value)`.
+type Specs = Vec<(String, String)>;
+
+/// What the tests of one view put in the bench so far (`import_test`).
+#[derive(Default)]
+struct Taken {
+    /// The view's test names.
+    names: Vec<String>,
+    /// Outputs `(name, expression, specs)`, specs `(op, value)` as Maestro holds them: a
+    /// test whose output is another's runs that.
+    outs: Vec<(String, String, Specs)>,
+    /// Analysis blocks `(name, lang, lines)`: a test whose block is another's runs that.
+    blocks: Vec<(String, String, Vec<String>)>,
+    /// Definition files `(stem, text)`.
+    defns: Vec<(String, String)>,
+}
+
+/// Appends test `t`'s analysis block (`code <test>`, or the earlier test's block of the
+/// same text), outputs, specs and definition files to `bench`; `taken` is what earlier
+/// tests of the view put there. Returns the code blocks and outputs the test runs, in
+/// bench names.
+fn import_test(
+    t: &Test,
+    globals: &[String],
+    bench: &mut Document<'static>,
+    cell: &str,
+    taken: &mut Taken,
+    notes: &mut Notes,
+) -> (Vec<String>, Vec<String>) {
+    let from = |v: &str, notes: &mut Notes| from_ael(v, globals, cell, notes);
     // The analysis block: SPICE when every analysis has a SPICE form, else Spectre.
     // ADE answers the test temperature 27 when nothing set it (live run): no `.temp` line
     // then (a bench that wrote `.temp 27` loses only that spelling of the default).
@@ -453,10 +693,47 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
     // Outputs and specs.
     let comment = if as_spice { "*" } else { "//" };
     let mut kept: Vec<&str> = Vec::new();
+    let mut shared: Vec<&str> = Vec::new();
+    let own_outs: Vec<&str> = t.outputs.iter().map(|o| o.0.as_str()).collect();
     for (n, k, e) in &t.outputs {
-        match (k.as_str(), out_from_ade(e)) {
+        let specs: Specs = t
+            .specs
+            .iter()
+            .filter(|x| &x.0 == n)
+            .map(|x| (x.1.clone(), x.2.clone()))
+            .collect();
+        let x = out_from_ade_in(e, &t.name, &own_outs);
+        if let Some(o) = taken.outs.iter().find(|o| &o.0 == n) {
+            if k == "point" && x.as_ref() == Some(&o.1) && o.2 == specs {
+                kept.push(n);
+                shared.push(n);
+            } else {
+                notes.review(
+                    "output",
+                    cell,
+                    format!(
+                        "maestro test {} output {n}: another test's output of that name \
+                         differs; kept in the setup only",
+                        t.name
+                    ),
+                );
+            }
+            continue;
+        }
+        match (k.as_str(), x) {
             ("point", Some(x)) => {
+                if x.contains("result(") {
+                    notes.review(
+                        "output",
+                        cell,
+                        format!(
+                            "output {n} `{x}` reads a test's output: a Schemify run refuses \
+                             it (X006) until runs schedule tests"
+                        ),
+                    );
+                }
                 push_record(bench, RecordKind::Output, &[n, &x]);
+                taken.outs.push((n.clone(), x, specs));
                 kept.push(n);
             }
             _ => {
@@ -469,7 +746,7 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
             }
         }
     }
-    for o in &kept {
+    for o in kept.iter().filter(|o| !shared.contains(o)) {
         let mut bounds: Vec<(&str, String)> = Vec::new();
         for (key, op) in [("min", "gt"), ("max", "lt")] {
             if let Some((_, _, v)) = t.specs.iter().find(|x| x.0 == *o && x.1 == op)
@@ -494,33 +771,54 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
             );
         }
     }
-    if !lines.is_empty() {
-        push_record(
-            bench,
-            RecordKind::Code,
-            &[&t.name, if as_spice { "spice" } else { "spectre" }],
-        );
+    let mut codes: Vec<String> = Vec::new();
+    let lang = if as_spice { "spice" } else { "spectre" };
+    if let Some(b) = taken.blocks.iter().find(|b| b.1 == lang && b.2 == lines) {
+        codes.push(b.0.clone());
+    } else if !lines.is_empty() {
+        push_record(bench, RecordKind::Code, &[&t.name, lang]);
         for l in &lines {
             bench.push_verbatim(l);
         }
+        codes.push(t.name.clone());
+        taken.blocks.push((t.name.clone(), lang.to_owned(), lines));
     }
-    // Definition files.
+    // Definition files: one block per name, shared by the tests whose file is the same.
     for (f, body) in &t.defns {
         let stem = f.strip_suffix(".scs").unwrap_or(f);
-        if stem == t.name {
+        if taken.names.iter().any(|n| n == stem) {
             notes.review(
                 "code",
                 cell,
-                format!("defn {f}: its name is the analysis block's"),
+                format!("defn {f}: its name is a test's analysis block"),
             );
             continue;
         }
-        push_record(bench, RecordKind::Code, &[stem, "spectre"]);
-        for l in body.lines() {
-            bench.push_verbatim(&l.replace('\r', ""));
+        match taken.defns.iter().find(|d| d.0 == stem) {
+            Some(d) if &d.1 == body => {}
+            Some(_) => {
+                notes.review(
+                    "code",
+                    cell,
+                    format!(
+                        "maestro test {} defn {f}: another test's file of that name differs; \
+                         kept in the setup only",
+                        t.name
+                    ),
+                );
+                continue;
+            }
+            None => {
+                push_record(bench, RecordKind::Code, &[stem, "spectre"]);
+                for l in body.lines() {
+                    bench.push_verbatim(&l.replace('\r', ""));
+                }
+                taken.defns.push((stem.to_owned(), body.clone()));
+            }
         }
+        codes.push(stem.to_owned());
     }
-    assert!(bench.record_count() >= before, "the import only appends");
+    (codes, kept.iter().map(|x| (*x).to_owned()).collect())
 }
 
 /// The points of ADE's `start:step:stop` sweep form (`"0.81:0.09:0.99"`), `None` for any
@@ -608,8 +906,9 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
         "tran" if only(&["stop", "start", "maxstep", "errpreset"]) => {
             let stop = num("stop")?;
             let x: f64 = ael::fold_numeric(&stop)?.parse().ok()?;
+            // 15 significant digits, as sweep points: 1u/1000 is 1e-9, not 9.999…e-10.
             let mut step = String::new();
-            write_num(&mut step, x / 1000.0);
+            write_num(&mut step, format!("{:.14e}", x / 1000.0).parse().ok()?);
             let mut l = format!(".tran {step} {stop}");
             match (
                 get("start").map(|_| num("start")),

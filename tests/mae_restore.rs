@@ -294,7 +294,8 @@ fn the_probe_setup_survives_dump_schemify_and_load() {
     let ok = run(&mut i, r#"(SfyImport "/t/b.sfyx" ?overwrite t)"#);
     let log = i.files["/t/b.sfyx.log"].clone();
     assert!(ok.truthy(), "{log}");
-    assert!(log.contains("count maestro restored 1"), "{log}");
+    // Every test of the view, in place (lane L6: each is a test of the bench).
+    assert!(log.contains("count maestro restored 3"), "{log}");
     let calls = &i.host.mae.calls;
     assert!(calls.iter().any(|c| c == "axlImportSetup"));
     assert!(
@@ -431,7 +432,13 @@ fn only_what_schemify_changed_is_applied_and_the_rest_is_restored() {
         .filter(|r| !matches!(r.tag.as_str(), "maesdb" | "maestate" | "end"))
         .map(|r| format!("{} {}", r.tag, r.str(0).unwrap_or("")))
         .collect();
-    assert_eq!(sent, ["maestro sim", "var R"], "{}", notes.text());
+    // Both tests see the global (lane L6: zz is a test of the bench too).
+    assert_eq!(
+        sent,
+        ["maestro sim", "var R", "maestro zz", "var R"],
+        "{}",
+        notes.text()
+    );
 
     i.host.mae.calls.clear();
     i.files.insert("/t/e.sfyx".into(), text);
