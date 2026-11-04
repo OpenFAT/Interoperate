@@ -316,7 +316,8 @@
     envGetVal maeSetSetup maeSetParameter
     axlGetHistoryEntry axlGetHistoryResults axlGetPointPsfDir openResults results
     selectResult outputs v i drGetWaveformXVec drGetWaveformYVec drVectorLength drGetElem
-    complexp real imag))
+    complexp real imag
+    sh techGetTechFile techGetDBUPerUU drDumpDrf dbRefreshCellView ddDeleteObj))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.
