@@ -273,13 +273,27 @@ fn export_test<F: Fn(&str) -> Option<InstInfo>>(
             });
             for k in order {
                 let line = &lines[k];
-                if !source_line(line, spice, &vars, &mut t, cell, notes) && !line.trim().is_empty()
-                {
+                if source_line(line, spice, &vars, &mut t, cell, notes) || line.trim().is_empty() {
+                    continue;
+                }
+                let at = format!("code {name} line {}: `{line}`", k + 1);
+                let first = line.split_whitespace().next().unwrap_or("");
+                if spice && first.eq_ignore_ascii_case(".title") {
+                    // The netlist's title line: Spectre names the netlist after the design.
+                    notes.dropped("code", cell, format!("{at}: Maestro has no title"));
+                } else if spice && line.split_whitespace().any(|x| x.starts_with("monte=")) {
+                    // HSPICE's `sweep monte=N`: Maestro's Monte Carlo is a run mode of the
+                    // stored setup (a `montecarlo` record, §9.9) drawing Spectre's
+                    // statistics, not HSPICE's.
                     notes.review(
-                        "code",
+                        "montecarlo",
                         cell,
-                        format!("code {name} line {}: `{}` has no maestro form", k + 1, line),
+                        format!(
+                            "{at}: an HSPICE Monte Carlo sweep; a `montecarlo` record carries it"
+                        ),
                     );
+                } else {
+                    notes.review("code", cell, format!("{at} has no maestro form"));
                 }
             }
         } else if lang == "spectre" && !name.contains(['/', '\\']) {
@@ -858,9 +872,9 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
                 kv("sweep", "Component Parameter"),
                 kv("dev", &format!("/{src}")),
                 kv("param", "dc"),
-                kv("start", &num(a)?),
-                kv("stop", &num(b)?),
-                kv("step", &num(st)?),
+                kv("start", &ael::signed_number(a)?),
+                kv("stop", &ael::signed_number(b)?),
+                kv("step", &ael::signed_number(st)?),
             ],
         ),
         (".op", []) => SpiceLine::Analysis("dc".into(), vec![kv("saveOppoint", "t")]),

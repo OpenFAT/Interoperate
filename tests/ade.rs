@@ -420,6 +420,73 @@ fn records_follow_the_spec_9_table() {
     assert_eq!(got, want.map(|s| format!("{s}\n")));
 }
 
+/// An importer's one deck block: `.title` is noted, a negative `.dc` bound maps, a
+/// `monte=` sweep is one named row, and the block's analysis and model come back.
+#[test]
+fn a_deck_block_with_title_and_negative_dc_maps_line_by_line() {
+    let bench = "schemify 1 shbench\n\ncode netlist spice\n  | .title tb_x\n\
+                 \x20 | .lib ${PDK}/models.lib tt\n  | .dc Vsw -0.2 0.2 0.1m\n\
+                 \x20 | .dc Vdd 0.8 0.8 1 sweep monte=500\n";
+    let (text, notes) = export(&project(bench));
+    let got: Vec<String> = maestro(&text)
+        .iter()
+        .map(|r| {
+            let mut s = String::new();
+            sfyx::write_record(r, &mut s);
+            s
+        })
+        .collect();
+    let want = [
+        r#"("maestro" "netlist" "schemify" "tb" "schematic" "spectre")"#,
+        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/Vsw") ("param" "dc") ("start" "-0.2") ("stop" "0.2") ("step" "0.1m")))"#,
+        r#"("model" "" "$PDK/models.lib" "tt")"#,
+    ];
+    assert_eq!(got, want.map(|s| format!("{s}\n")));
+    let rows: Vec<(&str, &str)> = notes
+        .rows
+        .iter()
+        .filter(|n| n.class.ends_with(":code") || n.class.ends_with(":montecarlo"))
+        .map(|n| (n.class.as_str(), n.detail.as_str()))
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            (
+                "dropped:code",
+                "code netlist line 1: `.title tb_x`: Maestro has no title"
+            ),
+            (
+                "needs_review:montecarlo",
+                "code netlist line 4: `.dc Vdd 0.8 0.8 1 sweep monte=500`: an HSPICE Monte \
+                 Carlo sweep; a `montecarlo` record carries it"
+            ),
+        ],
+        "{}",
+        notes.text()
+    );
+    let d = design(&project(bench));
+    let e = virtuoso::export(
+        &d,
+        &[d.find("tb.shbench").unwrap()],
+        &Mapping::default(),
+        &ExportOptions::default(),
+    )
+    .unwrap();
+    let ocn = &e.ocean.iter().find(|f| f.0.ends_with(".ocn")).unwrap().1;
+    assert!(
+        ocn.contains(r#"modelFile('("$PDK/models.lib" "tt"))"#)
+            && ocn.contains(r#"analysis('dc ?dev "/Vsw" ?param "dc" ?start "-0.2""#),
+        "{ocn}"
+    );
+    // Back without the stash: the mapped lines, the negative bound included.
+    let (got, _) = import(&strip_stash(&text), &Files::new());
+    let t = tables(&got);
+    assert_eq!(
+        t["code netlist"], "netlist spice |.lib ${PDK}/models.lib tt |.dc Vsw -0.2 0.2 0.1m",
+        "{got}"
+    );
+}
+
 // ---------------------------------------------------------------------------------------
 // (b) Hand-written maestro dumps → golden benches
 // ---------------------------------------------------------------------------------------

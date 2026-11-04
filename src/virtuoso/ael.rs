@@ -172,6 +172,15 @@ pub fn number_to_ael(lit: &str) -> Option<String> {
     Some(format!("{m}{to}"))
 }
 
+/// [`number_to_ael`] of a literal with an optional leading `-` (`-0.2`, `-1meg`); `None`
+/// for anything else.
+pub fn signed_number(v: &str) -> Option<String> {
+    match v.strip_prefix('-') {
+        Some(rest) => number_to_ael(rest).map(|n| format!("-{n}")),
+        None => number_to_ael(v),
+    }
+}
+
 /// Rewrites one Spectre number (`1M`, `10e3`, `1pF`, `5a`) as a Schemify literal (`1meg`,
 /// `10e3`, `1p`, `5e-18`). Unit letters after a scale factor are dropped (Spectre ignores
 /// them). Returns the literal and the bytes consumed; `None` when `s` starts no number.

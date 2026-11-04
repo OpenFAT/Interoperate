@@ -6,7 +6,7 @@
 //! of analogLib mirror cells, re-mastering back). No transform branches on a cell name;
 //! it looks the row up.
 
-use super::ael::number_to_ael;
+use super::ael::signed_number;
 
 /// One core cell and its analogLib counterpart.
 #[derive(Clone, Copy, Debug)]
@@ -522,14 +522,6 @@ fn is_name(v: &str) -> bool {
             .iter()
             .skip(1)
             .any(|w| w.0.eq_ignore_ascii_case(v))
-}
-
-/// A number literal with an optional leading `-` as CDF/AEL text; `None` for anything else.
-fn signed_number(v: &str) -> Option<String> {
-    match v.strip_prefix('-') {
-        Some(rest) => number_to_ael(rest).map(|n| format!("-{n}")),
-        None => number_to_ael(v),
-    }
 }
 
 /// Whether `v` is a number literal with an optional leading `-` (either syntax's suffixes).

@@ -933,6 +933,11 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
         let t = ael::from_ael(get(k)?, |_| AelName::Unknown, |_| None)?.text;
         ael::number_to_ael(&t).map(|_| t)
     };
+    // A dc sweep's bounds and step may be negative (`.dc V1 -0.2 0.2 0.1m`).
+    let snum = |k: &str| -> Option<String> {
+        let t = ael::from_ael(get(k)?, |_| AelName::Unknown, |_| None)?.text;
+        ael::signed_number(&t).map(|_| t)
+    };
     let only = |keys: &[&str]| opts.iter().all(|o| keys.contains(&o.0.as_str()));
     let freq = || -> Option<String> {
         let (f1, f2) = (num("start")?, num("stop")?);
@@ -999,9 +1004,9 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
                 }
                 out.push(format!(
                     ".dc {dev} {} {} {}",
-                    num("start")?,
-                    num("stop")?,
-                    num("step")?
+                    snum("start")?,
+                    snum("stop")?,
+                    snum("step")?
                 ));
             }
             (!out.is_empty()).then_some(out)
