@@ -212,6 +212,7 @@ fn the_map_remasters_in_a_virtuoso_export() {
 /// A fake `ssh` (runs the remote command here) and a fake `virtuoso` (checks its
 /// arguments and the batch file, notes its environment in `seen`, writes `dump` as
 /// SfyCdfNames would) in `dir/bin`; returns that directory.
+#[cfg(unix)]
 fn fakes(dir: &Path, dump: &str) -> PathBuf {
     use std::os::unix::fs::PermissionsExt;
     let bin = dir.join("bin");
@@ -237,6 +238,7 @@ fn fakes(dir: &Path, dump: &str) -> PathBuf {
 }
 
 /// `pdk-map --host` through the fakes, with `env` set and the other settings unset.
+#[cfg(unix)]
 fn host_map(dir: &Path, bin: &Path, env: &[(&str, String)]) -> std::process::Output {
     let mut c = std::process::Command::new(env!("CARGO_BIN_EXE_schemify-interop"));
     c.args(["pdk-map", "--scan"])
@@ -256,6 +258,7 @@ fn host_map(dir: &Path, bin: &Path, env: &[(&str, String)]) -> std::process::Out
 }
 
 #[test]
+#[cfg(unix)] // the fakes are sh scripts
 fn host_runs_the_dump_with_this_environment_and_maps_it() {
     let mut i = mock();
     let dir = tmp("host");
@@ -300,6 +303,7 @@ fn host_runs_the_dump_with_this_environment_and_maps_it() {
 }
 
 #[test]
+#[cfg(unix)] // the fakes are sh scripts
 fn host_without_virtuoso_names_the_variables_to_set() {
     let dir = tmp("novirt");
     let bin = fakes(&dir, "");
