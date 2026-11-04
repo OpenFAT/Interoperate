@@ -6,7 +6,10 @@ use super::*;
 /// Runs job subcommand `cmd` on `args`: 0 written, 1 refused, 2 a usage or I/O error.
 pub(super) fn job(cmd: &str, args: &[String]) -> u8 {
     match job_command(cmd, args) {
-        Some((project, c)) => drive(&project, c),
+        Some((project, c)) => match drive(&project, &mut crate::job::Job::new(c)) {
+            Ok(_) => 0,
+            Err(code) => code,
+        },
         None => {
             eprintln!("{JOB_USAGE}");
             2
@@ -107,17 +110,25 @@ pub(super) fn job_command(cmd: &str, args: &[String]) -> Option<(PathBuf, crate:
     Some((PathBuf::from(project), c))
 }
 
-/// Runs a job against the file system under `project`: 0 written, 1 refused (problems
-/// printed), 2 an I/O error.
-fn drive(project: &Path, command: crate::job::Command) -> u8 {
-    use crate::job::{Job, Step};
-    let mut job = Job::new(command);
+/// Runs `job` against the file system under `project` and prints its summary: the files
+/// written, or the exit status, 1 refused (problems printed) or 2 an I/O error.
+pub(super) fn drive(
+    project: &Path,
+    job: &mut crate::job::Job,
+) -> Result<Vec<(String, Vec<u8>)>, u8> {
+    use crate::job::Step;
     loop {
         match job.step() {
             Step::Read(paths) => {
                 for p in paths {
                     let bytes = std::fs::read(project.join(&p)).ok();
                     job.supply(&p, bytes);
+                }
+            }
+            Step::List(dirs) => {
+                for d in dirs {
+                    let listing = list(&project.join(&d));
+                    job.supply(&d, listing);
                 }
             }
             Step::Done { writes, summary } => {
@@ -127,22 +138,53 @@ fn drive(project: &Path, command: crate::job::Command) -> u8 {
                         && let Err(e) = std::fs::create_dir_all(dir)
                     {
                         eprintln!("schemify-interop: {}: {e}", dir.display());
-                        return 2;
+                        return Err(2);
                     }
                     if let Err(e) = std::fs::write(&path, b) {
                         eprintln!("schemify-interop: {}: {e}", path.display());
-                        return 2;
+                        return Err(2);
                     }
                 }
                 println!("{summary}");
-                return 0;
+                return Ok(writes);
             }
             Step::Failed(problems) => {
                 for p in problems {
                     eprintln!("schemify-interop: {p}");
                 }
-                return 1;
+                return Err(1);
             }
         }
     }
+}
+
+/// The files under `dir` as the host's `fs_list` answers ([`crate::job::Step::List`]);
+/// `None` when it is not a directory.
+fn list(dir: &Path) -> Option<Vec<u8>> {
+    fn walk(base: &Path, d: &Path, out: &mut Vec<u8>) {
+        let Ok(entries) = std::fs::read_dir(d) else {
+            return;
+        };
+        let mut v: Vec<PathBuf> = entries
+            .flatten()
+            .map(|e| e.path())
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| !n.starts_with('.') && n != "target")
+            })
+            .collect();
+        v.sort();
+        for p in v {
+            if p.is_dir() {
+                walk(base, &p, out);
+            } else if let Ok(rel) = p.strip_prefix(base) {
+                out.extend_from_slice(slash(rel).as_bytes());
+                out.push(b'\n');
+            }
+        }
+    }
+    let mut out = Vec::new();
+    dir.is_dir().then(|| walk(dir, dir, &mut out))?;
+    Some(out)
 }

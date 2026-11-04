@@ -17,7 +17,7 @@
 use std::path::{Path, PathBuf};
 
 use crate::report::Class;
-use crate::{Options, check_output, spice, tcl, tech, translate_library};
+use crate::{spice, tech};
 
 mod jobs;
 mod layout;
