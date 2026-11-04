@@ -291,6 +291,12 @@ Every conversion lists its losses in the report. The main ones:
   An unedited bench gives the state back byte for byte; an edited one becomes a Maestro
   test, never an ADE L state (Interop writes no ADE L SKILL). A component it cannot read,
   such as the `convergence` archive, is kept and reported.
+- Maestro results (`SfyAdeResults`, then `schemify-interop maestro-results <project> <dump>
+  <bench>`) become one imported Schemify run of the bench: each corner and design point is
+  a job with its waveforms, values and spec verdicts, read exactly from the history's
+  `.rdb`. Only the first test maps. Reported, not mapped: the other tests, values reduced
+  across corners or sweeps, Monte Carlo statistics, and the `near` verdict (it comes across
+  as `fail`).
 - CDF callbacks: a design library's callbacks of the plain assignment form
   (`cdfgData->w->value = …` over numbers, params and arithmetic) now cross as Schemify
   `computed` math. The rest stay Virtuoso's, each with its reason in the report, and so do a
