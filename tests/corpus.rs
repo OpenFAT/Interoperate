@@ -119,7 +119,7 @@ fn every_corpus_file_reads_without_dropped_records() {
     );
 }
 
-/// Research §5.6 rows: (label, per-library symbol counts).
+/// The audited libraries: (label, per-library symbol counts).
 const LIBS: [(&str, usize); 5] = [
     ("sky130_fd_pr", 79),
     ("gf180mcu_fd_pr", 68),
@@ -147,13 +147,13 @@ const EXPECTED: [(&str, [u32; 5]); 19] = [
     ("V1 label @spice_get_*", [40, 0, 2, 0, 0]),
     ("V2 label [ngspice::get_node]", [0, 19, 0, 0, 0]),
     ("V3 label expr()/expr_eng()", [67, 0, 0, 0, 0]),
-    // Research V4 matched only `sky130_display_fet_params|cap_cmomi_C`; the classifier
-    // flags every unknown proc, so it also counts `display_fet_params` (gf180, IHP) and
-    // `display_bip_params` (IHP). Research row: [1, 0, 1, 0, 0].
+    // The classifier flags every unknown proc, not only `sky130_display_fet_params` and
+    // `cap_cmomi_C`, so it also counts `display_fet_params` (gf180, IHP) and
+    // `display_bip_params` (IHP).
     ("V4 label unknown Tcl proc", [1, 1, 3, 0, 0]),
 ];
 
-/// Keys the research counted as netlist-relevant.
+/// Keys that are netlist-relevant.
 const NET_KEYS: [&str; 7] = [
     "type",
     "format",
@@ -210,7 +210,7 @@ fn idiom_rows(text: &str) -> [bool; 19] {
 }
 
 #[test]
-fn idiom_table_matches_research() {
+fn idiom_table_matches_expected() {
     let Some(root) = corpus() else { return };
     let mut got = [[0u32; 5]; 19];
     let mut missing = Vec::new();
@@ -226,7 +226,7 @@ fn idiom_table_matches_research() {
         assert_eq!(
             syms.len(),
             *n_expected,
-            "{suffix}: symbol count differs from the research corpus"
+            "{suffix}: symbol count differs from the audited corpus"
         );
         for p in syms {
             let rows = idiom_rows(&std::fs::read_to_string(&p).expect("readable"));
@@ -247,7 +247,7 @@ fn idiom_table_matches_research() {
         for lib in 0..5 {
             if !missing.contains(&LIBS[lib].0) && got[r][lib] != expected[lib] {
                 mismatches.push(format!(
-                    "{label} / {}: got {} research {}",
+                    "{label} / {}: got {} expected {}",
                     LIBS[lib].0, got[r][lib], expected[lib]
                 ));
             }
@@ -259,7 +259,7 @@ fn idiom_table_matches_research() {
     }
     assert!(
         mismatches.is_empty(),
-        "idiom table differs from research:\n{}",
+        "idiom table differs from the expected one:\n{}",
         mismatches.join("\n")
     );
 }

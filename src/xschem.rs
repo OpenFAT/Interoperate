@@ -1,4 +1,4 @@
-//! xschem `.sch`/`.sym` record reader (research: `xschem-feature-inventory.md` §5).
+//! xschem `.sch`/`.sym` record reader.
 //!
 //! One pass over the text turns every record into a row of a per-kind table
 //! ([`XschemFile`]). Coordinates become `i32` milli-units (D33); every value that is not
@@ -8,7 +8,7 @@
 //! (`L`/`N`/`B` endpoint ordering, layer ≥ `cadlayers`, `K`-over-`G`) — the tables hold
 //! what the file says.
 //!
-//! Grammar, as documented in the research doc:
+//! Grammar:
 //! - A record is a tag char after any whitespace, then its fields. Numeric fields are
 //!   whitespace-separated tokens and may span lines (C `scanf` semantics); after the last
 //!   field the rest of the physical line is ignored.

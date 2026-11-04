@@ -602,7 +602,7 @@ mod tests {
         }
     }
 
-    /// Virtuoso transform (research §7), y up: mirror first, then counter-clockwise turns.
+    /// Virtuoso transform, y up: mirror first, then counter-clockwise turns.
     fn virtuoso_map(o: &str, p: [i64; 2]) -> [i64; 2] {
         let [x, y] = p;
         match o {

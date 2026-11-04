@@ -70,7 +70,7 @@ const SUFFIX_TO_AEL: [(&str, &str); 11] = [
     ("g", "G"),
 ];
 
-/// Spectre scale factors (case-sensitive; research netlist-ade §1.5) → Schemify suffix,
+/// Spectre scale factors (case-sensitive) → Schemify suffix,
 /// or `None` for the factors Schemify lacks (`a c % _ K`-style ones fold into the number).
 const SUFFIX_FROM_AEL: [(char, Option<&str>, f64); 14] = [
     ('T', Some("t"), 1e12),

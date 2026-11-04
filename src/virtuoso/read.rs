@@ -1749,7 +1749,7 @@ fn cdl_format(
     notes.review(
         "cdl-approximate",
         &format!("{}/{}", c.lib, c.name),
-        "auCdl format from simInfo (research §3.4)",
+        "auCdl format from simInfo",
     );
     let prefix = si
         .str("namePrefix")

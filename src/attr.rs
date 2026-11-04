@@ -1,6 +1,5 @@
 //! xschem attribute strings: `key=value` tokenizing, value unescaping, `@token` scanning
-//! and idiom classification (research: `xschem-feature-inventory.md` §5.4, §4A.5;
-//! `pdk-xschem-devices.md` §1, §5.5–§5.6).
+//! and idiom classification.
 //!
 //! An attribute string is the content of a `{…}` brace string after the file-level
 //! escapes are gone ([`crate::xschem`] removes them). This module removes the second
@@ -8,7 +7,7 @@
 //! quoting unless escaped; `\` escapes the next char; the value handed out drops every
 //! unescaped `"` and `\` (xschem's normal lookup). Nothing is evaluated: `tcleval(…)`,
 //! `expr(…)`, `@tokens` stay as text; [`classify`] reports which of them a text uses (the
-//! corpus audit counts them against the research tables).
+//! corpus audit counts them per PDK library).
 
 use std::ops::{BitOr, BitOrAssign};
 
@@ -222,7 +221,7 @@ pub fn unescape(raw: &str, out: &mut String) {
     out.push_str(&raw[seg.min(b.len())..]);
 }
 
-/// What an `@`/`%` token refers to (research §4A.5 tokenizer rules).
+/// What an `@`/`%` token refers to (xschem's tokenizer rules).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AtKind {
     /// `@name`: an attribute or a built-in (`@pinlist`, `@symname`, `@spice_get_*`, …).
@@ -448,7 +447,7 @@ pub fn classify(text: &str) -> Idioms {
             }
             AtKind::PinAttr => Idioms::AT_PIN_ATTR,
             // Built-ins match on the leading identifier: `schematic=` substitutes
-            // `@symname` as a substring (research §4A.4), as in `[hierarchy_config @symname]`.
+            // `@symname` as a substring, as in `[hierarchy_config @symname]`.
             AtKind::Attr => match t
                 .name
                 .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
@@ -576,9 +575,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn two_escape_layers_from_research_examples() {
+    fn two_escape_layers_from_xschem_examples() {
         // res.sym: file `verilog_format="tran @name (@@P\\\\, @@M\\\\);"` → brace string
-        // `…@@P\\, …` → value `…@@P\, …` (§5.4).
+        // `…@@P\\, …` → value `…@@P\, …`.
         let a = Attrs::parse("verilog_format=\"tran @name (@@P\\\\, @@M\\\\);\"");
         assert_eq!(a.get("verilog_format"), Some("tran @name (@@P\\, @@M\\);"));
         let i = classify(a.value(0));

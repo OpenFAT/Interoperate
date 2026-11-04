@@ -2,7 +2,7 @@
 //! written in (`docs/spec/interop.md` §5.1), plus the reader both sides of the `.sfyx`
 //! exchange format share.
 //!
-//! No SKILL implementation runs without Cadence (research: `virtuoso-tooling-prior-art`),
+//! No SKILL implementation runs without Cadence,
 //! so the scripts are written in **prefix form only** — `(f a b)`, never `f(a b)` or infix,
 //! `(getSGq obj attr)` for `obj~>attr` — which SKILL reads everywhere and which this reader
 //! can check exactly: a C-style call, an operator, a scale-suffixed or zero-padded number is

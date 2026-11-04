@@ -1,3 +1,3 @@
 needs_review:callback	demopdk/nmos_demo	param w: callback not carried
-needs_review:cdl-approximate	demopdk/nmos_demo	auCdl format from simInfo (research §3.4)
-needs_review:cdl-approximate	demopdk/res_demo	auCdl format from simInfo (research §3.4)
+needs_review:cdl-approximate	demopdk/nmos_demo	auCdl format from simInfo
+needs_review:cdl-approximate	demopdk/res_demo	auCdl format from simInfo

@@ -289,7 +289,7 @@ pub fn by_alib(name: &str) -> Option<(&'static Device, usize)> {
         .find_map(|d| d.alib.iter().position(|a| *a == name).map(|k| (d, k)))
 }
 
-/// analogLib and basic symbols that netlist as a global net (research cdf-pdk §4.1): an
+/// analogLib and basic symbols that netlist as a global net: an
 /// instance of one becomes a global label on import.
 pub const GLOBAL_SYMBOLS: &[&str] = &[
     "gnd", "gnda", "gndd", "vcc", "vcca", "vccd", "vdd", "vdda", "vddd", "vee", "veea", "veed",

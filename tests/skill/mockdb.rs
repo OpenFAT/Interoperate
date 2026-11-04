@@ -1,8 +1,7 @@
 //! A mock Virtuoso database for the SKILL test interpreter (spec `interop.md` §5.4).
 //!
 //! Each Cadence function checks its arity and argument types against [`SIGNATURES`] (taken
-//! from the IC20.1 reference manuals, research `virtuoso-skill-db.md` and
-//! `virtuoso-cdf-pdk.md`) and fails as documented: a bad argument signals (`Err`), a refused
+//! from the IC20.1 reference manuals) and fails as documented: a bad argument signals (`Err`), a refused
 //! operation returns `nil`. Behaviour the manuals leave open is marked `GUESS(Gn)`, matching
 //! the spec's §13 table; the probe (`skill/sfy_probe.il`) settles each one on a real
 //! Virtuoso. The maestro part lives in `mock_mae.rs`.
@@ -88,7 +87,7 @@ pub const SIGNATURES: &[(&str, &str)] = &[
     ("cdfGetCellCDF", "d"),
     ("cdfUpdateInstParam", "d"),
     // Maestro (IC23.1 ADE SKILL Reference syntax lines, via virtuoso-bridge-lite's function
-    // database, MIT; research virtuoso-netlist-ade.md §5.3). Bodies in mock_mae.rs.
+    // database, MIT). Bodies in mock_mae.rs.
     ("maeOpenSetup", "t t t ?application ?histName ?mode"),
     ("maeCloseSession", "?session ?forceClose"),
     ("maeSaveSetup", "?lib ?cell ?view ?session"),
@@ -309,7 +308,7 @@ fn s(v: &V) -> Option<&str> {
     }
 }
 
-/// Orientation point maps in Virtuoso's y-up frame (research §7): mirror first, then turn
+/// Orientation point maps in Virtuoso's y-up frame: mirror first, then turn
 /// counter-clockwise.
 // GUESS(G1): MYR90 = (-y, -x) and MXR90 = (y, x) (derived; the other six are definitions).
 fn orient_map(o: &str, (x, y): (f64, f64)) -> Option<(f64, f64)> {
@@ -1724,7 +1723,7 @@ impl MockDb {
                 };
                 let (xs, ys) = (num(&a[4]).unwrap_or(0.0), num(&a[5]).unwrap_or(0.0));
                 let snap = |v: f64, g: f64| if g > 0.0 { (v / g).round() * g } else { v };
-                // The database stores every point on the cellview's DBU grid (research §1.4),
+                // The database stores every point on the cellview's DBU grid,
                 // so a segment shorter than half a DBU vanishes.
                 let dbu = num(&self.a(cv, "DBUPerUU")).unwrap_or(160.0);
                 let pts: Vec<(f64, f64)> = pts
@@ -1734,7 +1733,7 @@ impl MockDb {
                     .map(|(x, y)| (snap(snap(x, xs), 1.0 / dbu), snap(snap(y, ys), 1.0 / dbu)))
                     .collect();
                 let width = Self::width_on_grid(num(&a[6]).unwrap_or(0.0), dbu);
-                // A segment that already exists makes the call return nil (research §4.2, VCLI).
+                // A segment that already exists makes the call return nil (VCLI).
                 for w in pts.windows(2) {
                     if self.segment_exists(cv, w[0], w[1]) {
                         return Ok(V::Nil);

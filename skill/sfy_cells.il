@@ -932,7 +932,7 @@
           (t
             (setq lbl (dbCreateLabel sfyCv lpp pt (nth 2 f) (nth 6 f) (nth 5 f) (nth 7 f) h))
             (when (and lbl (nequal lt "normalLabel")) (setSGq lbl lt labelType))
-            ;; research U13: schGlueLabel first, the parent attribute as the fallback.
+            ;; schGlueLabel first, the parent attribute as the fallback.
             (when (and lbl par (not (car (errset (schGlueLabel lbl par)))))
               (setSGq lbl par parent))
             lbl)))

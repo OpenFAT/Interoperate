@@ -1,4 +1,4 @@
-;; sfy_probe.il: the first-contact probe (interop spec 5.5, research virtuoso-skill-db 9).
+;; sfy_probe.il: the first-contact probe (interop spec 5.5).
 ;; Not part of schemify.il. In a real Virtuoso:
 ;;   (load "/abs/path/schemify.il") (load "/abs/path/sfy_probe.il") (SfyProbe "scratchLib")
 ;; then send /tmp/sfy_probe.txt. It touches only scratchLib/sfy_probe: the schematic, opened

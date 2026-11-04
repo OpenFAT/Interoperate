@@ -293,7 +293,7 @@ proptest! {
     fn written_attributes_read_back_exactly(
         pairs in prop::collection::btree_map("[a-z_][a-z0-9_]{0,8}", any::<String>(), 0..12)
     ) {
-        // xschem's writer rules (research §5.4): quote values holding a separator or that
+        // xschem's writer rules: quote values holding a separator or that
         // are empty; escape `"` and `\` with a backslash.
         let mut s = String::new();
         for (k, v) in &pairs {

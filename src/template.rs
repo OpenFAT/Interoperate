@@ -305,7 +305,7 @@ fn push_literal(out: &mut String, ch: char) {
 }
 
 /// Drops the `#` marks of xschem's `#pfx#@name` (`pfx` prefixed to every bit of the
-/// instance name, research: feature inventory, format tokens): elab names each bit of
+/// instance name): elab names each bit of
 /// an iterated instance, so `pfx{name}` is that prefix on every bit. A `#` that opens
 /// no such word stays literal.
 fn name_prefix_marks(s: &str) -> String {

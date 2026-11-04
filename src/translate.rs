@@ -3254,8 +3254,8 @@ fn top_only(f: &XschemFile, row: usize) -> bool {
 }
 
 /// xschem's bracket-less bus form in a net or instance name: `A[3..0]` is the nets
-/// `A3,A2,A1,A0` and `A[6..0..2]` steps by 2 (research: xschem-feature-inventory, bus
-/// syntax; goldens name `G2[9..0]`'s devices `G29`…`G20`), as a Schemify bundle. Any
+/// `A3,A2,A1,A0` and `A[6..0..2]` steps by 2 (the
+/// goldens name `G2[9..0]`'s devices `G29`…`G20`), as a Schemify bundle. Any
 /// other text is returned unchanged.
 pub(crate) fn dotted_bus(s: &str) -> String {
     let mut out = String::with_capacity(s.len());

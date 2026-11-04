@@ -1,6 +1,6 @@
 //! SPICE model-card scanner for D14 gating: per-model legal L/W ranges from BSIM bin
 //! parameters, `.subckt` wrappers, `.param`s, `.lib` sections, and Verilog-A (OSDI)
-//! usage (research: `pdk-xschem-devices.md` §2.3, §3, §5.4).
+//! usage.
 //!
 //! It reads; it does not simulate. Text rules (ngspice dialect):
 //! - Names and keywords are case-insensitive; every identifier is stored lowercased.

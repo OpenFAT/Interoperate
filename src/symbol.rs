@@ -1,8 +1,7 @@
-//! Symbol interface of an xschem `.sym` (research: `pdk-xschem-devices.md` §1, §5.2;
-//! `xschem-feature-inventory.md` §5.8, §5.12): the attribute block, its `template`
-//! defaults, and the pins in netlist order.
+//! Symbol interface of an xschem `.sym`: the attribute block, its `template` defaults, and
+//! the pins in netlist order.
 //!
-//! Rules taken from the research:
+//! Rules:
 //! - Symbol attributes come from the last `K` record if it is non-empty, else from the
 //!   first non-empty `G` (pre-1.2 files).
 //! - Pins are the layer-5 `B` records. Netlist order is file order, unless **every** pin

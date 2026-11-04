@@ -2,8 +2,7 @@
 //!
 //! Signatures (rows of `mockdb::SIGNATURES`, checked before a call reaches here) are the
 //! IC23.1 *ADE SKILL Reference* syntax lines, as collected (MIT) by virtuoso-bridge-lite's
-//! function database; the behaviour follows their descriptions and the notes in research
-//! `virtuoso-netlist-ade.md` §5.3. What the reference leaves open is marked `GUESS(Gn)`
+//! function database; the behaviour follows their descriptions. What the reference leaves open is marked `GUESS(Gn)`
 //! (spec §13).
 //!
 //! Model: a setup per maestro view (`saved`, written by `maeSaveSetup`); `maeOpenSetup`
