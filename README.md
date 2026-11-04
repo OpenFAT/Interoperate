@@ -297,6 +297,14 @@ Every conversion lists its losses in the report. The main ones:
   `.rdb`. Only the first test maps. Reported, not mapped: the other tests, values reduced
   across corners or sweeps, Monte Carlo statistics, and the `near` verdict (it comes across
   as `fail`).
+- Layout views cross as GDS (`SfyLayoutExport`, `schemify-interop layout-export`/
+  `layout-import`, `SfyLayoutImport`): `<cell>.<view>.gds` beside the cell for KLayout,
+  with a generated `.lyp`/`.lyt`. An unchanged GDS gives the OA view back byte for byte; an
+  edited one is streamed in by `strmin` and the report lists KLayout's diff. Lost after an
+  edit: PCell parameters, nets other than pins, cellview and shape properties, label font
+  and height, vias (they come back as instances), blockages, rows, markers, groups,
+  boundaries, constraints, and edits inside existing sub-cells. Extracted views become a
+  `code` block.
 - CDF callbacks: a design library's callbacks of the plain assignment form
   (`cdfgData->w->value = …` over numbers, params and arithmetic) now cross as Schemify
   `computed` math. The rest stay Virtuoso's, each with its reason in the report, and so do a
