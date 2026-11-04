@@ -129,9 +129,16 @@
           (close port))))
     any))
 
-;; Whether w is a waveform: its x vector answers.
+;; Whether w is a waveform of numbers: its x and y vectors answer, and their first elements
+;; are numbers (the primitives result's vectors hold strings, "model").
 (procedure (SfyResIsWave w)
-  (and w (car (errset (drGetWaveformXVec w))) t))
+  (and w
+    (SfyResIsNum (car (errset (drGetElem (drGetWaveformXVec w) 0))))
+    (SfyResIsNum (car (errset (drGetElem (drGetWaveformYVec w) 0))))))
+
+;; Whether e is a number, real or complex.
+(procedure (SfyResIsNum e)
+  (or (numberp e) (complexp e)))
 
 ;; Prints waveform w of signal name: its header and every point at %.17g.
 (procedure (SfyResWave port name w kind)

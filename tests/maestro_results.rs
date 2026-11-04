@@ -404,6 +404,8 @@ fn live_history_against_nutbin() {
     let mut names: Vec<_> = std::fs::read_dir(&live)
         .unwrap()
         .flatten()
+        // Not Spectre's <stem>.nutbin.psf directories, its info files beside each nutbin.
+        .filter(|e| e.file_type().is_ok_and(|t| t.is_file()))
         .map(|e| e.file_name().into_string().unwrap())
         .collect();
     names.sort();
