@@ -8,9 +8,13 @@
 # Ships live/checks, the kit fixture (as pdkmap_kit.il), build.il's helpers (as
 # pdkmap_build.il) and this checkout's schemify.il to <host>:sfytest/checks/src_pdkmap (its
 # own directory and schemify_pdkmap.il), runs `run.sh pdkmap_names` there (under the host's
-# run lock), fetches out/pdkmap_names.sfyx, requires it to be the mock's dump of the kit
-# (tests/pdk_map.rs) and `pdk-map` of tests/fixtures/pdk_map/scan onto it to be the mock's
-# map. Prints its own and the check's lines and exits 1 on any FAIL. Files stay in
+# run lock, the library kept), fetches out/pdkmap_names.sfyx and requires it to be the
+# mock's dump of the kit (tests/pdk_map.rs). Then dumps the kept library again as
+# PDK-Manager does, `pdk-map --remote-script` through `ssh <host> sh -s` (under the run
+# lock; Cadence from SFY_CADENCE_ENV, default run.sh's SFYCHECK_ENV file; VIRTUOSO and the
+# licence variables passed through when set here), requires the same dump and `pdk-map` of
+# tests/fixtures/pdk_map/scan onto it to be the mock's map, and deletes the library.
+# Prints its own and the check's lines and exits 1 on any FAIL. Files stay in
 # $SFYCHECK_LOCAL (default a fresh temporary directory, printed at the end).
 set -euo pipefail
 here="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -34,11 +38,19 @@ scp -q "$repo/tests/fixtures/skill/pdkmap_kit.il" "$host:$src/pdkmap_kit.il"
 scp -q "$repo/tests/fixtures/skill/build.il" "$host:$src/pdkmap_build.il"
 scp -q "$tmp/il/schemify.il" "$host:$work/schemify_pdkmap.il"
 
+# The kept library goes when the driver ends, whatever happened.
+drop() {
+  ssh "$host" sh -s <<DROP
+rm -rf "\$HOME/$work/$lib"
+sed -i '/^DEFINE $lib /d' "\$HOME/$work/cds.lib"
+DROP
+}
+trap drop EXIT
+
 status=0
-ssh "$host" "env SFYCHECK_IL=\$HOME/$work/schemify_pdkmap.il bash $src/run.sh pdkmap_names" >"$tmp/run.txt" 2>&1 || status=$?
+ssh "$host" "env SFYCHECK_KEEP=1 SFYCHECK_IL=\$HOME/$work/schemify_pdkmap.il bash $src/run.sh pdkmap_names" >"$tmp/run.txt" 2>&1 || status=$?
 cat "$tmp/run.txt"
-if scp -q "$host:$work/out/pdkmap_names.sfyx" "$tmp/cdf.sfyx"; then
-  cat >"$tmp/want.sfyx" <<WANT
+cat >"$tmp/want.sfyx" <<WANT
 ("sfyx" 1 "schemify.il 1")
 ("cdfnames" "$lib" "nfoo" "nfoo" ("D" "G" "S" "B") ("model" "w" "l" "nf" "m") ("D" "G" "S"))
 ("cdfnames" "$lib" "nfoo_b" "nfoo" ("D" "G" "S" "B") ("model" "w" "l" "nf" "m") ("B" "D" "G" "S"))
@@ -47,10 +59,24 @@ if scp -q "$host:$work/out/pdkmap_names.sfyx" "$tmp/cdf.sfyx"; then
 ("cdfnames" "$lib" "rbaz" "rbaz" ("PLUS" "MINUS") ("model" "r" "m") ("MINUS" "PLUS"))
 ("end")
 WANT
-  verdict "the dump is the mock's" "$(diff "$tmp/want.sfyx" "$tmp/cdf.sfyx" >&2 && echo true || echo false)"
-  "$bin" pdk-map --scan "$repo/tests/fixtures/pdk_map/scan" --dump "$tmp/cdf.sfyx" --lib fkit \
-    -o "$tmp/interop.map"
-  cat >"$tmp/want.map" <<WANT
+same() { diff "$1" "$2" >&2 && echo true || echo false; }
+if scp -q "$host:$work/out/pdkmap_names.sfyx" "$tmp/cdf.sfyx"; then
+  verdict "the in-session dump is the mock's" "$(same "$tmp/want.sfyx" "$tmp/cdf.sfyx")"
+else
+  verdict "the in-session dump came back" false
+fi
+
+# The remote script, one Virtuoso at a time: under the run lock (sh -c, whatever the login
+# shell).
+rstatus=0
+SFY_CADENCE_ENV="${SFY_CADENCE_ENV:-${SFYCHECK_ENV:-sfytest/env.csh}}" SFY_CDS_DIR="$work" \
+  "$bin" pdk-map --remote-script --vlib "$lib" |
+  ssh "$host" 'sh -c "flock /tmp/`id -un`-sfy-run.lock sh -s"' >"$tmp/remote.sfyx" || rstatus=$?
+verdict "the remote script exits 0" "$([[ $rstatus == 0 ]] && echo true || echo false)"
+verdict "the remote script prints only the mock's dump" "$(same "$tmp/want.sfyx" "$tmp/remote.sfyx")"
+"$bin" pdk-map --scan "$repo/tests/fixtures/pdk_map/scan" --dump "$tmp/remote.sfyx" --lib fkit \
+  -o "$tmp/interop.map" || true
+cat >"$tmp/want.map" <<WANT
 map fkit:nfoo virtuoso $lib nfoo_b
   pin d D
   pin g G
@@ -66,11 +92,8 @@ map fkit:rbaz virtuoso $lib rbaz
   param r r
   param m m
 WANT
-  verdict "pdk-map writes the mock's map" "$(diff "$tmp/want.map" "$tmp/interop.map" >&2 && echo true || echo false)"
-  cat "$tmp/interop.report.txt"
-else
-  verdict "the dump came back" false
-fi
+verdict "pdk-map writes the mock's map" "$(same "$tmp/want.map" "$tmp/interop.map")"
+cat "$tmp/interop.report.txt" 2>/dev/null || true
 echo "pdkmap_drive: files in $tmp"
 [[ $fails == 0 ]] || exit 1
 exit $status

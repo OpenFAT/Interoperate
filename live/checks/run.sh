@@ -16,7 +16,10 @@
 # Environment: SFYCHECK_WORK (default ~/sfytest/checks), SFYCHECK_IL (default
 # <work>/schemify.il), SFYCHECK_ENV (the csh file that sets up Cadence, default
 # ~/sfytest/env.csh), CDS (the Virtuoso install, under the site's kit tree: read only, and
-# needed only while <work> has no cds.lib), SFYCHECK_TIMEOUT (seconds, default 2400).
+# needed only while <work> has no cds.lib), SFYCHECK_TIMEOUT (seconds, default 2400),
+# VIRTUOSO (the Virtuoso command, default virtuoso from the setup's PATH), SFYCHECK_KEEP
+# (non-empty: the scratch library stays after the run, for a driver's next session; the
+# driver deletes it).
 # Exit status: 0 a PASS and no FAIL, 1 a FAIL or no `end`, 2 usage or setup, 3 nothing
 # checked (only SKIP lines: the lane's check is still a stub).
 set -uo pipefail
@@ -48,13 +51,13 @@ drop_lib() {
   sed -i "/^DEFINE $lib /d" cds.lib
 }
 drop_lib
-trap drop_lib EXIT
+[[ -n ${SFYCHECK_KEEP:-} ]] || trap drop_lib EXIT
 
 rm -f "$out/$check.txt"
 flock "/tmp/$(id -un)-sfy-run.lock" csh -f -c "source $envfile >& /dev/null; cd $work; \
   setenv SFYCHECK $check; setenv SFYCHECK_DIR $here; setenv SFYCHECK_LIB $lib; \
   setenv SFYCHECK_WORK $work; setenv SFYCHECK_IL $il; setenv SFYCHECK_OUT $out/$check.txt; \
-  timeout ${SFYCHECK_TIMEOUT:-2400} virtuoso -nograph -restore $here/wrap.il -log $out/$check.CDS.log < /dev/null" \
+  timeout ${SFYCHECK_TIMEOUT:-2400} ${VIRTUOSO:-virtuoso} -nograph -restore $here/wrap.il -log $out/$check.CDS.log < /dev/null" \
   >/dev/null 2>&1
 echo "$check: virtuoso exit $?"
 [[ -f "$out/$check.txt" ]] && cat "$out/$check.txt"
