@@ -54,6 +54,7 @@ pub mod core;
 pub mod decimal;
 pub mod design;
 pub mod job;
+pub mod klayout;
 mod limits;
 pub mod map;
 pub mod merge;

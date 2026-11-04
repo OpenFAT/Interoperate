@@ -6,6 +6,7 @@
 //! rows) are also what `write` builds from a Design and serializes.
 
 use super::*;
+use crate::virtuoso::kinds::{self, Scope};
 
 /// Objects per cellview the reader accepts (format.md's rank-3 bound).
 pub const OBJECTS_MAX: usize = 1 << 22;
@@ -278,11 +279,6 @@ pub struct Dump {
     pub unknown: Vec<Record>,
 }
 
-/// The maestro-context record tags (§4.2, owned by `ade`).
-const ADE_TAGS: [&str; 8] = [
-    "maestro", "var", "analysis", "corner", "model", "output", "spec", "defn",
-];
-
 fn ints(r: &Record, v: &[Value], what: &str) -> Result<Vec<i32>, Error> {
     v.iter()
         .map(|x| {
@@ -330,7 +326,7 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
     let mut cells_seen: BTreeSet<(String, String)> = BTreeSet::new();
     for r in &records[1..records.len() - 1] {
         let tag = r.tag.as_str();
-        if ADE_TAGS.contains(&tag) {
+        if kinds::scope(tag) == Some(Scope::Maestro) {
             if tag == "maestro" {
                 in_maestro = true;
                 d.maestro.push(vec![r.clone()]);
@@ -342,11 +338,10 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
             continue;
         }
         if in_maestro
-            && (is_object(tag)
-                || matches!(
-                    tag,
-                    "lib" | "cell" | "cv" | "cdf" | "param" | "siminfo" | "textview"
-                ))
+            && matches!(
+                kinds::scope(tag),
+                Some(Scope::File | Scope::Cell | Scope::Object)
+            )
         {
             return Err(r.err("cell records after the maestro records"));
         }
@@ -502,7 +497,7 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 } else {
                     None
                 }) else {
-                    if is_object(tag) {
+                    if kinds::scope(tag) == Some(Scope::Object) {
                         return Err(r.err("outside a cellview"));
                     }
                     d.unknown.push(r.clone());
@@ -527,13 +522,6 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
         ade::check(t)?;
     }
     Ok(d)
-}
-
-fn is_object(tag: &str) -> bool {
-    matches!(
-        tag,
-        "term" | "pinfig" | "inst" | "spin" | "wire" | "label" | "shape" | "prop" | "conn"
-    )
 }
 
 pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {

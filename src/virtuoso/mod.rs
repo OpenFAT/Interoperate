@@ -2,7 +2,8 @@
 //!
 //! Spine ([`export`], [`import`]): see the spec's §1 table. Submodules: `read` (records →
 //! Design), `write` (Design → records), `ael` (values, §3.4), `devices` (§6.5–§6.6),
-//! `ade` (maestro ⇄ bench, §9).
+//! `ade` (maestro ⇄ bench, §9), `kinds` (the record kinds, §4.2), and the lane slots
+//! `config` (config views) and `results` (maestro results), empty so far.
 
 use schemify_format::{Document, RecordKind};
 
@@ -14,8 +15,11 @@ use crate::notes::Notes;
 pub mod ade;
 pub mod ael;
 pub mod characterize;
+pub mod config;
 pub mod devices;
+pub mod kinds;
 pub mod read;
+pub mod results;
 pub mod write;
 
 /// Export settings.
