@@ -1446,6 +1446,16 @@ pub fn call_files(
             let stem = stem.rsplit_once('.').map_or(stem, |x| x.0);
             let su = db.mae.setup(k).clone();
             files.insert(path.clone(), mae_xml::write(&export_tree(&su, stem)));
+            // Live (probe l11): the tests' states go beside the file as active.state.
+            if let Some((dir, _)) = path.rsplit_once('/') {
+                let mut st =
+                    String::from("<?xml version=\"1.0\"?>\n<statedb version=\"5\">active\n");
+                for t in &su.tests {
+                    st.push_str(&t.state.clone().unwrap_or_else(|| mock_state(t)));
+                }
+                st.push_str("</statedb>\n");
+                files.insert(format!("{dir}/active.state"), st);
+            }
             Some(Ok(V::T))
         }
         "axlImportSetup" => {
@@ -1468,8 +1478,27 @@ pub fn call_files(
             let Ok(x) = mae_xml::Setup::from_root(&root) else {
                 return Some(Ok(V::Nil));
             };
-            let states = db.mae.sessions[k].as_ref().expect("open").states.clone();
-            apply_xml(db.mae.setup(k), root, &x, &states);
+            let mut states = db.mae.sessions[k].as_ref().expect("open").states.clone();
+            // Live (probe l11): an active.state beside the file restores its tests over
+            // the session's.
+            let beside: BTreeMap<String, String> = s0(1)
+                .rsplit_once('/')
+                .and_then(|(dir, _)| files.get(&format!("{dir}/active.state")))
+                .and_then(|t| mae_xml::state_tests(t).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let su = db.mae.setup(k);
+            for t in su.tests.iter_mut() {
+                if let Some(el) = beside.get(&t.name) {
+                    let mut n = from_state(&t.name, el);
+                    n.vars = std::mem::take(&mut t.vars);
+                    n.disabled = t.disabled;
+                    *t = n;
+                }
+            }
+            states.extend(beside);
+            apply_xml(su, root, &x, &states);
             Some(Ok(V::T))
         }
         _ => None,

@@ -140,4 +140,4 @@ chkThat("after2: A is 2 and dis Plot on, R1, start and K's disable kept"
   chkAfter2 == list(car(chkBefore) cadr(chkBefore) caddr(chkBefore) "2" '(("dis" t) ("vmax" t))))
 
 ;; ---- cleanup (run.sh removes chkLib)
-system(sprintf(nil "rm -rf %s %s/simulation/%s /tmp/sfy_%s_maesdb.sdb /tmp/sfy_%s_adel.b64" chkDir getShellEnvVar("HOME") chkLib getShellEnvVar("USER") getShellEnvVar("USER")))
+system(sprintf(nil "rm -rf %s %s/simulation/%s /tmp/sfy_%s_maesdb /tmp/sfy_%s_adel.b64" chkDir getShellEnvVar("HOME") chkLib getShellEnvVar("USER") getShellEnvVar("USER")))

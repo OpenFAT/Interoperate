@@ -195,4 +195,4 @@ chkFiles("end" chkView)
 chkPass("probe ran")
 
 ;; ---- cleanup (run.sh removes chkLib)
-system(sprintf(nil "rm -rf %s /tmp/sfy_%s_maesdb.sdb" chkDir getShellEnvVar("USER")))
+system(sprintf(nil "rm -rf %s /tmp/sfy_%s_maesdb" chkDir getShellEnvVar("USER")))

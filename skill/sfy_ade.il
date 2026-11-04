@@ -60,9 +60,16 @@
   (list "vars" "tests" "parameters" "corners" "runoptions" "specs"))
 
 ;; The scratch file the setup XML passes through (axlExportSetup and axlImportSetup take
-;; a path), one per user, overwritten on every use.
+;; a path), in a directory of its own per user, overwritten on every use. axlExportSetup
+;; also writes the tests' states as active.state beside the file, and axlImportSetup
+;; restores the tests from an active.state beside its file, over the view's (live
+;; ICADVM20.1, probe l11): so that file is removed first, and the import keeps the states
+;; the session read from the view (G40).
 (procedure (SfyAdeTmp)
-  (sprintf nil "/tmp/sfy_%s_maesdb.sdb" (or (getShellEnvVar "USER") "user")))
+  (let ((d (sprintf nil "/tmp/sfy_%s_maesdb" (or (getShellEnvVar "USER") "user"))))
+    (system (sprintf nil "mkdir -p '%s'" d))
+    (system (sprintf nil "rm -f '%s/active.state'" d))
+    (strcat d "/maesdb.sdb")))
 
 ;; The path of maestro view lib/cell's active.state (it need not exist), or nil without the
 ;; view. Through the view's directory: ddGetObj of the file in mode "a" answers nil (live

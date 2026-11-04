@@ -77,11 +77,12 @@
 
 ;; The (line record) pairs of a dump without its schemify* properties: Schemify's ids and
 ;; stash, which Virtuoso may move to the other piece of a wire it splits and joins again
-;; (live ICADVM20.1 run). Also without a maestro view's own setup (maesdb, maestate): its
-;; XML names the library, and Virtuoso adds placeholders to it on a restore (spec 9.7).
+;; (live ICADVM20.1 run). Also without a maestro view's own setup (maesdb, maestate,
+;; maefile): its XML names the library, and Virtuoso adds placeholders to it on a restore
+;; (spec 9.7, 9.11).
 (procedure (SfySelfKeep recs)
   (setof r recs
-    (not (or (member (car (cadr r)) (list "maesdb" "maestate"))
+    (not (or (member (car (cadr r)) (list "maesdb" "maestate" "maefile"))
              (and (equal (car (cadr r)) "prop")
                   (stringp (nth 2 (cadr r)))
                   (geqp (strlen (nth 2 (cadr r))) 8)
