@@ -197,6 +197,10 @@ fn stdin_frames_give_the_filesystem_output() {
 }
 
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "the remote script runs in a Unix host's sh; Git Bash mangles verbatim Windows paths"
+)]
 fn the_remote_script_frames_only_structure() {
     let (script, code) = scan(&["--remote-script"], b"");
     assert_eq!(code, 0);
@@ -470,6 +474,10 @@ fn a_spectre_kit_reads_through_spicerack() {
 /// value), and `--stdin` on its frames, fetching includes round by round as PDK-Manager
 /// does, gives the same cells and version as the direct scan.
 #[test]
+#[cfg_attr(
+    windows,
+    ignore = "the remote script runs in a Unix host's sh; Git Bash mangles verbatim Windows paths"
+)]
 fn the_remote_script_serves_a_spectre_kit() {
     let (script, _) = scan(&["--remote-script"], b"");
     let r = spectre_root();
