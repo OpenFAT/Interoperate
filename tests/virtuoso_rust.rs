@@ -878,7 +878,10 @@ fn import_onto_existing_files_keeps_schemify_only_data() {
     );
     let local = canonical(local.as_bytes());
     let mut existing: Files = first.files.iter().cloned().collect();
-    existing.insert("demopdk/nmos_demo.shprim".into(), local.clone().into_bytes());
+    existing.insert(
+        "demopdk/nmos_demo.shprim".into(),
+        local.clone().into_bytes(),
+    );
     // Unchanged in Virtuoso: the local file stays as it is.
     let again = virtuoso::import(
         &text,
