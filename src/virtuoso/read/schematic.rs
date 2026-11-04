@@ -49,16 +49,12 @@ pub(super) fn schematic_in(
     let id_of = |r: u32| prop(r, "schemifyId");
     // Pre-claim: ids wanted by objects, in dump order, so a fresh id never steals one.
     let mut claimed: BTreeSet<String> = BTreeSet::new();
-    for p in sv.props.iter() {
-        match p.name.as_str() {
-            "schemifyId" if is_id(&p.value) => {
-                claimed.insert(p.value.clone());
-            }
-            "schemifySegs" => {
-                claimed.extend(p.value.split(' ').filter(|i| is_id(i)).map(str::to_owned))
-            }
-            _ => {}
-        }
+    for p in sv
+        .props
+        .iter()
+        .filter(|p| p.name == "schemifyId" && is_id(&p.value))
+    {
+        claimed.insert(p.value.clone());
     }
     let reserved = if claimed.is_empty() {
         reserved
@@ -511,34 +507,21 @@ pub(super) fn schematic_in(
             continue;
         }
         let pts = rejoined.get(&w.r).cloned().unwrap_or(pts);
-        // A wire of more than two points: each later segment carries `vseg <first id> <k>`
-        // so export draws one figure again, and the id export kept in `schemifySegs` (§7.5).
-        let later: Vec<&str> =
-            prop(w.r, "schemifySegs").map_or_else(Vec::new, |v| v.split(' ').collect());
-        // A bus width other than export's: `vwidth <w>`.
+        // A bus width other than export's: `vwidth <w>` (§7.5).
         let width = profile::height_from_virtuoso(w.width, upi) as i32;
-        let mut first: Option<String> = None;
-        let mut k = 0;
+        let mut first = true;
         for seg in pts.windows(2) {
             if seg[0] == seg[1] {
                 continue;
             }
-            let want = match &first {
-                None => id_of(w.r),
-                Some(_) => later.get(k - 1).copied(),
-            };
-            let id = ids.next(want, &reserved);
+            let id = ids.next(if first { id_of(w.r) } else { None }, &reserved);
+            first = false;
             let xy = [seg[0][0], seg[0][1], seg[1][0], seg[1][1]];
             crate::remap::push_wire(doc, &id, xy, w.width > 0);
-            if let Some(f) = &first {
-                push_attr(doc, "vseg", &[f, &k.to_string()]);
-            }
             if w.width > 0 && width != crate::virtuoso::write::BUS_WIDTH {
                 doc.push_attr("vwidth");
                 doc.push_value_coord(width);
             }
-            first.get_or_insert(id);
-            k += 1;
         }
     }
     // Labels.

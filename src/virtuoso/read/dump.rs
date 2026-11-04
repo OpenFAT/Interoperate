@@ -114,8 +114,8 @@ pub struct Label {
     pub purpose: String,
     /// `isOverbar`.
     pub overbar: bool,
-    /// `isDrafted`.
-    pub drafted: bool,
+    /// Not `isDrafted` (Virtuoso draws labels drafted by default, live ICADVM20.1).
+    pub undrafted: bool,
     /// Not `isVisible`.
     pub hidden: bool,
 }
@@ -640,7 +640,7 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
         }
         "label" => {
             // Twelve fields, or fifteen with `isOverbar isDrafted isVisible` as 0/1, which a
-            // dumper writes only when they are not `0 0 1`.
+            // dumper writes only when they are not Virtuoso's `0 1 1`.
             let flag = |k: usize| match r.fields.get(k).map(|_| r.int(k)).transpose()? {
                 None => Ok(None),
                 Some(0) => Ok(Some(false)),
@@ -668,7 +668,7 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
                 layer: r.str(10)?.to_owned(),
                 purpose: r.str(11)?.to_owned(),
                 overbar: flag(12)? == Some(true),
-                drafted: flag(13)? == Some(true),
+                undrafted: flag(13)? == Some(false),
                 hidden: flag(14)? == Some(false),
             });
         }

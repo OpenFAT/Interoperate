@@ -45,10 +45,10 @@ pub(super) fn label(
 }
 
 /// `l` with the flags of `vflags <overbar> <drafted> <visible>` (0/1, §7.5); without them,
-/// export's `0 0 1`.
+/// Virtuoso's default `0 1 1`.
 pub(super) fn with_flags(mut l: Label, vflags: &[&str]) -> Label {
     if let [o, d, v] = vflags {
-        (l.overbar, l.drafted, l.hidden) = (*o == "1", *d == "1", *v == "0");
+        (l.overbar, l.undrafted, l.hidden) = (*o == "1", *d == "0", *v == "0");
     }
     l
 }

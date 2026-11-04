@@ -274,8 +274,8 @@ fn cv_records(cv: &Cv, out: &mut Vec<Record>) {
             s(&l.layer),
             s(&l.purpose),
         ];
-        if l.overbar || l.drafted || l.hidden {
-            f.extend([l.overbar, l.drafted, !l.hidden].map(|b| i(i32::from(b))));
+        if l.overbar || l.undrafted || l.hidden {
+            f.extend([l.overbar, !l.undrafted, !l.hidden].map(|b| i(i32::from(b))));
         }
         out.push(Record::new("label", f));
     }

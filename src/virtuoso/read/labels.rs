@@ -24,10 +24,10 @@ pub(super) fn net_of_prop(v: &str) -> (String, bool) {
 }
 
 /// The `vflags <overbar> <drafted> <visible>` values (0/1) of label `l`, `None` at
-/// export's `0 0 1` (§7.5; `write::with_flags` reads them).
+/// Virtuoso's default `0 1 1` (§7.5; `write::with_flags` reads them).
 pub(super) fn flags_of(l: &Label) -> Option<[&'static str; 3]> {
     let b = |x: bool| if x { "1" } else { "0" };
-    (l.overbar || l.drafted || l.hidden).then(|| [b(l.overbar), b(l.drafted), b(!l.hidden)])
+    (l.overbar || l.undrafted || l.hidden).then(|| [b(l.overbar), b(!l.undrafted), b(!l.hidden)])
 }
 
 /// Text height (1/`upi` inch) → Schemify `size` milli (§3.5).
@@ -166,8 +166,8 @@ pub(crate) fn project(p: [i32; 2], pts: &[[i32; 2]]) -> [i32; 2] {
 
 /// The `vplabel` values of symbol pin `name` at `at` (milli-units): `none` when its main
 /// pin figure has no pin label, the label's offset from the pin and its orient, justify,
-/// font and height (then its flags, when not `0 0 1`) when they differ from export's (at
-/// the pin, R0, centerLeft, stick, half LABEL_HEIGHT, `0 0 1`), else `None`.
+/// font and height (then its flags, when not `0 1 1`) when they differ from export's (at
+/// the pin, R0, centerLeft, stick, half LABEL_HEIGHT, `0 1 1`), else `None`.
 pub(super) fn pin_label_as_drawn(
     sv: &Cv,
     name: &str,

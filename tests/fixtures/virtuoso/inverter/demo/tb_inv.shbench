@@ -1,5 +1,5 @@
 schemify 1 shbench
-  vsch cd82a5dfac0eaf10
+  vsch d91aa751eb55515c
 
 inst 1p2r0r analogLib:vdc
   at -120 40 R0
@@ -17,7 +17,6 @@ wire 2zr01d -120 -10 -120 10
 wire 9vhjhq 40 0 80 0
 wire yeffrx -80 0 -80 10
 wire zx3b16 -80 0 -40 0
-  vseg yeffrx 1
 
 label 7wv0vq -120 70 R0 GND
   global true

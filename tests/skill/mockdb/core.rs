@@ -464,6 +464,8 @@ impl MockDb {
                 ("font", V::str(font)),
                 ("height", V::Float(h)),
                 ("labelType", V::str(ltype)),
+                // Drafted by default (live ICADVM20.1: every label dumps isDrafted t).
+                ("isDrafted", V::T),
                 ("isVisible", V::T),
             ],
         ))

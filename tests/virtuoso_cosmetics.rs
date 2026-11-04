@@ -155,13 +155,12 @@ fn kit() -> String {
 fn a_moved_wire_label_leaves_every_other_schematic_cosmetic_as_drawn() {
     let first = kit();
     for kept in [
-        "\"OVR\" 0 -200000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 1 0 1)",
-        "\"DRF\" 0 -240000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 0 1 1)",
-        "\"INV\" 0 -280000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 0 0 0)",
+        "\"OVR\" 0 -200000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 1 1 1)",
+        "\"DRF\" 0 -240000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 0 0 1)",
+        "\"INV\" 0 -280000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"normal\" \"text\" \"drawing\" 0 1 0)",
         "\"nc1\" \"basic\" \"noConn\" \"symbol\" 200000 -100000 \"R90\")",
-        "(-200000 0 -200000 80000 -120000 80000) 0)",
         "(-100000 200000 100000 200000) 4000)",
-        "\"Y\" 210000 -50000 \"R90\" \"centerLeft\" \"stick\" 8000 \"normal\" \"pin\" \"annotate\")",
+        " 0 \"Y\" 210000 -50000 \"R90\" \"centerLeft\" \"stick\" 8000 \"normal\" \"pin\" \"annotate\")",
         "\"path\" \"text\" \"drawing\" (300000 0 340000 0 340000 40000) 2000)",
         "\"ellipse\" \"text\" \"drawing\" (300000 100000 380000 140000) 0)",
     ] {

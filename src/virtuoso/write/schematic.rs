@@ -167,10 +167,6 @@ pub(super) fn schematic_out(
     // Wires (after the edits) in Schemify coordinates, for gluing labels.
     // (wire ref, segment) of every wire label can glue to.
     let mut segs: Vec<(u32, [i32; 4])> = Vec::new();
-    // The wires later segments may continue (first id → index in `cv.wires`), and the ids
-    // of the segments each absorbed.
-    let mut figures: BTreeMap<&str, usize> = BTreeMap::new();
-    let mut later: BTreeMap<usize, Vec<&str>> = BTreeMap::new();
     for w in 0..g.wire.len() {
         if edits.wire_dead.binary_search(&w).is_ok() {
             continue;
@@ -192,38 +188,12 @@ pub(super) fn schematic_out(
             c,
             notes,
         );
-        // Segment k of a wire Virtuoso drew as one figure (`vseg <first id> <k>`, §7.5)
-        // joins that figure again while it still continues it.
-        let rec = g.wire_rec[w];
-        let joined = match c.attr_values(rec, "vseg")[..] {
-            [first, k] => figures.get(first).copied().filter(|&j| {
-                let pts = &mut cv.wires[j].pts;
-                if k.parse() != Ok(pts.len() - 1) {
-                    return false;
-                }
-                // A first segment is stored either way round (`remap::push_wire`).
-                if pts.len() == 2 && !(pts[1] == a || pts[1] == b) {
-                    pts.reverse();
-                }
-                match pts.last() {
-                    Some(&p) if p == a => pts.push(b),
-                    Some(&p) if p == b => pts.push(a),
-                    _ => return false,
-                }
-                true
-            }),
-            _ => None,
-        };
-        if let Some(j) = joined {
-            segs.push((cv.wires[j].r, seg));
-            later.entry(j).or_default().push(&g.wire_id[w]);
-            continue;
-        }
         let r = ids.take();
         segs.push((r, seg));
-        figures.insert(&g.wire_id[w], cv.wires.len());
-        // A bus as wide as Virtuoso drew it (`vwidth <w>`), else export's.
-        let width = c.attr(rec, "vwidth").and_then(|v| parse_coord(v).ok());
+        // A bus as wide as Virtuoso drew it (`vwidth <w>`, §7.5), else export's.
+        let width = c
+            .attr(g.wire_rec[w], "vwidth")
+            .and_then(|v| parse_coord(v).ok());
         cv.wires.push(Wire {
             r,
             pts: vec![a, b],
@@ -234,10 +204,6 @@ pub(super) fn schematic_out(
             },
         });
         id_prop(&mut cv, r, &g.wire_id[w]);
-    }
-    for (j, v) in later {
-        let r = cv.wires[j].r;
-        cv.props.push(Prop::string(r, "schemifySegs", v.join(" ")));
     }
     // Instances.
     let mut names: Vec<String> = Vec::new();
@@ -521,6 +487,16 @@ pub(super) fn schematic_out(
             _ => [0, 0],
         };
         let origin = [at[0] + off[0], at[1] + off[1]];
+        // What a label from Virtuoso was there: a net expression (`vexpr <text>`), a style
+        // (`vstyle <justify> <font> <height> [<layer> <purpose>]`) and its flags (`vflags`),
+        // drawn so again.
+        let vexpr = rec.and_then(|r| c.attr(r, "vexpr"));
+        let vstyle: Vec<&str> = rec.map_or_else(Vec::new, |r| c.attr_values(r, "vstyle"));
+        let (justify, font, height, layer, purpose) = match vstyle[..] {
+            [j, f, h] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), "wire", "label"),
+            [j, f, h, l, p] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), l, p),
+            _ => ("lowerLeft", "stick", LABEL_HEIGHT, "wire", "label"),
+        };
         // ponytail: O(labels × wires) gluing; a sorted segment index for 10^5-wire cells.
         // Of the wires through the point, the one import projected the origin onto.
         let parent = match segs
@@ -529,6 +505,9 @@ pub(super) fn schematic_out(
             .min_by_key(|(_, s)| read::project(origin, &[[s[0], s[1]], [s[2], s[3]]]) != at)
         {
             Some((wr, _)) => *wr,
+            // A label Virtuoso drew off the wire layer (`pin annotate`) and glued to nothing
+            // stays unglued (live ICADVM20.1: such a label has no parent).
+            None if layer != "wire" => 0,
             None => {
                 // §6.2: a stub away from the instance whose pin this is.
                 let origin = pin_points
@@ -555,16 +534,6 @@ pub(super) fn schematic_out(
         if let Some(id) = id {
             id_prop(&mut cv, r, id);
         }
-        // What a label from Virtuoso was there: a net expression (`vexpr <text>`), a style
-        // (`vstyle <justify> <font> <height> [<layer> <purpose>]`) and its flags (`vflags`),
-        // drawn so again.
-        let vexpr = rec.and_then(|r| c.attr(r, "vexpr"));
-        let vstyle: Vec<&str> = rec.map_or_else(Vec::new, |r| c.attr_values(r, "vstyle"));
-        let (justify, font, height, layer, purpose) = match vstyle[..] {
-            [j, f, h] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), "wire", "label"),
-            [j, f, h, l, p] => (j, f, h.parse().unwrap_or(LABEL_HEIGHT), l, p),
-            _ => ("lowerLeft", "stick", LABEL_HEIGHT, "wire", "label"),
-        };
         let kind = if vexpr.is_some() { "NLP" } else { "normal" };
         let text = vexpr.map_or(text, str::to_owned);
         let xy = conv(origin, "label", c, notes);

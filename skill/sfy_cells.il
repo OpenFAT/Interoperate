@@ -256,11 +256,11 @@
   (case lt ("NLPLabel" "NLP") ("ILLabel" "IL") (t "normal")))
 
 ;; A label's isOverbar isDrafted isVisible as 0/1, the label record's last three fields,
-;; or nil at the usual 0 0 1 (spec 4.2: a dumper writes them only then).
+;; or nil at Virtuoso's default 0 1 1 (live ICADVM20.1; spec 4.2: written only otherwise).
 (procedure (SfyLabelFlags f)
   (let ((v (mapcar (lambda (x) (if x 1 0))
              (list (getSGq f isOverbar) (getSGq f isDrafted) (getSGq f isVisible)))))
-    (unless (equal v (list 0 0 1)) v)))
+    (unless (equal v (list 0 1 1)) v)))
 
 ;; The coordinates and width of a shape (spec 4.2 shape record).
 (procedure (SfyShapeCoords f upi)
@@ -906,19 +906,12 @@
             (when (and p (not (dbCreatePin (getSGq term net) p nil term))) (setq p nil))
             (SfyCreated p lr (sprintf nil "symbol pin %s" (nth 1 f)))))))))
 
-;; ("wire" ref points width): schCreateWire "draw", snapped to one database unit. A wire
-;; of more than two points is made as one figure on wire drawing, as it was dumped:
-;; schCreateWire "draw" makes one figure per segment.
+;; ("wire" ref points width): schCreateWire "draw", snapped to one database unit.
 (procedure (SfyLoadWire lr)
-  (let ((f (cdr (cadr lr))) (snap (quotient 1.0 sfyUpi)) (pts nil) (lpp (list "wire" "drawing")))
+  (let ((f (cdr (cadr lr))) (snap (quotient 1.0 sfyUpi)))
     (when (SfySchematicP lr)
-      (setq pts (SfyPts (nth 1 f)))
       (SfyCreated
-        (cond
-          ((null (cddr pts))
-            (car (schCreateWire sfyCv "draw" "full" pts snap snap (SfyUU (nth 2 f)))))
-          ((zerop (nth 2 f)) (dbCreateLine sfyCv lpp pts))
-          (t (dbCreatePath sfyCv lpp pts (SfyUU (nth 2 f)))))
+        (car (schCreateWire sfyCv "draw" "full" (SfyPts (nth 1 f)) snap snap (SfyUU (nth 2 f))))
         lr "wire"))))
 
 ;; ("label" ref parent text x y orient justify font height kind layer purpose
