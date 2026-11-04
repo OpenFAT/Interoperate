@@ -14,41 +14,81 @@ fn fixture(rel: &str) -> Option<Vec<u8>> {
     common::cadence_fixture(&format!("results/{rel}")).map(|p| std::fs::read(p).unwrap())
 }
 
-/// A Spectre nutbin file (big-endian doubles, every column complex when the plot is):
-/// (variable names, columns of (re, im)).
-fn nutbin(b: &[u8]) -> (Vec<String>, Vec<Vec<(f64, f64)>>) {
-    let at = b.windows(8).position(|w| w == b"Binary:\n").unwrap() + 8;
-    let head = String::from_utf8_lossy(&b[..at]);
-    let field = |k: &str| {
-        let l = head.lines().find(|l| l.starts_with(k)).unwrap();
-        l[k.len()..].trim().to_owned()
-    };
-    let nv: usize = field("No. Variables:").parse().unwrap();
-    let np: usize = field("No. Points:").parse().unwrap();
-    let complex = field("Flags:") == "complex";
-    let vars_at = head.find("Variables:\t").unwrap();
-    let names: Vec<String> = head[vars_at + 10..]
-        .lines()
-        .take(nv)
-        .map(|l| {
-            l.split('\t')
-                .filter(|f| !f.is_empty())
-                .nth(1)
-                .unwrap()
-                .to_owned()
-        })
-        .collect();
-    let w = if complex { 16 } else { 8 };
-    assert_eq!(b.len() - at, nv * np * w, "one plot");
-    let f = |k: usize| f64::from_be_bytes(b[k..k + 8].try_into().unwrap());
-    let mut cols = vec![Vec::new(); nv];
-    for p in 0..np {
-        for (v, c) in cols.iter_mut().enumerate() {
-            let k = at + (p * nv + v) * w;
-            c.push((f(k), if complex { f(k + 8) } else { 0.0 }));
+/// One plot of a Spectre nutbin file: (complex, variable names, columns of (re, im)).
+type NutPlot = (bool, Vec<String>, Vec<Vec<(f64, f64)>>);
+
+/// Every plot of a Spectre nutbin file (big-endian doubles, every column complex when the
+/// plot is), in file order.
+fn nutbin(b: &[u8]) -> Vec<NutPlot> {
+    let mut plots = Vec::new();
+    let mut from = 0;
+    while let Some(k) = b[from..].windows(8).position(|w| w == b"Binary:\n") {
+        let at = from + k + 8;
+        let head = String::from_utf8_lossy(&b[from..at]).into_owned();
+        let field = |k: &str| {
+            let l = head.lines().find(|l| l.starts_with(k)).unwrap();
+            l[k.len()..].trim().to_owned()
+        };
+        let nv: usize = field("No. Variables:").parse().unwrap();
+        let np: usize = field("No. Points:").parse().unwrap();
+        let complex = field("Flags:") == "complex";
+        let vars_at = head.find("Variables:\t").unwrap();
+        let names: Vec<String> = head[vars_at + 10..]
+            .lines()
+            .take(nv)
+            .map(|l| {
+                l.split('\t')
+                    .filter(|f| !f.is_empty())
+                    .nth(1)
+                    .unwrap()
+                    .to_owned()
+            })
+            .collect();
+        let w = if complex { 16 } else { 8 };
+        let f = |k: usize| f64::from_be_bytes(b[k..k + 8].try_into().unwrap());
+        let mut cols = vec![Vec::new(); nv];
+        for p in 0..np {
+            for (v, c) in cols.iter_mut().enumerate() {
+                let k = at + (p * nv + v) * w;
+                c.push((f(k), if complex { f(k + 8) } else { 0.0 }));
+            }
+        }
+        plots.push((complex, names, cols));
+        from = at + nv * np * w;
+    }
+    plots
+}
+
+/// Requires plot `p` (Interop's raw) to hold `/out` and `/in` of nutbin plot `n` and its
+/// x axis, bit for bit.
+fn same_columns(p: &schemify_wave::RawPlot, n: &NutPlot, what: &str) {
+    let (complex, names, cols) = n;
+    assert_eq!(p.is_complex(), *complex, "{what}");
+    for (ours, net) in [
+        (Some(0), None),
+        (p.find_var("v(out)"), Some("out")),
+        (p.find_var("v(in)"), Some("in")),
+    ] {
+        let ours = ours.unwrap_or_else(|| panic!("{what}: no {net:?}"));
+        let theirs = net.map_or(0, |net| names.iter().position(|x| x == net).unwrap());
+        let re = p.col(ours);
+        assert_eq!(re.len(), cols[theirs].len(), "{what}");
+        for (k, (x, &(r, i))) in re.iter().zip(&cols[theirs]).enumerate() {
+            assert_eq!(
+                x.to_bits(),
+                r.to_bits(),
+                "{what} {} point {k}",
+                names[theirs]
+            );
+            if *complex && ours > 0 {
+                assert_eq!(
+                    p.col_im(ours)[k].to_bits(),
+                    i.to_bits(),
+                    "{what} im point {k}"
+                );
+            }
         }
     }
-    (names, cols)
 }
 
 #[test]
@@ -137,31 +177,9 @@ fn exact(ocean: &str, analysis: &str, oracle: &str, complex: bool) {
     assert_eq!(plots.len(), 1, "/out and /in share their x values");
     let p = &plots[0];
     assert_eq!(p.is_complex(), complex);
-    let (names, cols) = nutbin(&nut);
-    for (ours, theirs) in [
-        (0, 0),
-        (p.find_var("v(out)").unwrap(), 1),
-        (p.find_var("v(in)").unwrap(), 2),
-    ] {
-        assert!(ours == 0 || names[theirs] == ["", "out", "in"][theirs]);
-        let re = p.col(ours);
-        assert_eq!(re.len(), cols[theirs].len());
-        for (k, (x, &(r, i))) in re.iter().zip(&cols[theirs]).enumerate() {
-            assert_eq!(
-                x.to_bits(),
-                r.to_bits(),
-                "{oracle} {} point {k}",
-                names[theirs]
-            );
-            if complex && ours > 0 {
-                assert_eq!(
-                    p.col_im(ours)[k].to_bits(),
-                    i.to_bits(),
-                    "{oracle} im point {k}"
-                );
-            }
-        }
-    }
+    let n = nutbin(&nut);
+    assert_eq!(n.len(), 1);
+    same_columns(p, &n[0], oracle);
 }
 
 #[test]
@@ -370,4 +388,108 @@ fn the_dumper_names_points_by_their_directory_and_prints_waves_exactly() {
     assert_eq!(tr[1].re[2].to_bits(), (0.1f64 + 0.2).to_bits());
     let hot = wave::parse(&i.files["/t/Interactive.0.3.txt"]).unwrap();
     assert_eq!(hot[0].signals[1].re[1], 2e-7);
+}
+
+/// The live check's history (`live/checks/l4_results.il`, fetched from
+/// `$SFYCHECK_WORK/out/l4` into `$SFY_L4_LIVE`): imported into a project whose bench sweeps
+/// C over 1n, 2n with corner hot, every point's `out.raw` equals Spectre's nutbin of that
+/// point's netlist bit for bit, and vmax/vmin, from the `.rdb`, are exactly the max/min of
+/// the nutbin's `out`.
+#[cfg(feature = "cli")]
+#[test]
+#[ignore = "needs the live check's output: SFY_L4_LIVE=<dir> (live/checks/run.sh l4_results)"]
+fn live_history_against_nutbin() {
+    let live = std::path::PathBuf::from(std::env::var("SFY_L4_LIVE").expect("SFY_L4_LIVE"));
+    let mut names: Vec<_> = std::fs::read_dir(&live)
+        .unwrap()
+        .flatten()
+        .map(|e| e.file_name().into_string().unwrap())
+        .collect();
+    names.sort();
+    let dump = names
+        .iter()
+        .find(|n| n.ends_with(".sfyx"))
+        .expect("a dump")
+        .clone();
+    let dir = std::env::temp_dir().join(format!("sfy-mres-live-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("dump")).unwrap();
+    for n in &names {
+        std::fs::copy(live.join(n), dir.join("dump").join(n)).unwrap();
+    }
+    let rc = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/live/rclive");
+    for f in ["schemify.project", "rcfilter.shcomp"] {
+        std::fs::copy(rc.join(f), dir.join(f)).unwrap();
+    }
+    let bench = std::fs::read_to_string(rc.join("rclive_tb.shbench")).unwrap();
+    std::fs::write(
+        dir.join("rc_tb.shbench"),
+        bench + "\noutput vmax \"ymax(v(out))\"\noutput vmin \"ymin(v(out))\"\n\nspec vmax\n  min 0.5\n\ncorner hot\n  set R 1k\n\nsweep C\n  var C\n  values 1n 2n\n",
+    )
+    .unwrap();
+    let cmd: Vec<String> = [
+        "maestro-results",
+        dir.to_str().unwrap(),
+        &format!("dump/{dump}"),
+        "rc_tb.shbench",
+    ]
+    .map(String::from)
+    .to_vec();
+    assert_eq!(interop::cli::run(&cmd), 0);
+    let run = std::fs::read_dir(dir.join(".schemify/runs"))
+        .unwrap()
+        .flatten()
+        .next()
+        .unwrap()
+        .path();
+    let text = std::fs::read_to_string(run.join("results")).unwrap();
+    let plain: String = text
+        .lines()
+        .filter(|l| !l.starts_with("  source "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    let (jobs, r) = schemify_run::read_results(&plain).unwrap();
+    assert_eq!(jobs.len(), 4, "{text}");
+    let d = results::parse(&std::fs::read_to_string(live.join(&dump)).unwrap()).unwrap();
+    let h = results::convert(&d, &std::fs::read(live.join(&d.rdb)).unwrap()).unwrap();
+    let out = |o: &str| r.outputs().iter().position(|x| x == o).unwrap() as u16;
+    for (j, job) in h.jobs.iter().enumerate() {
+        let j = j as u32;
+        let what = format!("job {j} {:?} point {}", job.corner, job.point);
+        assert_eq!(jobs.corner(j), job.corner.as_deref(), "{what}");
+        assert_eq!(
+            jobs.assigned(j, "C"),
+            Some(["1n", "2n"][job.point as usize - 1]),
+            "{what}"
+        );
+        assert_eq!(job.status, "done", "{what}");
+        let stem = job.waves.strip_suffix(".txt").expect("exported");
+        let nut = nutbin(&std::fs::read(live.join(format!("{stem}.nutbin"))).unwrap());
+        let raw = schemify_wave::parse_raw(
+            &std::fs::read(run.join(j.to_string()).join("out.raw")).unwrap(),
+        )
+        .unwrap();
+        let tran = raw.iter().find(|p| !p.is_complex()).expect("a tran plot");
+        let ac = raw.iter().find(|p| p.is_complex()).expect("an ac plot");
+        let ntran = nut.iter().find(|p| !p.0).expect("a tran nutbin plot");
+        let nac = nut.iter().find(|p| p.0).expect("an ac nutbin plot");
+        same_columns(tran, ntran, &format!("{what} tran"));
+        same_columns(ac, nac, &format!("{what} ac"));
+        let o = ntran.1.iter().position(|x| x == "out").unwrap();
+        let col = ntran.2[o].iter().map(|c| c.0);
+        let (max, min) = col.fold((f64::NEG_INFINITY, f64::INFINITY), |(a, b), x| {
+            (a.max(x), b.min(x))
+        });
+        assert_eq!(
+            r.value(j, out("vmax")).map(f64::to_bits),
+            Some(max.to_bits()),
+            "{what} vmax"
+        );
+        assert_eq!(
+            r.value(j, out("vmin")).map(f64::to_bits),
+            Some(min.to_bits()),
+            "{what} vmin"
+        );
+    }
+    let _ = std::fs::remove_dir_all(&dir);
 }
