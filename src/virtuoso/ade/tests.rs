@@ -65,6 +65,8 @@ fn tests() -> impl Strategy<Value = Test> {
                 own: vec![("x".into(), "2".into())],
                 enable: Some(corners.len().is_multiple_of(2)),
                 params: vec![("I0/I1/w".into(), "1u".into(), scope(0))],
+                var_enable: vec![("x".into(), corners.len() % 3 == 0)],
+                out_enable: vec![("o".into(), false)],
             }
         })
 }

@@ -50,7 +50,8 @@ fn flag(r: &Record, k: usize) -> Result<bool, Error> {
 /// kinds `point`/`net`, no name twice per kind, at most [`ROWS_MAX`] rows per kind; the
 /// view's `maesdb` (text, digest rows) at most once and a `maestate` (test, text) per test;
 /// `testvar` (name, value) once per name, `testenable` 0/1 once, `parameter` (path
-/// `inst[/inst…]/prop`, value, scope) once per path and scope.
+/// `inst[/inst…]/prop`, value, scope) once per path and scope, `varenable` and
+/// `outenable` (name, 0/1) once per name.
 pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
     let m = records.first().ok_or(Error {
         line: 0,
@@ -207,6 +208,19 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                     return Err(r.err("testenable twice"));
                 }
             }
+            "varenable" | "outenable" => {
+                r.arity(2)?;
+                let (n, en) = (r.str(0)?, flag(r, 1)?);
+                let rows = if r.tag == "varenable" {
+                    &mut t.var_enable
+                } else {
+                    &mut t.out_enable
+                };
+                if n.is_empty() || rows.iter().any(|x| x.0 == n) {
+                    return Err(r.err(format!("{} `{n}` empty or twice", r.tag)));
+                }
+                rows.push((n.into(), en));
+            }
             "parameter" => {
                 r.arity(3)?;
                 let (p, v, sc) = (r.str(0)?, r.str(1)?, r.str(2)?);
@@ -230,6 +244,8 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
             t.models.len(),
             t.own.len(),
             t.params.len(),
+            t.var_enable.len(),
+            t.out_enable.len(),
         ];
         if rows
             .iter()
@@ -460,6 +476,14 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
             continue;
         }
         push_record(bench, RecordKind::Var, &[n, &pts[0]]);
+        // §9.11: a disabled var (`<var enabled="0">`, or `varenable`) is not netlisted.
+        let on = first.var_enable.iter().find(|x| &x.0 == n).map(|x| x.1);
+        if !on
+            .or_else(|| Some(setup.as_ref()?.var(n)?.enabled))
+            .unwrap_or(true)
+        {
+            push_attr(bench, "enable", &["false"]);
+        }
         if pts.len() > 1 {
             push_record(bench, RecordKind::Sweep, &[n]);
             push_attr(bench, "var", &[n]);
@@ -526,8 +550,30 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
         }
     }
     // Each test: its analysis block, outputs, specs and definition files, then its record.
+    // §9.11: an output whose Plot is off in its test's state (or `outenable 0`) is
+    // disabled.
+    let states: Vec<(String, String)> = ok[0]
+        .iter()
+        .filter(|r| r.tag == "maestate")
+        .filter_map(|r| Some((r.str(0).ok()?.to_owned(), r.text(1).ok()?)))
+        .collect();
+    let off: Vec<(String, String)> = ts
+        .iter()
+        .flat_map(|t| {
+            let st = states.iter().find(|s| s.0 == t.name);
+            let from_state = st.map_or(Vec::new(), |s| disabled::plot_off(&s.1));
+            t.outputs
+                .iter()
+                .filter(move |o| match t.out_enable.iter().find(|x| x.0 == o.0) {
+                    Some(x) => !x.1,
+                    None => from_state.contains(&o.0),
+                })
+                .map(|o| (t.name.clone(), o.0.clone()))
+        })
+        .collect();
     let mut taken = Taken {
         names: ts.iter().map(|t| t.name.clone()).collect(),
+        off,
         ..Taken::default()
     };
     for t in &ts {
@@ -594,6 +640,8 @@ struct Taken {
     blocks: Vec<(String, String, Vec<String>)>,
     /// Definition files `(stem, text)`.
     defns: Vec<(String, String)>,
+    /// `(test, output)`: the disabled outputs.
+    off: Vec<(String, String)>,
 }
 
 /// Appends test `t`'s analysis block (`code <test>`, or the earlier test's block of the
@@ -735,6 +783,9 @@ fn import_test(
                     );
                 }
                 push_record(bench, RecordKind::Output, &[n, &x]);
+                if taken.off.iter().any(|o| o.0 == t.name && &o.1 == n) {
+                    push_attr(bench, "enable", &["false"]);
+                }
                 taken.outs.push((n.clone(), x, specs));
                 kept.push(n);
             }

@@ -22,6 +22,13 @@
 //! variables, corners, specs and their weights); `axlImportSetup … 'overwrite` replaces
 //! those in place, creating missing tests and duplicating none (probe G32), and keeps the
 //! tree for what the mock does not model (parameters, run options, disabled tests).
+//! `maeSaveSetup` also writes the view's `maestro.sdb` (that XML with the run mode), and a
+//! `maestro.sdb` the mock did not write (a loader's restored file) is the setup the next
+//! `maeOpenSetup` reads, as an `axlImportSetup` into an empty setup (lane L11). An import
+//! keeps the tree's parts outside `<active>` it does not hold (live: a run plan survives
+//! `axlImportSetup … 'overwrite`). A global variable can be disabled (`axlSetEnabled`,
+//! `<var enabled="0">`), an output added with its Plot off (`maeAddOutput ?plot nil`, its
+//! `plot` field in the mock's state).
 
 use std::collections::BTreeMap;
 
@@ -69,6 +76,7 @@ pub const ROWS: &[(&str, &str)] = &[
     ("axlGetMainSetupDB", "t"),
     ("axlGetCorner", "x t"),
     ("axlGetEnabled", "x"),
+    ("axlSetEnabled", "x g"),
     ("axlGetModels", "x"),
     ("axlGetModel", "x t"),
     ("axlPutModel", "x t ?testName ?blockName"),
@@ -104,6 +112,8 @@ pub struct Setup {
     pub tests: Vec<Test>,
     /// Global variables `(name, value)` in creation order.
     pub vars: Vec<(String, String)>,
+    /// The disabled global variables (`axlSetEnabled`, `<var enabled="0">`).
+    pub vars_off: Vec<String>,
     /// Corners in creation order.
     pub corners: Vec<Corner>,
     /// The XML tree of the last `axlImportSetup`: what the mock does not model.
@@ -161,6 +171,8 @@ pub struct Output {
     pub expr: Option<String>,
     /// The spec: `(op, value)` pairs from the last `maeSetSpec`.
     pub spec: Vec<(String, V)>,
+    /// Its Plot check box is clear (`?plot nil`): Maestro's disabled output.
+    pub off: bool,
 }
 
 /// One corner.
@@ -200,6 +212,7 @@ enum Handle {
     Test(usize, String),
     TestVar(usize, String, String),
     Spec(usize, String),
+    Global(usize, String),
 }
 
 /// Maestro state: saved setups by (lib, cell), sessions, `axl*` handles, and the log of
@@ -299,7 +312,8 @@ impl Mae {
             | Handle::Var(s, ..)
             | Handle::Test(s, _)
             | Handle::TestVar(s, ..)
-            | Handle::Spec(s, _) => *s,
+            | Handle::Spec(s, _)
+            | Handle::Global(s, _) => *s,
         };
         self.sessions.get(s)?.as_ref().map(|_| h)
     }
@@ -397,7 +411,21 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                     let nominal = "Nominal".to_owned();
                     names(std::iter::once(&nominal).chain(su.corners.iter().map(|c| &c.name)))
                 }
-                Some("variables") => names(su.vars.iter().map(|v| &v.0)),
+                // ?enabled t: the enabled ones, nil: the disabled ones, else all (live).
+                Some("variables") => {
+                    let want = match key(&kw, "enabled") {
+                        Some(V::T) => Some(true),
+                        Some(V::Nil) => Some(false),
+                        _ => None,
+                    };
+                    let off = su.vars_off.clone();
+                    names(
+                        su.vars
+                            .iter()
+                            .filter(|v| want.is_none_or(|w| w != off.contains(&v.0)))
+                            .map(|v| &v.0),
+                    )
+                }
                 Some(_) => V::Nil,
             })
         }
@@ -684,6 +712,7 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 signal: sig,
                 expr: ex,
                 spec: Vec::new(),
+                off: matches!(key(&kw, "plot"), Some(V::Nil)),
             });
             Ok(V::T)
         }
@@ -910,7 +939,22 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
         "axlGetEnabled" => match m.resolve(&a[0]) {
             Some(Handle::Corner(k, c)) => Ok(tf(m.corner(k, &c).is_some_and(|x| x.enabled))),
             Some(Handle::Test(k, t)) => Ok(tf(m.test(k, &t).is_some_and(|x| !x.disabled))),
-            _ => Err("*Error* axlGetEnabled: the mock models corner and test handles only".into()),
+            Some(Handle::Global(k, n)) => Ok(tf(!m.setup(k).vars_off.contains(&n))),
+            _ => Err(
+                "*Error* axlGetEnabled: the mock models corner, test and var handles only".into(),
+            ),
+        },
+        // Live ICADVM20.1 (probe l11): a global variable's handle, answering 1.
+        "axlSetEnabled" => match m.resolve(&a[0]) {
+            Some(Handle::Global(k, n)) => {
+                let off = &mut m.setup(k).vars_off;
+                off.retain(|x| x != &n);
+                if !a[1].truthy() {
+                    off.push(n);
+                }
+                Ok(V::Int(1))
+            }
+            _ => Err("*Error* axlSetEnabled: the mock models global variable handles only".into()),
         },
         "axlGetModels" => match m.resolve(&a[0]) {
             // (handle names), the names in setup order, as axlGetVars (live ICADVM20.1
@@ -1013,7 +1057,16 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                     V::Nil
                 })
             }
-            _ => Err("*Error* axlGetVar: the mock models corner and test handles only".into()),
+            Some(Handle::Sdb(k)) => {
+                let n = s0(1);
+                let has = m.setup(k).vars.iter().any(|v| v.0 == n);
+                Ok(if has {
+                    m.handle(Handle::Global(k, n))
+                } else {
+                    V::Nil
+                })
+            }
+            _ => Err("*Error* axlGetVar: the mock models sdb, corner and test handles only".into()),
         },
         "axlGetVarValue" => match m.resolve(&a[0]) {
             Some(Handle::Var(k, c, n)) => Ok(m
@@ -1159,10 +1212,36 @@ fn mock_state(t: &Test) -> String {
     let mut text = String::new();
     print(&data, &mut text);
     let leaf = mae_xml::Node::leaf("mock", &text);
+    // The outputs' Plot as Maestro's state holds it (`sevOutputStruct` fields), where the
+    // export's state patch finds it (lane L11).
+    let field = |n: &str, ty: &str, v: &str| Node {
+        attrs: vec![("Name".into(), n.into()), ("Type".into(), ty.into())],
+        ..Node::leaf("field", v)
+    };
+    let structs: Vec<Node> = t
+        .outputs
+        .iter()
+        .enumerate()
+        .map(|(k, o)| Node {
+            children: vec![
+                field("name", "string", &format!("\"{}\"", o.name)),
+                if o.off {
+                    field("plot", "list", "nil")
+                } else {
+                    field("plot", "symbol", "t")
+                },
+            ],
+            ..field(&format!("outputList_{k}"), "defstruct", "sevOutputStruct")
+        })
+        .collect();
+    let outputs = Node {
+        children: structs,
+        ..field("outputList", "skillList", "")
+    };
     let el = Node {
         name: "Test".into(),
         attrs: vec![("Name".into(), t.name.clone())],
-        children: vec![leaf],
+        children: vec![leaf, outputs],
         ..Node::default()
     };
     // The element as active.state holds it: one tab in, under <statedb>.
@@ -1184,8 +1263,21 @@ fn from_state(name: &str, el: &str) -> Test {
         ..Test::default()
     };
     let wrapped = format!("<s>\n{el}</s>\n");
-    let data = mae_xml::parse(&wrapped)
-        .ok()
+    let parsed = mae_xml::parse(&wrapped).ok();
+    // (output, Plot off) from the state's `sevOutputStruct` fields.
+    let off: Vec<(String, bool)> = parsed
+        .iter()
+        .flat_map(|n| n.children.first())
+        .flat_map(|t| t.all("field"))
+        .filter(|f| f.attr("Name") == Some("outputList"))
+        .flat_map(|f| f.all("field"))
+        .filter_map(|s| {
+            let get = |k: &str| s.all("field").find(|x| x.attr("Name") == Some(k));
+            let n = get("name")?.text.trim_matches('"').to_owned();
+            Some((n, get("plot")?.text == "nil"))
+        })
+        .collect();
+    let data = parsed
         .and_then(|n| {
             n.children
                 .first()
@@ -1229,6 +1321,7 @@ fn from_state(name: &str, el: &str) -> Test {
             signal: opt(&o.items()[2]),
             expr: opt(&o.items()[3]),
             spec: Vec::new(),
+            off: off.iter().any(|x| x.0 == s(&o.items()[0]) && x.1),
         })
         .collect();
     t.env = pairs(&it[3]);
@@ -1280,7 +1373,22 @@ pub fn call_files(
                 .unwrap_or_default()
                 .into_iter()
                 .collect();
+            // A maestro.sdb the mock did not write is the view's setup (lane L11).
+            let sdb_path = view_file(db, &lib, &cell, "maestro.sdb")?;
+            let restored = files
+                .get(&sdb_path)
+                .filter(|t| db.mae.written.get(&sdb_path) != Some(*t))
+                .and_then(|t| mae_xml::parse(t).ok())
+                .and_then(|root| Some((mae_xml::Setup::from_root(&root).ok()?, root)));
             let x = db.mae.sessions[k].as_mut().expect("open");
+            if let Some((xs, root)) = restored {
+                let mut su = Setup::default();
+                apply_xml(&mut su, root, &xs, &states);
+                su.run_mode = xs
+                    .current_mode
+                    .filter(|m| m != "Single Run, Sweeps and Corners");
+                x.setup = su;
+            }
             for t in x.setup.tests.iter_mut().filter(|_| !own) {
                 if let Some(el) = states.get(&t.name) {
                     let mut n = from_state(&t.name, el);
@@ -1309,6 +1417,15 @@ pub fn call_files(
                 text.push_str(&t.state.clone().unwrap_or_else(|| mock_state(t)));
             }
             text.push_str("</statedb>\n");
+            db.mae.written.insert(path.clone(), text.clone());
+            files.insert(path, text);
+            // maestro.sdb: the setup's XML with its run mode (live: `<currentmode>`).
+            let path = view_file(db, &x.lib, &x.cell, "maestro.sdb")?;
+            let mut tree = export_tree(&x.setup, "maestro");
+            if let (Some(mode), Some(a)) = (&x.setup.run_mode, tree.child_mut("active")) {
+                a.children.insert(0, Node::leaf("currentmode", mode));
+            }
+            let text = mae_xml::write(&tree);
             db.mae.written.insert(path.clone(), text.clone());
             files.insert(path, text);
             Some(r)
@@ -1352,107 +1469,132 @@ pub fn call_files(
                 return Some(Ok(V::Nil));
             };
             let states = db.mae.sessions[k].as_ref().expect("open").states.clone();
-            let su = db.mae.setup(k);
-            for xt in &x.tests {
-                if !su.tests.iter().any(|t| t.name == xt.name) {
-                    // GUESS(G40): a test the import creates takes the view's state for it.
-                    let mut t = match states.get(&xt.name) {
-                        Some(el) => from_state(&xt.name, el),
-                        None => Test {
-                            name: xt.name.clone(),
-                            ..Test::default()
-                        },
-                    };
-                    let o = |n: &str| xt.option(n).unwrap_or("").to_owned();
-                    t.design = (o("lib"), o("cell"), o("view"));
-                    t.simulator = o("sim");
-                    su.tests.push(t);
-                }
-                let t = su
-                    .tests
-                    .iter_mut()
-                    .find(|t| t.name == xt.name)
-                    .expect("made");
-                t.disabled = !xt.enabled;
-                for (n, v) in xt.vars.iter().filter(|v| !v.1.is_empty()) {
-                    match t.vars.iter_mut().find(|x| &x.0 == n) {
-                        Some(x) => x.1 = v.clone(),
-                        None => t.vars.push((n.clone(), v.clone())),
-                    }
-                }
-            }
-            for v in &x.vars {
-                match su.vars.iter_mut().find(|y| y.0 == v.name) {
-                    Some(y) => y.1 = v.value.clone(),
-                    None => su.vars.push((v.name.clone(), v.value.clone())),
-                }
-            }
-            for c in x.corners.iter().filter(|c| c.name != "_default") {
-                if !su.corners.iter().any(|y| y.name == c.name) {
-                    su.corners.push(Corner {
-                        name: c.name.clone(),
-                        ..Corner::default()
-                    });
-                }
-                let y = su
-                    .corners
-                    .iter_mut()
-                    .find(|y| y.name == c.name)
-                    .expect("made");
-                y.enabled = c.enabled;
-                for (n, v) in &c.vars {
-                    match y.vars.iter_mut().find(|z| &z.0 == n) {
-                        Some(z) => z.1 = v.clone(),
-                        None => y.vars.push((n.clone(), v.clone())),
-                    }
-                }
-            }
-            su.params = x
-                .params
-                .iter()
-                .map(|p| (p, ""))
-                .chain(
-                    x.corners
-                        .iter()
-                        .flat_map(|c| c.params.iter().map(move |p| (p, c.name.as_str()))),
-                )
-                .map(|(p, c)| {
-                    (
-                        p.location.clone(),
-                        p.name.clone(),
-                        p.value.clone(),
-                        c.to_owned(),
-                    )
-                })
-                .collect();
-            for sp in &x.specs {
-                if let Some(w) = &sp.weight {
-                    su.weights.insert(sp.name.clone(), w.clone());
-                }
-                let spec = match sp.kind.as_str() {
-                    "gt" => ("gt", V::str(&sp.min)),
-                    "lt" => ("lt", V::str(&sp.max)),
-                    "range" => ("range", V::list(vec![V::str(&sp.min), V::str(&sp.max)])),
-                    "tol" => (
-                        "tolerance",
-                        V::list(vec![V::str(&sp.target), V::str(&sp.tol)]),
-                    ),
-                    _ => continue,
-                };
-                if let Some(o) = su
-                    .tests
-                    .iter_mut()
-                    .find(|t| t.name == sp.test)
-                    .and_then(|t| t.outputs.iter_mut().find(|o| o.name == sp.output))
-                {
-                    o.spec = vec![(spec.0.to_owned(), spec.1)];
-                }
-            }
-            su.sdb = Some(root);
+            apply_xml(db.mae.setup(k), root, &x, &states);
             Some(Ok(V::T))
         }
         _ => None,
     }
+}
+
+/// What `axlImportSetup … 'overwrite` does to setup `su` with the XML `root` (`x` its typed
+/// view): tests (made from `states` when missing), vars, corners, parameters and specs in
+/// place; the tree kept for the rest, with what the old tree held outside `<active>` that
+/// `root` does not (live: a run plan survives).
+fn apply_xml(
+    su: &mut Setup,
+    mut root: Node,
+    x: &mae_xml::Setup,
+    states: &BTreeMap<String, String>,
+) {
+    for xt in &x.tests {
+        if !su.tests.iter().any(|t| t.name == xt.name) {
+            // GUESS(G40): a test the import creates takes the view's state for it.
+            let mut t = match states.get(&xt.name) {
+                Some(el) => from_state(&xt.name, el),
+                None => Test {
+                    name: xt.name.clone(),
+                    ..Test::default()
+                },
+            };
+            let o = |n: &str| xt.option(n).unwrap_or("").to_owned();
+            t.design = (o("lib"), o("cell"), o("view"));
+            t.simulator = o("sim");
+            su.tests.push(t);
+        }
+        let t = su
+            .tests
+            .iter_mut()
+            .find(|t| t.name == xt.name)
+            .expect("made");
+        t.disabled = !xt.enabled;
+        for (n, v) in xt.vars.iter().filter(|v| !v.1.is_empty()) {
+            match t.vars.iter_mut().find(|x| &x.0 == n) {
+                Some(x) => x.1 = v.clone(),
+                None => t.vars.push((n.clone(), v.clone())),
+            }
+        }
+    }
+    for v in &x.vars {
+        match su.vars.iter_mut().find(|y| y.0 == v.name) {
+            Some(y) => y.1 = v.value.clone(),
+            None => su.vars.push((v.name.clone(), v.value.clone())),
+        }
+    }
+    for c in x.corners.iter().filter(|c| c.name != "_default") {
+        if !su.corners.iter().any(|y| y.name == c.name) {
+            su.corners.push(Corner {
+                name: c.name.clone(),
+                ..Corner::default()
+            });
+        }
+        let y = su
+            .corners
+            .iter_mut()
+            .find(|y| y.name == c.name)
+            .expect("made");
+        y.enabled = c.enabled;
+        for (n, v) in &c.vars {
+            match y.vars.iter_mut().find(|z| &z.0 == n) {
+                Some(z) => z.1 = v.clone(),
+                None => y.vars.push((n.clone(), v.clone())),
+            }
+        }
+    }
+    su.params = x
+        .params
+        .iter()
+        .map(|p| (p, ""))
+        .chain(
+            x.corners
+                .iter()
+                .flat_map(|c| c.params.iter().map(move |p| (p, c.name.as_str()))),
+        )
+        .map(|(p, c)| {
+            (
+                p.location.clone(),
+                p.name.clone(),
+                p.value.clone(),
+                c.to_owned(),
+            )
+        })
+        .collect();
+    for sp in &x.specs {
+        if let Some(w) = &sp.weight {
+            su.weights.insert(sp.name.clone(), w.clone());
+        }
+        let spec = match sp.kind.as_str() {
+            "gt" => ("gt", V::str(&sp.min)),
+            "lt" => ("lt", V::str(&sp.max)),
+            "range" => ("range", V::list(vec![V::str(&sp.min), V::str(&sp.max)])),
+            "tol" => (
+                "tolerance",
+                V::list(vec![V::str(&sp.target), V::str(&sp.tol)]),
+            ),
+            _ => continue,
+        };
+        if let Some(o) = su
+            .tests
+            .iter_mut()
+            .find(|t| t.name == sp.test)
+            .and_then(|t| t.outputs.iter_mut().find(|o| o.name == sp.output))
+        {
+            o.spec = vec![(spec.0.to_owned(), spec.1)];
+        }
+    }
+    su.vars_off = x
+        .vars
+        .iter()
+        .filter(|v| !v.enabled)
+        .map(|v| v.name.clone())
+        .collect();
+    if let Some(old) = &su.sdb {
+        for c in &old.children {
+            if c.name != "active" && !root.children.iter().any(|r| r.name == c.name) {
+                root.children.push(c.clone());
+            }
+        }
+    }
+    su.sdb = Some(root);
 }
 
 /// The setup database of `su` as Maestro's XML, root text `stem`: the tree the last import
@@ -1572,6 +1714,10 @@ fn export_tree(su: &Setup, stem: &str) -> Node {
             .cloned()
             .unwrap_or_else(|| var(n, ""));
         set_value(&mut el, v);
+        el.attrs.retain(|a| a.0 != "enabled");
+        if su.vars_off.contains(n) {
+            el.attrs.push(("enabled".into(), "0".into()));
+        }
         active.children[k].children.push(el);
     }
     sync_params(active, &su.params, "");

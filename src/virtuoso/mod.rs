@@ -96,7 +96,8 @@ pub struct Import {
 ///
 /// The text is not a complete `.sfyx` file.
 pub fn import_targets(sfyx: &str) -> Result<Vec<String>, Vec<String>> {
-    read::targets(&adel::split(sfyx)?.0)
+    let (sfyx, _) = adel::split(sfyx)?;
+    read::targets(&ade::viewfiles::split(&sfyx)?.0)
 }
 
 /// Converts a `.sfyx` dump into Schemify files, merging with `existing` (§7.3).
@@ -111,8 +112,10 @@ pub fn import(
     opts: &ImportOptions,
 ) -> Result<Import, Vec<String>> {
     let (sfyx, states) = adel::split(sfyx)?;
+    let (sfyx, views) = ade::viewfiles::split(&sfyx)?;
     let mut imp = read::import(&sfyx, existing, map, opts)?;
     adel::attach(&states, &mut imp, existing, opts);
+    ade::viewfiles::attach(&views, &mut imp, existing, opts);
     Ok(imp)
 }
 

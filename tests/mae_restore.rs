@@ -272,6 +272,8 @@ fn the_probe_setup_survives_dump_schemify_and_load() {
     );
 
     // Sent back unchanged: the setup and the states, and no mapped record (nothing changed).
+    // (A bench that holds the view's files goes back as those alone: tests/mae_files.rs.)
+    let files = common::without_view_files(&files, &bench_path);
     let (second, notes) = export(&files, &bench_path);
     assert_eq!(records(&second, "maesdb")[0].text(0).unwrap(), dumped);
     assert_eq!(records(&second, "maestate").len(), 3);
@@ -279,7 +281,12 @@ fn the_probe_setup_survives_dump_schemify_and_load() {
         .unwrap()
         .iter()
         .skip_while(|r| r.tag != "maestro")
-        .filter(|r| !matches!(r.tag.as_str(), "maestro" | "maesdb" | "maestate" | "end"))
+        .filter(|r| {
+            !matches!(
+                r.tag.as_str(),
+                "maestro" | "maesdb" | "maestate" | "maefile" | "end"
+            )
+        })
         .map(|r| r.tag.clone())
         .collect();
     assert!(
@@ -429,7 +436,7 @@ fn only_what_schemify_changed_is_applied_and_the_rest_is_restored() {
         .unwrap()
         .iter()
         .skip_while(|r| r.tag != "maestro")
-        .filter(|r| !matches!(r.tag.as_str(), "maesdb" | "maestate" | "end"))
+        .filter(|r| !matches!(r.tag.as_str(), "maesdb" | "maestate" | "maefile" | "end"))
         .map(|r| format!("{} {}", r.tag, r.str(0).unwrap_or("")))
         .collect();
     // Both tests see the global (lane L6: zz is a test of the bench too).

@@ -492,7 +492,7 @@ pub fn attach(states: &[State], imp: &mut Import, existing: &Files, opts: &Impor
 
 /// The bench file the import writes for Virtuoso cell `lib/cell` (as `read` names it:
 /// `--into`, then the manifest's directory, then `--lib-dir`).
-fn bench_path(
+pub(crate) fn bench_path(
     lib: &str,
     cell: &str,
     imp: &Import,
@@ -525,7 +525,9 @@ fn bench_path(
 }
 
 /// The bench records a Maestro test is written from.
-const SETUP: [RecordKind; 9] = [
+const SETUP: [RecordKind; 11] = [
+    RecordKind::Test,
+    RecordKind::BenchParam,
     RecordKind::Var,
     RecordKind::Corner,
     RecordKind::Config,
@@ -538,7 +540,8 @@ const SETUP: [RecordKind; 9] = [
 ];
 
 /// The fingerprint of `doc`'s setup records (FNV-1a 64 of their canonical text, attributes
-/// sorted): what "unchanged since the import" means for an ADE L state.
+/// sorted): what "unchanged since the import" means for an ADE L state and for a Maestro
+/// view's stored files (`ade::viewfiles`).
 pub fn fingerprint(doc: &Document<'_>) -> String {
     let mut text = String::new();
     for r in 1..doc.record_count() {
@@ -1203,7 +1206,7 @@ fn apply(h: &str, args: &[F], env: &mut Env, depth: usize) -> Result<Val, String
 const B64: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
 
 /// Standard base64 with padding, as `base64 -w 0` writes it.
-fn b64_encode(b: &[u8]) -> String {
+pub(crate) fn b64_encode(b: &[u8]) -> String {
     let mut out = String::with_capacity(b.len().div_ceil(3) * 4);
     for c in b.chunks(3) {
         let n = (u32::from(c[0]) << 16)
@@ -1221,7 +1224,7 @@ fn b64_encode(b: &[u8]) -> String {
 }
 
 /// Decodes base64 (white space ignored, padding optional); `None` for any other byte.
-fn b64_decode(t: &str) -> Option<Vec<u8>> {
+pub(crate) fn b64_decode(t: &str) -> Option<Vec<u8>> {
     let mut out = Vec::with_capacity(t.len() / 4 * 3);
     let (mut acc, mut bits) = (0u32, 0u32);
     for c in t.bytes().filter(|c| !c.is_ascii_whitespace()) {

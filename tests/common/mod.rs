@@ -122,12 +122,30 @@ pub fn strip_fp(text: &str) -> String {
                 "  vmaesdb ",
                 "  vmaestate ",
                 "  vmaerec ",
+                "  vmaefile ",
+                "  vmaefiles ",
             ]
             .iter()
             .any(|p| l.starts_with(p))
         })
         .map(|l| format!("{l}\n"))
         .collect()
+}
+
+/// `files` with bench `path` as an import before lane L11 wrote it: without the Maestro
+/// view's stored files (`vmaefile`, `vmaefiles`, §9.11), so its export takes §9.7's
+/// in-place restore even unchanged.
+pub fn without_view_files(files: &Files, path: &str) -> Files {
+    let text = String::from_utf8(files[path].clone()).unwrap();
+    let kept: String = text
+        .lines()
+        .filter(|l| !l.starts_with("  vmaefile ") && !l.starts_with("  vmaefiles "))
+        .map(|l| format!("{l}\n"))
+        .collect();
+    assert_ne!(kept, text, "{path} holds the view's files");
+    let mut out = files.clone();
+    out.insert(path.to_owned(), kept.into_bytes());
+    out
 }
 
 /// `.sfyx` text without its stash properties (`schemifyRecords<k>`).

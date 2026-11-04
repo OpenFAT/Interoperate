@@ -207,6 +207,8 @@ fn an_unchanged_bench_sends_the_stored_setup_byte_for_byte() {
     let Some((dumped, files)) = through_schemify(&xml) else {
         return;
     };
+    // A bench that holds the view's files goes back as those alone (tests/mae_files.rs).
+    let files = common::without_view_files(&files, BENCH);
     let (text, notes) = export(&files, BENCH);
     assert_eq!(sent_xml(&text), dumped, "{}", notes.text());
     // The re-import maps the same records.
@@ -399,7 +401,7 @@ fn a_range_var_is_varied_and_its_step_goes_back_as_its_value() {
         block(&b, "optimize local").contains(&"  vary K".to_owned()),
         "{b}"
     );
-    let (text, _) = export(&files, BENCH);
+    let (text, _) = export(&common::without_view_files(&files, BENCH), BENCH);
     assert_eq!(sent_xml(&text), dumped);
 
     let files = edited(&files, |b| b.replace("  step 1\n", "  step 2\n"));

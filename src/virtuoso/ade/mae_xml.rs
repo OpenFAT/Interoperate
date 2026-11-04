@@ -385,6 +385,8 @@ pub struct SetupVar {
     pub name: String,
     /// Its value text (a number, an expression, a sweep `a:s:b` or a list `a,b,c`).
     pub value: String,
+    /// False for `<var enabled="0">` (`axlSetEnabled` of the var: not netlisted).
+    pub enabled: bool,
     /// `<dependentTests>`: (test, omitted). `omitted` true: the test does not see the global.
     pub dependents: Vec<(String, bool)>,
 }
@@ -535,6 +537,7 @@ impl Setup {
                 .map(|v| SetupVar {
                     name: v.text.clone(),
                     value: v.get("value").unwrap_or("").to_owned(),
+                    enabled: v.attr("enabled") != Some("0"),
                     dependents: v.child("dependentTests").map_or(Vec::new(), |d| {
                         d.all("dependentTest")
                             .map(|t| (t.text.clone(), t.attr("omitted") == Some("1")))

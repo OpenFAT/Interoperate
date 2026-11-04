@@ -74,7 +74,7 @@ fn sent(text: &str) -> Vec<String> {
     for r in sfyx::read(text).unwrap() {
         match r.tag.as_str() {
             "maestro" => test = r.str(0).unwrap().to_owned(),
-            "maesdb" | "maestate" | "end" => {}
+            "maesdb" | "maestate" | "maefile" | "end" => {}
             _ if test.is_empty() => {}
             t => out.push(format!(
                 "{test} {t} {}",
@@ -177,6 +177,8 @@ fn an_unchanged_probe_bench_round_trips_equal_after_normalize() {
     let Some((mut i, xml, files, path)) = through_schemify() else {
         return;
     };
+    // A bench that holds the view's files goes back as those alone (tests/mae_files.rs).
+    let files = common::without_view_files(&files, &path);
     let (text, notes) = export(&files, &path);
     assert!(
         sent(&text).is_empty(),

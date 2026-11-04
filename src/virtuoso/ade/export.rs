@@ -316,12 +316,14 @@ fn export_test<F: Fn(&str) -> Option<InstInfo>>(
     }
     for r in c.records(RecordKind::Var) {
         let name = c.field(r, 0);
-        if c.attr(r, "enable") == Some("false") {
-            notes.review(
-                "var",
-                cell,
-                format!("var {name} enable false: exported enabled"),
-            );
+        // §9.11: `varenable` when disabled, or enabled again over a stored disabled var.
+        let on = c.attr(r, "enable") != Some("false");
+        if !on
+            || stored
+                .and_then(|su| su.var(name))
+                .is_some_and(|v| !v.enabled)
+        {
+            t.var_enable.push((name.to_owned(), on));
         }
         if t.vars.iter().any(|v| v.0 == name && v.2.is_empty()) {
             notes.review(
@@ -396,12 +398,9 @@ fn export_test<F: Fn(&str) -> Option<InstInfo>>(
         .collect();
     for &r in &outputs {
         let (name, e) = (c.field(r, 0), c.field(r, 1));
+        // §9.11: Plot off (`patch_states` sets a stored state's flag).
         if c.attr(r, "enable") == Some("false") {
-            notes.review(
-                "output",
-                cell,
-                format!("output {name} enable false: exported enabled"),
-            );
+            t.out_enable.push((name.to_owned(), false));
         }
         // `analysis <a>` picks the dataset (format.md rank 6), else the test's default.
         scope.letter = match c.attr(r, "analysis") {

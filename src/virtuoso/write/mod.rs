@@ -152,6 +152,8 @@ pub fn export(
     }
     for (k, ci) in restored {
         ade::only_changed(&d.cells[ci], &mut dump.maestro[k], &mut notes);
+        // §9.11: the view's own files, alone while the bench is unchanged (lane L11).
+        ade::viewfiles::restore(&d.cells[ci], &mut dump.maestro[k], &mut notes);
     }
     let recs = records(&dump);
     assert!(

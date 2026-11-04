@@ -19,8 +19,9 @@
 //! Submodules: `export` (bench → test), `import` (test → bench, with the records' check),
 //! `ocean` (the OCEAN script, §9.6), `outputs` (output expressions both ways), `syntax`
 //! (the words both directions share), `runmode` (Monte Carlo and optimizer, §9.9),
-//! `mae_xml` (Maestro's setup XML, parsed for the mappings) and `restore` (the view's own
-//! setup kept in the bench header and sent back, §9.7).
+//! `mae_xml` (Maestro's setup XML, parsed for the mappings), `restore` (the view's own
+//! setup kept in the bench header and sent back, §9.7) and `viewfiles` (the view's setup
+//! files kept verbatim, §9.11).
 
 // Data design (six questions): in = one bench document (≤ 2^22 records) or one maestro
 // test's records; out = records or bench records. Rows per kind live in one `Vec` each
@@ -36,6 +37,7 @@ use crate::design::{Cell, Design, push_attr, push_record};
 use crate::notes::Notes;
 use crate::sfyx::{Error, Record, Value, i, pairs, s, text};
 
+mod disabled;
 mod export;
 mod import;
 pub mod mae_xml;
@@ -46,6 +48,7 @@ mod runmode;
 mod syntax;
 #[cfg(test)]
 mod tests;
+pub mod viewfiles;
 
 pub use export::*;
 pub use import::*;
@@ -96,13 +99,18 @@ struct Test {
     /// `(path, value, scope)`: device parameters (`parameter`), path `inst[/inst…]/prop`
     /// under the test's design, scope `""` global, else a corner name.
     params: Vec<(String, String, String)>,
+    /// `(name, enabled)`: a global var's enable (`varenable`, lane L11).
+    var_enable: Vec<(String, bool)>,
+    /// `(name, enabled)`: an output's Plot check box, Maestro's enable (`outenable`).
+    out_enable: Vec<(String, bool)>,
 }
 
 impl Test {
     /// The records of the test in §9 order: `maestro`; global `var`s by name; `testvar`s
-    /// by name; `testenable`; `analysis` by name; the test's `model`s in order; per corner
+    /// by name; `testenable`; `varenable`s by name; `analysis` by name; the test's `model`s in order; per corner
     /// (by name) `corner`, its `model`s in order and its `var`s by name; `parameter`s by
-    /// (scope, path); `output`s by name; `spec`s by (output, op); `defn`s by file.
+    /// (scope, path); `output`s by name; `spec`s by (output, op); `outenable`s by name;
+    /// `defn`s by file.
     fn records(&self) -> Vec<Record> {
         let by_name = |a: &(String, String, String), b: &(String, String, String)| {
             (&a.0, &a.2).cmp(&(&b.0, &b.2))
@@ -144,6 +152,14 @@ impl Test {
             self.enable
                 .map(|en| Record::new("testenable", vec![i(i32::from(en))])),
         );
+        let flags = |rows: &[(String, bool)], tag: &str| {
+            let mut rows = rows.to_vec();
+            rows.sort();
+            rows.into_iter()
+                .map(|(n, en)| Record::new(tag, vec![s(&n), i(i32::from(en))]))
+                .collect::<Vec<_>>()
+        };
+        out.extend(flags(&self.var_enable, "varenable"));
         for (n, en, opts) in &analyses {
             let kv = pairs(opts.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             out.push(Record::new("analysis", vec![s(n), i(i32::from(*en)), kv]));
@@ -167,6 +183,7 @@ impl Test {
         for (o, op, v) in &specs {
             out.push(Record::new("spec", vec![s(o), s(op), s(v)]));
         }
+        out.extend(flags(&self.out_enable, "outenable"));
         for (f, t) in &defns {
             out.push(Record::new("defn", vec![s(f), text(t)]));
         }
@@ -179,7 +196,9 @@ impl Test {
             + self.defns.len()
             + self.own.len()
             + usize::from(self.enable.is_some())
-            + self.params.len();
+            + self.params.len()
+            + self.var_enable.len()
+            + self.out_enable.len();
         assert_eq!(out.len(), n + 1, "every row is one record");
         out
     }

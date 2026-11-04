@@ -67,6 +67,10 @@ pub const KINDS: &[(&str, Scope)] = &[
     // ---- L7: ADE L states (`adel`, `adelfile`: `adel::split` turns them into a maestro
     // test before the reader sees them, so they have no row)
     // ---- L8: layout
+    // ---- L11: a var's and an output's enable; a maestro view's files (`maefile`: `ade::viewfiles::split` keeps them in the
+    // bench header before the reader sees them, so they have no row)
+    ("varenable", Scope::Maestro),
+    ("outenable", Scope::Maestro),
 ];
 
 /// The scope of record kind `tag`; `None` for a tag no row names.

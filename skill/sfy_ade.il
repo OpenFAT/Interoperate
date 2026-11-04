@@ -12,7 +12,10 @@
 ;; instead of answering costs that record (logged), never the rest of the export or import.
 ;; A view also goes out with its own setup (spec 9.7): the axlExportSetup XML (maesdb) and
 ;; each test's active.state element (maestate); a load that carries them restores them first
-;; (axlImportSetup ... 'overwrite) and applies its records in place on top.
+;; (axlImportSetup ... 'overwrite) and applies its records in place on top. Its setup files
+;; go too (maefile, spec 9.11: run plans and reliability live only in maestro.sdb, starting
+;; states in states/): a load writes them back first, and when they come alone (Schemify
+;; changed nothing) that is the whole restore, byte for byte, with no session.
 
 ;; ================================================================ export
 
@@ -119,7 +122,38 @@
           (setq cur (list line)))))
     (when cur
       (SfyLog (sprintf nil "%s/%s/maestro: active.state test %s is not closed: not kept" lib cell name)))
-    (append out (mapcar (lambda (x) (cons "maestate" x)) (SfySortByKey (mapcar 'cdr segs))))))
+    (append out (append (mapcar (lambda (x) (cons "maestate" x)) (SfySortByKey (mapcar 'cdr segs)))
+                  (SfyAdeViewFiles lib cell)))))
+
+;; The directory of maestro view lib/cell, or nil without the view.
+(procedure (SfyAdeViewDir lib cell)
+  (let ((v (ddGetObj lib cell "maestro")))
+    (and v (stringp (getSGq v readPath)) (getSGq v readPath))))
+
+;; The records ("maefile" path base64) of the setup files of maestro view lib/cell (spec
+;; 9.11): every file under the view by path, but its histories and results and the lock
+;; files of open sessions; each copied through the shell's base64 (sfy_adel.il).
+(procedure (SfyAdeViewFiles lib cell)
+  (let ((dir (SfyAdeViewDir lib cell)) (tmp (SfyAdeLTmp)) (b64 nil) (out nil))
+    (foreach rel (and dir (SfyAdeLSafe dir) (SfyAdeFileTree dir ""))
+      (setq b64 (SfyAdeLBase64 (strcat dir "/" rel) tmp))
+      (if b64
+        (setq out (cons (list "maefile" rel (SfyText (list b64))) out))
+        (SfyLog (sprintf nil "%s/%s/maestro: cannot copy %s (base64): not kept" lib cell rel))))
+    (reverse out)))
+
+;; The paths of the files under dir/sub (sub "" for dir itself), relative to dir, by name;
+;; without history/, results/ and *.cdslck. isFile answers t for a directory too.
+(procedure (SfyAdeFileTree dir sub)
+  (let ((d (if (equal sub "") dir (strcat dir "/" sub))) (rel nil) (out nil))
+    (foreach f (sort (getDirFiles d) nil)
+      (setq rel (if (equal sub "") f (strcat sub "/" f)))
+      (cond
+        ((or (member f (list "." "..")) (member rel (list "history" "results"))) nil)
+        ((isDir (strcat d "/" f)) (setq out (append out (SfyAdeFileTree dir rel))))
+        ((SfyAdeEnds f ".cdslck") nil)
+        ((and (isFile (strcat d "/" f)) (SfyAdeLSafe rel)) (setq out (append out (list rel))))))
+    out))
 
 ;; Closes maestro session sess: ?forceClose t (virtuoso-bridge-lite closes so), else a plain
 ;; close for a release without it; logs when neither did, since the session's lock makes
@@ -317,10 +351,11 @@
 ;; way: in place, never deleted.
 (procedure (SfyAdeLoadTest test lib made)
   (let ((line (car (car test))) (m (cadr (car test))) (tlib nil) (cell nil) (sess nil)
-        (sdbRec nil) (from nil))
+        (sdbRec nil) (from nil) (files nil))
     (setq cell (nth 3 m))
     (setq tlib (or (arrayref sfyTargets (strcat (nth 2 m) "/" cell)) lib (nth 2 m)))
     (setq sdbRec (car (setof lr (cdr test) (equal (car (cadr lr)) "maesdb"))))
+    (setq files (setof lr (cdr test) (equal (car (cadr lr)) "maefile")))
     (when sdbRec (setq from (SfyAdeXmlLib (SfyAdeTextLines (nth 1 (cadr sdbRec))))))
     (cond
       ((null (ddGetObj tlib cell))
@@ -328,6 +363,12 @@
       ((and (ddGetObj tlib cell "maestro") (not sfyOverwrite)
             (not (member (strcat tlib "/" cell) made)))
         (SfyRefuse line (sprintf nil "%s/%s/maestro exists; pass ?overwrite t" tlib cell)))
+      ((and files (not (SfyAdeWriteFiles tlib cell files)))
+        (SfyRefuse line (sprintf nil "cannot write the setup files of %s/%s/maestro" tlib cell)))
+      ;; The files alone: the view as it was dumped (spec 9.11).
+      ((and files (null sdbRec))
+        (SfyCount "maestro view restored from its files")
+        (setq made (cons (strcat tlib "/" cell) made)))
       ((and sdbRec (not (SfyAdeWriteStates tlib cell
                           (setof lr (cdr test) (equal (car (cadr lr)) "maestate")) from)))
         (SfyRefuse line (sprintf nil "cannot write the test states of %s/%s/maestro (active.state)"
@@ -442,6 +483,52 @@
       (close p)
       t)))
 
+;; Writes the maefile records' files (recs: (line ("maefile" path base64))) into maestro view
+;; tlib/cell, created first when missing, byte for byte through the shell's base64; then,
+;; when the view's maestro.sdb names another design library, its .sdb and .state files with
+;; that library renamed to tlib. Files the view has and the records do not are kept. t when
+;; every file was written.
+(procedure (SfyAdeWriteFiles tlib cell recs)
+  (let ((sess nil) (dir nil) (tmp (SfyAdeLTmp)) (p nil) (f nil) (ok t) (from nil) (parts nil))
+    (unless (ddGetObj tlib cell "maestro")
+      (setq sess (car (errset (maeOpenSetup tlib cell "maestro" ?mode "a"))))
+      (when sess
+        (errset (maeSaveSetup ?lib tlib ?cell cell ?view "maestro" ?session sess))
+        (SfyAdeClose sess)))
+    (setq dir (SfyAdeViewDir tlib cell))
+    (foreach lr recs
+      (setq f (and dir (strcat dir "/" (nth 1 (cadr lr)))))
+      (setq parts (parseString (nth 1 (cadr lr)) "/"))
+      (setq p (and f (SfyAdeLSafe f) (outfile tmp "w")))
+      (when p
+        (fprintf p "%s" (SfyTextValue (nth 2 (cadr lr))))
+        (close p))
+      (if (and p
+               (or (null (cdr parts))
+                   (equal 0 (system (sprintf nil "mkdir -p '%s'"
+                                      (substring f 1 (difference (strlen f) (add1 (strlen (car (last parts))))))))))
+               (equal 0 (system (sprintf nil "base64 -d '%s' > '%s'" tmp f))))
+        (SfyCount "maestro file")
+        (progn
+          (setq ok nil)
+          (SfyRefuse (car lr) (sprintf nil "cannot write %s" (or f (nth 1 (cadr lr))))))))
+    (setq from (and dir (SfyAdeXmlLib (SfyAdeLines (strcat dir "/maestro.sdb")))))
+    (when (and ok from (nequal from tlib))
+      (foreach lr recs
+        (setq f (strcat dir "/" (nth 1 (cadr lr))))
+        (when (or (SfyAdeEnds f ".sdb") (SfyAdeEnds f ".state"))
+          (setq parts (SfyAdeRelib (SfyAdeLines f) from tlib))
+          (setq p (outfile f "w"))
+          (when p
+            (foreach l parts (fprintf p "%s" l))
+            (close p)))))
+    ok))
+
+;; t when s ends with suffix.
+(procedure (SfyAdeEnds s suffix)
+  (and (geqp (strlen s) (strlen suffix))
+       (equal (substring s (add1 (difference (strlen s) (strlen suffix)))) suffix)))
+
 ;; Restores the setup XML of rec (("maesdb" xml digests)), its design library from renamed
 ;; to, into session sess with axlImportSetup ... "" 'overwrite (G32: replaces in place,
 ;; every test, corner, var, parameter, spec and run option once). Its errors print to the
@@ -522,8 +609,13 @@
 (procedure (SfyAdeFill test tlib cell sess)
   (let ((restore sfyAdeRestore) (m (cadr (car test))) (name nil) (sdb nil) (models nil) (defs nil) (specs nil)
         (used nil) (opts nil) (f nil) (line nil) (c nil) (mh nil) (mn nil) (id nil) (p nil)
-        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil))
+        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil)
+        (off nil))
     (setq name (nth 1 m))
+    ;; The outputs created with Plot off (outenable 0).
+    (setq off (mapcar (lambda (lr) (nth 1 (cadr lr)))
+                (setof lr (cdr test)
+                  (and (equal (car (cadr lr)) "outenable") (equal (nth 2 (cadr lr)) 0)))))
     (prog ()
       (setq have (member name (car (errset (maeGetSetup ?session sess)))))
       (when (and have (not restore))
@@ -588,6 +680,12 @@
               (maeSetVar (nth 0 f) (nth 1 f) ?typeName "test" ?typeValue (list name) ?session sess))
             ("testenable"
               (maeSetSetup ?tests (list name) ?enabled (equal (nth 0 f) 1) ?session sess))
+            ;; A global var's check box (spec 9.11): a disabled var is not netlisted.
+            ("varenable"
+              (setq c (and sdb (axlGetVar sdb (nth 0 f))))
+              (and c (axlSetEnabled c (equal (nth 1 f) 1))))
+            ;; An output's Plot check box, given to the output when it is created.
+            ("outenable" t)
             ;; A device parameter of the test's design, "lib/cell/view/inst[/inst...]/prop"
             ;; (the form the probe and lane L1's live check set it by), globally or in one
             ;; corner.
@@ -613,8 +711,10 @@
               (cond
                 ((not (member (nth 0 f) old))
                   (if (equal (nth 1 f) "net")
-                    (maeAddOutput (nth 0 f) name ?outputType "net" ?signalName (nth 2 f) ?session sess)
-                    (maeAddOutput (nth 0 f) name ?outputType "point" ?expr (nth 2 f) ?session sess)))
+                    (maeAddOutput (nth 0 f) name ?outputType "net" ?signalName (nth 2 f)
+                      ?plot (not (member (nth 0 f) off)) ?session sess)
+                    (maeAddOutput (nth 0 f) name ?outputType "point" ?expr (nth 2 f)
+                      ?plot (not (member (nth 0 f) off)) ?session sess)))
                 ((member (nth 2 f) (SfyAdeOutTexts sess name (nth 0 f))) t)
                 (t
                   (SfyRefuse line (sprintf nil "maestro %s: output %s was changed in Schemify; Maestro keeps its own (edit it there)"
@@ -624,6 +724,7 @@
             ;; Restored by SfyAdeLoadTest before this test was filled.
             ("maesdb" t)
             ("maestate" t)
+            ("maefile" t)
             ("defn"
               ;; Into the view's directory: ddGetObj of a new file in mode "a" answers nil
               ;; (live ICADVM20.1).

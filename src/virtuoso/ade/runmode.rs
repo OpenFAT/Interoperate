@@ -37,7 +37,8 @@ type OptMap = (
 /// Monte Carlo options with a `montecarlo` attribute. A mode written from a record lists
 /// its mapped options in table order (Maestro's own creation order in the probes), then
 /// the extras in record order.
-/// GUESS(G49): `lds` is `samplingmode`'s word for low-discrepancy sampling.
+/// G49 (settled, live probe `l11_probe`): `lds` is `samplingmode`'s word for low-discrepancy
+/// sampling; the netlist says `sampling=lds`, the run log `Low-Discrepancy Sequence`.
 const MC_OPTS: [OptMap; 6] = [
     ("mcnumpoints", "samples", &[]),
     (
@@ -60,7 +61,9 @@ const MC_OPTS: [OptMap; 6] = [
 ];
 
 /// Optimizer options with an `optimize` attribute. The local optimizer's algorithm is its
-/// `effort` (adexl's form: Brent-Powell `fine`, Hooke-Jeeves `coarse`; GUESS(G50)).
+/// `effort` (adexl's form: Brent-Powell `fine`, Hooke-Jeeves `coarse`). G50 (settled, live
+/// probe `l11_probe`): on a two-variable bowl from one start, `fine` searches one variable
+/// at a time (line minimization), `coarse` takes steps of 0.5 in both (a pattern search).
 const OPT_OPTS: [OptMap; 2] = [
     (
         "effort",
