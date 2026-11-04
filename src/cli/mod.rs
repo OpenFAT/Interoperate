@@ -12,7 +12,7 @@
 //! | `pdk-models` | `pdk_models` |
 //! | `pdk-scan` | `pdk_scan` |
 //! | `maestro-results` | `maestro_results` |
-//! | `layout-export`, `layout-import` (lane L8, not implemented yet) | `layout` |
+//! | `layout-export`, `layout-import` | `layout` |
 
 use std::path::{Path, PathBuf};
 
