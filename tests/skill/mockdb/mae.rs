@@ -12,10 +12,22 @@
 //! model or a corner variable. Lists of tests, corners, variables and outputs come back in
 //! reverse creation order (a dumper that forgets to sort fails); a corner's models and a
 //! test's analysis options keep their order (they are ordered in the setup database).
+//!
+//! The view's files (`call_files`): `maeSaveSetup` writes the view's `active.state` (one
+//! `<Test>` element per test: a real one as it was read, else the mock's own, which holds
+//! the test's analyses, outputs and options), and `maeOpenSetup` reads it back, so a state
+//! written before a session opens is the state its tests get (GUESS(G40)).
+//! `axlExportSetup` writes the setup database as Maestro's XML: the tree the last
+//! `axlImportSetup` read, updated from what the mock models (tests, global, test and corner
+//! variables, corners, specs and their weights); `axlImportSetup … 'overwrite` replaces
+//! those in place, creating missing tests and duplicating none (probe G32), and keeps the
+//! tree for what the mock does not model (parameters, run options, disabled tests).
 
 use std::collections::BTreeMap;
 
-use super::super::V;
+use interop::virtuoso::ade::mae_xml::{self, Node};
+
+use super::super::{V, print, read_all};
 use super::MockDb;
 
 /// The maestro rows of `mockdb::SIGNATURES` (IC23.1 ADE SKILL Reference syntax lines, via
@@ -67,6 +79,11 @@ pub const ROWS: &[(&str, &str)] = &[
     ("axlGetVar", "x t"),
     ("axlGetVarValue", "x"),
     ("axlGetSpecData", "x t t [t]"),
+    // The setup database as XML (probe G32: axlImportSetup's template is "ttlts").
+    ("axlExportSetup", "t x t l"),
+    ("axlImportSetup", "t t l t S"),
+    ("axlGetSpec", "x t"),
+    ("axlGetSpecWeight", "x"),
 ];
 
 /// First `axl*` handle number (handles look like the reference's `7918`).
@@ -84,6 +101,10 @@ pub struct Setup {
     pub vars: Vec<(String, String)>,
     /// Corners in creation order.
     pub corners: Vec<Corner>,
+    /// The XML tree of the last `axlImportSetup`: what the mock does not model.
+    pub sdb: Option<mae_xml::Node>,
+    /// Spec weights by `<test>.<output>` (`maeSetSpec ?weight`, `<specWeight>`).
+    pub weights: BTreeMap<String, String>,
 }
 
 /// An analysis `(name, enabled, options)`, options in the order set.
@@ -109,6 +130,9 @@ pub struct Test {
     pub vars: Vec<(String, String)>,
     /// Simulator options `(name, value)` (`temp`, `reltol`, …).
     pub sim: Vec<(String, V)>,
+    /// The `<Test>` element of `active.state` read for this test when it is not the mock's
+    /// own (a real Maestro state, kept as it is); `None`: the mock writes its own.
+    pub state: Option<String>,
 }
 
 /// One output of a test.
@@ -150,6 +174,8 @@ pub struct Session {
     pub mode: String,
     /// The working copy.
     pub setup: Setup,
+    /// The `<Test>` elements of the view's `active.state` when the session opened.
+    pub states: BTreeMap<String, String>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -160,6 +186,7 @@ enum Handle {
     Var(usize, String, String),
     Test(usize, String),
     TestVar(usize, String, String),
+    Spec(usize, String),
 }
 
 /// Maestro state: saved setups by (lib, cell), sessions, `axl*` handles, and the log of
@@ -175,6 +202,9 @@ pub struct Mae {
     /// Environment options every new test starts with, as a PDK's `libInit.il` sets them
     /// (live run: a PDK's default model files).
     pub default_env: Vec<(String, V)>,
+    /// The `active.state` text `maeSaveSetup` last wrote, by path: a file that still holds
+    /// it gives the session nothing the saved setup lacks.
+    written: BTreeMap<String, String>,
     handles: Vec<Handle>,
 }
 
@@ -255,7 +285,8 @@ impl Mae {
             | Handle::Model(s, ..)
             | Handle::Var(s, ..)
             | Handle::Test(s, _)
-            | Handle::TestVar(s, ..) => *s,
+            | Handle::TestVar(s, ..)
+            | Handle::Spec(s, _) => *s,
         };
         self.sessions.get(s)?.as_ref().map(|_| h)
     }
@@ -308,6 +339,7 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 cell,
                 mode,
                 setup,
+                states: BTreeMap::new(),
             }));
             Ok(V::str(&format!("fnxSession{}", m.sessions.len() - 1)))
         }
@@ -513,6 +545,13 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
             let Some(k) = m.session(&kw) else {
                 return Some(Ok(V::Nil));
             };
+            // Live ICADVM20.1: the getter's ?typeValue is a string (a list signals), unlike
+            // the setters'.
+            if key(&kw, "typeValue").is_some_and(|v| !matches!(v, V::Str(_))) {
+                return Some(Err(
+                    "*Error* maeGetVar: argument for keyword ?typeValue should be a string".into(),
+                ));
+            }
             let n = s0(0);
             let find =
                 |vars: &[(String, String)]| vars.iter().find(|x| x.0 == n).map(|x| V::str(&x.1));
@@ -608,8 +647,9 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
             for op in ["gt", "lt", "range", "minimum", "maximum", "tolerance"] {
                 if let Some(v) = key(&kw, op) {
                     let ok = match op {
-                        // GUESS(G21): ?range takes (lo hi).
-                        "range" => strs(v).is_some_and(|x| x.len() == 2),
+                        // GUESS(G21): ?range takes (lo hi). G37 (live): ?tolerance takes
+                        // (target tol), a bare string fails.
+                        "range" | "tolerance" => strs(v).is_some_and(|x| x.len() == 2),
                         _ => matches!(v, V::Str(_)),
                     };
                     if !ok {
@@ -624,12 +664,19 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 ));
             }
             let o = s0(0);
+            let weight = st(key(&kw, "weight"));
+            let id = format!("{}.{o}", s0(1));
             match m
                 .test(k, &s0(1))
                 .and_then(|t| t.outputs.iter_mut().find(|x| x.name == o))
             {
                 Some(x) => {
                     x.spec = spec;
+                    // GUESS: a spec set without ?weight has none.
+                    match weight {
+                        Some(w) => m.setup(k).weights.insert(id, w),
+                        None => m.setup(k).weights.remove(&id),
+                    };
                     Ok(V::T)
                 }
                 None => Ok(V::Nil),
@@ -896,6 +943,13 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                     .and_then(|t| t.outputs.iter().find(|x| x.name == o))
                     .and_then(|x| x.spec.last())
                     .map_or(V::Nil, |(op, v)| {
+                        // Live: ("min" v), ("max" v), ("tol" target tol) (probe G37).
+                        let op = match op.as_str() {
+                            "minimum" => "min",
+                            "maximum" => "max",
+                            "tolerance" => "tol",
+                            o => o,
+                        };
                         let mut items = vec![V::str(op)];
                         match v {
                             V::List(l) => items.extend(l.iter().cloned()),
@@ -908,7 +962,595 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 Err("*Error* axlGetSpecData: argument #1 should be a setup database handle".into())
             }
         },
+        "axlGetSpec" => match m.resolve(&a[0]) {
+            Some(Handle::Sdb(k)) => {
+                let id = s0(1);
+                let known = id.split_once('.').is_some_and(|(t, o)| {
+                    m.test(k, t).is_some_and(|t| {
+                        t.outputs.iter().any(|x| x.name == o && !x.spec.is_empty())
+                    })
+                }) || m.setup(k).weights.contains_key(&id);
+                Ok(if known {
+                    m.handle(Handle::Spec(k, id))
+                } else {
+                    V::Nil
+                })
+            }
+            _ => Err("*Error* axlGetSpec: argument #1 should be a setup database handle".into()),
+        },
+        // Live: "" when no weight is set.
+        "axlGetSpecWeight" => match m.resolve(&a[0]) {
+            Some(Handle::Spec(k, id)) => Ok(V::str(
+                m.setup(k).weights.get(&id).map_or("", String::as_str),
+            )),
+            _ => Err("*Error* axlGetSpecWeight: argument #1 should be a spec handle".into()),
+        },
         _ => return None,
     };
     Some(r)
+}
+
+/// The `<Test>` element the mock writes for a test it holds the state of: its analyses,
+/// outputs and options as one printed list, read back by [`from_state`].
+fn mock_state(t: &Test) -> String {
+    let b = |x: bool| V::str(if x { "1" } else { "0" });
+    let opt = |x: &Option<String>| x.as_deref().map_or(V::Nil, V::str);
+    let pairs = |v: &[(String, V)]| {
+        V::list(
+            v.iter()
+                .map(|(k, x)| V::list(vec![V::str(k), x.clone()]))
+                .collect(),
+        )
+    };
+    let data = V::list(vec![
+        V::list(vec![
+            V::str(&t.design.0),
+            V::str(&t.design.1),
+            V::str(&t.design.2),
+            V::str(&t.simulator),
+        ]),
+        // The form fields maeGetAnalysis echoes (anaName, the ac/noise sweep chooser) are
+        // the state's whatever sets them to their echoed value: left out.
+        V::list(
+            t.analyses
+                .iter()
+                .map(|(n, en, o)| {
+                    let o: Vec<(String, V)> = o
+                        .iter()
+                        .filter(|(k, v)| {
+                            !((k == "anaName" && v.as_str() == Some(n))
+                                || (k == "sweep" && v.as_str() == Some("Frequency")))
+                        })
+                        .cloned()
+                        .collect();
+                    V::list(vec![V::str(n), b(*en), pairs(&o)])
+                })
+                .collect(),
+        ),
+        V::list(
+            t.outputs
+                .iter()
+                .map(|o| {
+                    V::list(vec![
+                        V::str(&o.name),
+                        V::str(&o.kind),
+                        opt(&o.signal),
+                        opt(&o.expr),
+                    ])
+                })
+                .collect(),
+        ),
+        pairs(&t.env),
+        pairs(&t.sim),
+    ]);
+    let mut text = String::new();
+    print(&data, &mut text);
+    let leaf = mae_xml::Node::leaf("mock", &text);
+    let el = Node {
+        name: "Test".into(),
+        attrs: vec![("Name".into(), t.name.clone())],
+        children: vec![leaf],
+        ..Node::default()
+    };
+    // The element as active.state holds it: one tab in, under <statedb>.
+    let w = mae_xml::write(&Node {
+        name: "statedb".into(),
+        children: vec![el],
+        ..Node::default()
+    });
+    let body = w.split_once('\n').map_or("", |x| x.1);
+    let body = body.split_once('\n').map_or("", |x| x.1);
+    body.strip_suffix("</statedb>\n").unwrap_or(body).to_owned()
+}
+
+/// The test `name` a state element describes: the mock's own rebuilt, a real one kept as
+/// its text (with no analyses or outputs: the mock does not read Maestro's state).
+fn from_state(name: &str, el: &str) -> Test {
+    let mut t = Test {
+        name: name.to_owned(),
+        ..Test::default()
+    };
+    let wrapped = format!("<s>\n{el}</s>\n");
+    let data = mae_xml::parse(&wrapped)
+        .ok()
+        .and_then(|n| {
+            n.children
+                .first()
+                .and_then(|t| t.get("mock").map(str::to_owned))
+        })
+        .and_then(|txt| read_all(&txt).ok())
+        .and_then(|f| f.into_iter().next());
+    let Some(data) = data else {
+        t.state = Some(el.to_owned());
+        return t;
+    };
+    let s = |v: &V| v.as_str().unwrap_or_default().to_owned();
+    let pairs = |v: &V| -> Vec<(String, V)> {
+        v.items()
+            .iter()
+            .map(|p| (s(&p.items()[0]), p.items()[1].clone()))
+            .collect()
+    };
+    let it = data.items();
+    let d = it[0].items();
+    t.design = (s(&d[0]), s(&d[1]), s(&d[2]));
+    t.simulator = s(&d[3]);
+    t.analyses = it[1]
+        .items()
+        .iter()
+        .map(|a| {
+            (
+                s(&a.items()[0]),
+                s(&a.items()[1]) == "1",
+                pairs(&a.items()[2]),
+            )
+        })
+        .collect();
+    let opt = |v: &V| v.as_str().map(str::to_owned);
+    t.outputs = it[2]
+        .items()
+        .iter()
+        .map(|o| Output {
+            name: s(&o.items()[0]),
+            kind: s(&o.items()[1]),
+            signal: opt(&o.items()[2]),
+            expr: opt(&o.items()[3]),
+            spec: Vec::new(),
+        })
+        .collect();
+    t.env = pairs(&it[3]);
+    t.sim = pairs(&it[4]);
+    t
+}
+
+/// The DD path of a maestro view's file.
+fn view_file(db: &mut MockDb, lib: &str, cell: &str, file: &str) -> Option<String> {
+    let f = db.dd_get(lib, Some(cell), Some("maestro"), Some(file), "a")?;
+    super::s(&db.get_attr(f, "readPath")).map(str::to_owned)
+}
+
+/// Maestro functions that read or write files: `maeOpenSetup` and `maeSaveSetup` (the
+/// view's `active.state`), `axlExportSetup` and `axlImportSetup`. `None` for any other.
+pub fn call_files(
+    db: &mut MockDb,
+    name: &str,
+    args: &[V],
+    files: &mut BTreeMap<String, String>,
+) -> Option<Result<V, String>> {
+    if !matches!(
+        name,
+        "maeOpenSetup" | "maeSaveSetup" | "axlExportSetup" | "axlImportSetup"
+    ) {
+        return None;
+    }
+    if let Some(Err(e)) = db.call_db(name, args) {
+        return Some(Err(e));
+    }
+    let (a, kw) = split(args);
+    let s0 = |i: usize| st(a.get(i)).unwrap_or_default();
+    match name {
+        "maeOpenSetup" => {
+            let r = call(db, name, args)?;
+            let Ok(V::Str(sess)) = &r else { return Some(r) };
+            let k: usize = sess["fnxSession".len()..].parse().expect("own name");
+            let (lib, cell) = {
+                let x = db.mae.sessions[k].as_ref().expect("open");
+                (x.lib.clone(), x.cell.clone())
+            };
+            let path = view_file(db, &lib, &cell, "active.state")?;
+            let own = files
+                .get(&path)
+                .is_some_and(|t| db.mae.written.get(&path) == Some(t));
+            let states: BTreeMap<String, String> = files
+                .get(&path)
+                .and_then(|t| mae_xml::state_tests(t).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .collect();
+            let x = db.mae.sessions[k].as_mut().expect("open");
+            for t in x.setup.tests.iter_mut().filter(|_| !own) {
+                if let Some(el) = states.get(&t.name) {
+                    let mut n = from_state(&t.name, el);
+                    if n.state.is_some() {
+                        // A real state: the mock keeps the test as saved, with that text.
+                        t.state = n.state;
+                    } else {
+                        n.vars = std::mem::take(&mut t.vars);
+                        *t = n;
+                    }
+                }
+            }
+            x.states = states;
+            Some(r)
+        }
+        "maeSaveSetup" => {
+            let r = call(db, name, args)?;
+            if !matches!(r, Ok(V::T)) {
+                return Some(r);
+            }
+            let k = db.mae.session(&kw).expect("saved");
+            let x = db.mae.sessions[k].as_ref().expect("open").clone();
+            let path = view_file(db, &x.lib, &x.cell, "active.state")?;
+            let mut text = String::from("<?xml version=\"1.0\"?>\n<statedb version=\"5\">active\n");
+            for t in &x.setup.tests {
+                text.push_str(&t.state.clone().unwrap_or_else(|| mock_state(t)));
+            }
+            text.push_str("</statedb>\n");
+            db.mae.written.insert(path.clone(), text.clone());
+            files.insert(path, text);
+            Some(r)
+        }
+        "axlExportSetup" => {
+            db.mae.calls.push(name.to_owned());
+            let k = match db.mae.resolve(&a[1]) {
+                Some(Handle::Sdb(k)) => k,
+                _ => {
+                    return Some(Err(
+                        "*Error* axlExportSetup: argument #2 should be a setup database handle"
+                            .into(),
+                    ));
+                }
+            };
+            let path = s0(2);
+            let stem = path.rsplit('/').next().unwrap_or("");
+            let stem = stem.rsplit_once('.').map_or(stem, |x| x.0);
+            let su = db.mae.setup(k).clone();
+            files.insert(path.clone(), mae_xml::write(&export_tree(&su, stem)));
+            Some(Ok(V::T))
+        }
+        "axlImportSetup" => {
+            db.mae.calls.push(name.to_owned());
+            // Live: 'append and 'replace signal "Unknown operation" (probe G32).
+            if a.get(4).and_then(V::as_str) != Some("overwrite") {
+                return Some(Err(format!(
+                    "*Error* error: Unknown operation {:?}",
+                    a.get(4).and_then(V::as_str).unwrap_or("")
+                )));
+            }
+            let kw2 = vec![("session".to_owned(), V::str(&s0(0)))];
+            let Some(k) = db.mae.session(&kw2) else {
+                return Some(Ok(V::Nil));
+            };
+            let Some(root) = files.get(&s0(1)).and_then(|t| mae_xml::parse(t).ok()) else {
+                // Live: the error goes to the CIW, the call does not signal.
+                return Some(Ok(V::Nil));
+            };
+            let Ok(x) = mae_xml::Setup::from_root(&root) else {
+                return Some(Ok(V::Nil));
+            };
+            let states = db.mae.sessions[k].as_ref().expect("open").states.clone();
+            let su = db.mae.setup(k);
+            for xt in &x.tests {
+                if !su.tests.iter().any(|t| t.name == xt.name) {
+                    // GUESS(G40): a test the import creates takes the view's state for it.
+                    let mut t = match states.get(&xt.name) {
+                        Some(el) => from_state(&xt.name, el),
+                        None => Test {
+                            name: xt.name.clone(),
+                            ..Test::default()
+                        },
+                    };
+                    let o = |n: &str| xt.option(n).unwrap_or("").to_owned();
+                    t.design = (o("lib"), o("cell"), o("view"));
+                    t.simulator = o("sim");
+                    su.tests.push(t);
+                }
+                let t = su
+                    .tests
+                    .iter_mut()
+                    .find(|t| t.name == xt.name)
+                    .expect("made");
+                for (n, v) in xt.vars.iter().filter(|v| !v.1.is_empty()) {
+                    match t.vars.iter_mut().find(|x| &x.0 == n) {
+                        Some(x) => x.1 = v.clone(),
+                        None => t.vars.push((n.clone(), v.clone())),
+                    }
+                }
+            }
+            for v in &x.vars {
+                match su.vars.iter_mut().find(|y| y.0 == v.name) {
+                    Some(y) => y.1 = v.value.clone(),
+                    None => su.vars.push((v.name.clone(), v.value.clone())),
+                }
+            }
+            for c in x.corners.iter().filter(|c| c.name != "_default") {
+                if !su.corners.iter().any(|y| y.name == c.name) {
+                    su.corners.push(Corner {
+                        name: c.name.clone(),
+                        ..Corner::default()
+                    });
+                }
+                let y = su
+                    .corners
+                    .iter_mut()
+                    .find(|y| y.name == c.name)
+                    .expect("made");
+                y.enabled = c.enabled;
+                for (n, v) in &c.vars {
+                    match y.vars.iter_mut().find(|z| &z.0 == n) {
+                        Some(z) => z.1 = v.clone(),
+                        None => y.vars.push((n.clone(), v.clone())),
+                    }
+                }
+            }
+            for sp in &x.specs {
+                if let Some(w) = &sp.weight {
+                    su.weights.insert(sp.name.clone(), w.clone());
+                }
+                let spec = match sp.kind.as_str() {
+                    "gt" => ("gt", V::str(&sp.min)),
+                    "lt" => ("lt", V::str(&sp.max)),
+                    "range" => ("range", V::list(vec![V::str(&sp.min), V::str(&sp.max)])),
+                    "tol" => (
+                        "tolerance",
+                        V::list(vec![V::str(&sp.target), V::str(&sp.tol)]),
+                    ),
+                    _ => continue,
+                };
+                if let Some(o) = su
+                    .tests
+                    .iter_mut()
+                    .find(|t| t.name == sp.test)
+                    .and_then(|t| t.outputs.iter_mut().find(|o| o.name == sp.output))
+                {
+                    o.spec = vec![(spec.0.to_owned(), spec.1)];
+                }
+            }
+            su.sdb = Some(root);
+            Some(Ok(V::T))
+        }
+        _ => None,
+    }
+}
+
+/// The setup database of `su` as Maestro's XML, root text `stem`: the tree the last import
+/// read (else an empty `<active>`), its tests, variables, corners and specs updated from
+/// what the mock models.
+fn export_tree(su: &Setup, stem: &str) -> Node {
+    let mut root = su.sdb.clone().unwrap_or_else(|| Node {
+        name: "setupdb".into(),
+        attrs: vec![("version".into(), "6".into())],
+        children: vec![Node::leaf("active", "Active Setup")],
+        ..Node::default()
+    });
+    root.text = stem.to_owned();
+    let active = root
+        .child_mut("active")
+        .expect("a setup database has <active>");
+    let section = |active: &mut Node, name: &str| -> usize {
+        if let Some(k) = active.children.iter().position(|c| c.name == name) {
+            return k;
+        }
+        active.children.push(Node::leaf(name, ""));
+        active.children.len() - 1
+    };
+    let var = |n: &str, v: &str| Node {
+        name: "var".into(),
+        text: n.into(),
+        children: vec![Node::leaf("value", v)],
+        ..Node::default()
+    };
+    let set_value = |el: &mut Node, v: &str| match el.child_mut("value") {
+        Some(x) => x.text = v.to_owned(),
+        None => el.children.insert(0, Node::leaf("value", v)),
+    };
+    // Corners: Nominal (`_default`) first, then the mock's, each keeping what it holds
+    // beyond enable and vars (parameters).
+    let k = section(active, "corners");
+    let old = std::mem::take(&mut active.children[k].children);
+    let mut corners = vec![
+        old.iter()
+            .find(|c| c.text == "_default")
+            .cloned()
+            .unwrap_or_else(|| Node {
+                attrs: vec![("enabled".into(), "1".into())],
+                ..Node::leaf("corner", "_default")
+            }),
+    ];
+    for c in &su.corners {
+        let mut el = old
+            .iter()
+            .find(|o| o.text == c.name)
+            .cloned()
+            .unwrap_or_else(|| Node::leaf("corner", &c.name));
+        el.attrs = vec![("enabled".into(), if c.enabled { "1" } else { "0" }.into())];
+        sync_vars(&mut el, &c.vars, &var, &set_value);
+        corners.push(el);
+    }
+    active.children[k].children = corners;
+    // Tests.
+    let k = section(active, "tests");
+    let old = std::mem::take(&mut active.children[k].children);
+    for t in &su.tests {
+        let mut el = old
+            .iter()
+            .find(|o| o.text == t.name)
+            .cloned()
+            .unwrap_or_else(|| {
+                let opts = |v: &[(&str, &str)]| -> Vec<Node> {
+                    v.iter()
+                        .map(|(n, x)| Node {
+                            name: "option".into(),
+                            text: (*n).into(),
+                            children: vec![Node::leaf("value", x)],
+                            ..Node::default()
+                        })
+                        .collect()
+                };
+                let d = [
+                    ("cell", t.design.1.as_str()),
+                    ("lib", t.design.0.as_str()),
+                    ("sim", t.simulator.as_str()),
+                    ("view", t.design.2.as_str()),
+                ];
+                let mut tool = d.to_vec();
+                tool.extend([("path", "$AXL_SETUPDB_DIR"), ("state", "active")]);
+                Node {
+                    name: "test".into(),
+                    text: t.name.clone(),
+                    children: vec![
+                        Node::leaf("tool", "ADE"),
+                        Node {
+                            children: opts(&tool),
+                            ..Node::leaf("tooloptions", "")
+                        },
+                        Node {
+                            children: opts(&d),
+                            ..Node::leaf("origoptions", "")
+                        },
+                    ],
+                    ..Node::default()
+                }
+            });
+        if !t.vars.is_empty() || el.child("vars").is_some() {
+            sync_vars(&mut el, &t.vars, &var, &set_value);
+        }
+        active.children[k].children.push(el);
+    }
+    // Global variables, each keeping its <dependentTests>.
+    let k = section(active, "vars");
+    let old = std::mem::take(&mut active.children[k].children);
+    for (n, v) in &su.vars {
+        let mut el = old
+            .iter()
+            .find(|o| &o.text == n)
+            .cloned()
+            .unwrap_or_else(|| var(n, ""));
+        set_value(&mut el, v);
+        active.children[k].children.push(el);
+    }
+    // Specs: those of the mock's outputs, in place where the tree has them.
+    let k = section(active, "specs");
+    for t in &su.tests {
+        for o in t.outputs.iter().filter(|o| !o.spec.is_empty()) {
+            let id = format!("{}.{}", t.name, o.name);
+            let (op, v) = &o.spec[0];
+            let items: Vec<String> = match v {
+                V::List(l) => l
+                    .iter()
+                    .map(|x| x.as_str().unwrap_or("").to_owned())
+                    .collect(),
+                x => vec![x.as_str().unwrap_or("").to_owned()],
+            };
+            let at = |i: usize| items.get(i).cloned().unwrap_or_default();
+            let (kind, min, max, target, tol) = match op.as_str() {
+                "gt" | "minimum" => (
+                    if op == "gt" { "gt" } else { "min" },
+                    at(0),
+                    String::new(),
+                    String::new(),
+                    String::new(),
+                ),
+                "lt" | "maximum" => (
+                    if op == "lt" { "lt" } else { "max" },
+                    String::new(),
+                    at(0),
+                    String::new(),
+                    String::new(),
+                ),
+                "range" => ("range", at(0), at(1), String::new(), String::new()),
+                _ => ("tol", String::new(), String::new(), at(0), at(1)),
+            };
+            let mut el = Node {
+                name: "spec".into(),
+                text: id.clone(),
+                children: vec![
+                    Node::leaf("testname", &t.name),
+                    Node::leaf("resname", &o.name),
+                    Node::leaf("specType", kind),
+                    Node::leaf("min", &min),
+                    Node::leaf("max", &max),
+                    Node::leaf("target", &target),
+                    Node::leaf("tol", &tol),
+                ],
+                ..Node::default()
+            };
+            let specs = &mut active.children[k].children;
+            let old = specs.iter().position(|x| x.text == id);
+            if let Some(p) = old {
+                // What the mock does not model of the spec (tolType) stays.
+                for c in &specs[p].children {
+                    if c.name == "tolType" {
+                        el.children.push(c.clone());
+                    }
+                }
+            }
+            if let Some(w) = su.weights.get(&id) {
+                el.children.push(Node::leaf("specWeight", w));
+            }
+            match old {
+                Some(p) => specs[p] = el,
+                None => specs.push(el),
+            }
+        }
+    }
+    for sp in &mut active.children[k].children {
+        if let Some(w) = su.weights.get(&sp.text) {
+            match sp.child_mut("specWeight") {
+                Some(x) => x.text = w.clone(),
+                None => sp.children.push(Node::leaf("specWeight", w)),
+            }
+        } else {
+            sp.children.retain(|c| c.name != "specWeight");
+        }
+    }
+    active.children.retain(|c| {
+        !(c.text.is_empty()
+            && c.children.is_empty()
+            && matches!(c.name.as_str(), "vars" | "specs" | "tests"))
+    });
+    root
+}
+
+/// Sets the `<vars>` of `el` to `vars`, in place where it has them.
+fn sync_vars(
+    el: &mut Node,
+    vars: &[(String, String)],
+    var: &dyn Fn(&str, &str) -> Node,
+    set_value: &dyn Fn(&mut Node, &str),
+) {
+    if vars.is_empty() {
+        el.children.retain(|c| c.name != "vars");
+        return;
+    }
+    if el.child("vars").is_none() {
+        // After the test's <tooloptions> (Maestro's place), else last.
+        let at = el
+            .children
+            .iter()
+            .position(|c| c.name == "tooloptions")
+            .map_or(el.children.len(), |p| p + 1);
+        el.children.insert(at, Node::leaf("vars", ""));
+    }
+    let vs = el.child_mut("vars").expect("made");
+    let old = std::mem::take(&mut vs.children);
+    for (n, v) in vars {
+        let mut x = old
+            .iter()
+            .find(|o| &o.text == n)
+            .cloned()
+            .unwrap_or_else(|| var(n, ""));
+        set_value(&mut x, v);
+        vs.children.push(x);
+    }
 }

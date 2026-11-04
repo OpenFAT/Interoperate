@@ -17,7 +17,9 @@
 //!
 //! Submodules: `export` (bench → test), `import` (test → bench, with the records' check),
 //! `ocean` (the OCEAN script, §9.6), `outputs` (output expressions both ways), `syntax`
-//! (the words both directions share) and `runmode` (Monte Carlo and optimizer, to come).
+//! (the words both directions share), `runmode` (Monte Carlo and optimizer, to come),
+//! `mae_xml` (Maestro's setup XML, parsed for the mappings) and `restore` (the view's own
+//! setup kept in the bench header and sent back, §9.7).
 
 // Data design (six questions): in = one bench document (≤ 2^22 records) or one maestro
 // test's records; out = records or bench records. Rows per kind live in one `Vec` each
@@ -35,8 +37,10 @@ use crate::sfyx::{Error, Record, Value, i, pairs, s, text};
 
 mod export;
 mod import;
+pub mod mae_xml;
 mod ocean;
 mod outputs;
+mod restore;
 mod runmode;
 mod syntax;
 #[cfg(test)]
@@ -46,6 +50,7 @@ pub use export::*;
 pub use import::*;
 use ocean::*;
 pub use outputs::*;
+pub use restore::{VMAEREC, VMAESDB, VMAESTATE, only_changed, with_stored};
 use syntax::*;
 
 /// Rows per kind (vars, analyses, corners, models, outputs, specs, definition files) of one

@@ -180,7 +180,7 @@
       ("label" "iisiisssisss") ("spin" "isssssiis") ("term" "sss") ("pinfig" "isiiii")
       ("shape" "isssli") ("conn" "iss") ("textview" "ssx") ("maestro" "sssss")
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
-      ("spec" "sss") ("defn" "sx") ("end" "")))))
+      ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("end" "")))))
 
 ;; nil when x is .sfyx data (strings, 32-bit integers, lists of them), else what is wrong.
 (procedure (SfyCheckData x depth)
@@ -306,7 +306,8 @@
     maeGetTestOutputs maeSetSpec maeSetEnvOption maeGetEnvOption maeSetSimOption
     maeGetSimOption axlGetTest axlGetMainSetupDB axlGetCorner axlGetEnabled axlGetModels
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
-    axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData))
+    axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
+    axlImportSetup axlGetSpec axlGetSpecWeight))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.

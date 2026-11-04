@@ -95,6 +95,8 @@ pub fn export(
     let mut ocean: Vec<ade::BenchExport> = Vec::new();
     // (dump cell index, design cell index) of every written cell.
     let mut written = Vec::new();
+    // (maestro test index, design cell index) of every bench with maestro records.
+    let mut restored = Vec::new();
     for ci in 0..d.cells.len() {
         if !matches!(plan.how[ci], How::Design | How::Core) {
             continue;
@@ -109,6 +111,9 @@ pub fn export(
                 &mut notes,
             );
             if !b.records.is_empty() {
+                // §9.7: a view from Virtuoso goes back with its own setup (lane L1).
+                ade::with_stored(&d.cells[ci], &mut b.records);
+                restored.push((dump.maestro.len(), ci));
                 dump.maestro.push(std::mem::take(&mut b.records));
                 ocean.push(b);
             }
@@ -142,6 +147,9 @@ pub fn export(
             cv.props
                 .push(Prop::string(0, &format!("schemifyRecords{}", n + 1), chunk));
         }
+    }
+    for (k, ci) in restored {
+        ade::only_changed(&d.cells[ci], &mut dump.maestro[k], &mut notes);
     }
     let recs = records(&dump);
     assert!(

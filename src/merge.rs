@@ -550,13 +550,14 @@ pub fn merge(
     out
 }
 
-/// The header of a local file as the import would produce it (only `provenance` and
-/// `default` are Virtuoso's): the "unchanged" test when there is no stash.
+/// The header of a local file as the import would produce it (only `provenance`,
+/// `default` and a bench's Maestro setup `vmae*`, interop §9.7, are Virtuoso's): the
+/// "unchanged" test when there is no stash.
 fn stripped_header(l: &Document<'_>) -> String {
     let mut d = Document::new(l.kind());
     for a in l.attrs(0) {
         let k = l.attr_key(a);
-        if k == "provenance" || k == "default" {
+        if k == "provenance" || k == "default" || k.starts_with("vmae") {
             d.push_attr(k);
             for v in l.attr_values(a) {
                 d.push_value(if k == "default" {

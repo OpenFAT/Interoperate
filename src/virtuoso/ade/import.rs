@@ -46,7 +46,8 @@ fn flag(r: &Record, k: usize) -> Result<bool, Error> {
 /// Parses one maestro test (its `maestro` record first): every record's arity and element
 /// types, `enable` 0/1, options as `(key value)` strings, a `var`/`model` scope naming a
 /// corner declared before it, a `spec` naming an output before it with op `lt`/`gt`, output
-/// kinds `point`/`net`, no name twice per kind, at most [`ROWS_MAX`] rows per kind.
+/// kinds `point`/`net`, no name twice per kind, at most [`ROWS_MAX`] rows per kind; the
+/// view's `maesdb` (text, digest rows) at most once and a `maestate` (test, text) per test.
 pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
     let m = records.first().ok_or(Error {
         line: 0,
@@ -67,6 +68,8 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
     if t.name.is_empty() || t.cell.is_empty() {
         return Err(m.err("empty test or cell name"));
     }
+    let mut sdb_seen = false;
+    let mut states: Vec<&str> = Vec::new();
     for r in &records[1..] {
         let scope_ok = |t: &Test, sc: &str| sc.is_empty() || t.corners.iter().any(|c| c.0 == sc);
         match r.tag.as_str() {
@@ -164,6 +167,29 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                 }
                 t.defns.push((f.into(), body));
             }
+            // The view's setup XML and test states (§9.7): checked here, kept by
+            // `restore` (they are no row of the test).
+            "maesdb" => {
+                r.arity(2)?;
+                r.text(0)?;
+                for d in r.list(1)? {
+                    if d.items().len() < 3 || d.items().iter().any(|x| x.as_str().is_none()) {
+                        return Err(r.err("a record digest is not (digest tag key…) strings"));
+                    }
+                }
+                if std::mem::replace(&mut sdb_seen, true) {
+                    return Err(r.err("maesdb twice in one test"));
+                }
+            }
+            "maestate" => {
+                r.arity(2)?;
+                let n = r.str(0)?;
+                r.text(1)?;
+                if n.is_empty() || states.contains(&n) {
+                    return Err(r.err(format!("maestate `{n}` empty or twice")));
+                }
+                states.push(n);
+            }
             "maestro" => return Err(r.err("a second test in one test's records")),
             o => return Err(r.err(format!("`{o}` is not a maestro record"))),
         }
@@ -192,7 +218,7 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
 /// than 0/1, an option that is not `(key value)` strings, a var/model naming a corner not
 /// declared before it, a spec naming an output not declared before it or an op other than
 /// `lt`/`gt`, an output kind other than `point`/`net`, a name twice in its kind, a
-/// definition file that is a path.
+/// definition file that is a path, a second `maesdb` or a test's second `maestate`.
 pub fn check(records: &[Record]) -> Result<(), Error> {
     parse(records).map(|_| ())
 }
@@ -212,7 +238,8 @@ const BENCH_KINDS: [RecordKind; 6] = [
 /// What cannot come back is reported in `notes` under `cell`: an analysis without a SPICE
 /// form (the block is then Spectre), an output whose ADE expression does not translate (a
 /// comment in the analysis block), a disabled analysis, a value without a
-/// Schemify form, a second test of the same view (only the first maps).
+/// Schemify form, a second test of the same view (only the first maps). The view's own
+/// setup (`maesdb`, `maestate`) goes into the bench header (`restore`, §9.7).
 ///
 /// Records [`check`] refuses are reported (`needs_review:code`) and nothing is added; the
 /// reader checks them first, so this happens only for records built in memory.
@@ -224,6 +251,7 @@ pub fn import(records: &[Record], bench: &mut Document<'static>, cell: &str, not
             return;
         }
     };
+    restore::attach(records, &t, bench);
     if (1..bench.record_count()).any(|r| BENCH_KINDS.contains(&bench.record_kind(r))) {
         notes.review(
             "config",

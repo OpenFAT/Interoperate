@@ -417,6 +417,17 @@ pub trait Host {
     fn bound(&self, _name: &str) -> bool {
         false
     }
+    /// [`Host::call`] for a function that reads or writes files: `files` are the
+    /// interpreter's (`infile`/`outfile` see the same).
+    fn call_files(
+        &mut self,
+        name: &str,
+        args: &[V],
+        files: &mut BTreeMap<String, String>,
+    ) -> Option<Result<V, String>> {
+        let _ = files;
+        self.call(name, args)
+    }
 }
 
 enum Flow {
@@ -1223,7 +1234,7 @@ impl<H: Host> Interp<H> {
         if let Some(r) = self.builtin(name, &args) {
             return r;
         }
-        match self.host.call(name, &args) {
+        match self.host.call_files(name, &args, &mut self.files) {
             Some(r) => Ok(r?),
             None => Err(Flow::Err(format!("undefined function {name}"))),
         }

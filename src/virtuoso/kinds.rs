@@ -49,6 +49,8 @@ pub const KINDS: &[(&str, Scope)] = &[
     ("spec", Scope::Maestro),
     ("defn", Scope::Maestro),
     // ---- L1: maesdb, maestate
+    ("maesdb", Scope::Maestro),
+    ("maestate", Scope::Maestro),
     // ---- L2: label flags (no new kind: `label`'s arity)
     // ---- L3: config
     // ---- L4: job, value, pass

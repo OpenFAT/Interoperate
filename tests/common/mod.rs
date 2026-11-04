@@ -109,14 +109,22 @@ pub fn canonical(bytes: &[u8]) -> String {
     schemify_format::write(&d)
 }
 
-/// `text` without the import fingerprints (`vsym`, `vsch` header lines, spec §7.5), which
-/// an import adds by design.
+/// `text` without the import fingerprints (`vsym`, `vsch` header lines, spec §7.5) and the
+/// Maestro view's own setup (`vmae*`, §9.7), which an import adds by design.
 pub fn strip_fp(text: &str) -> String {
     text.lines()
         .filter(|l| {
-            !["  vsym ", "  vsch ", "  vcdf ", "  vcdfrec "]
-                .iter()
-                .any(|p| l.starts_with(p))
+            ![
+                "  vsym ",
+                "  vsch ",
+                "  vcdf ",
+                "  vcdfrec ",
+                "  vmaesdb ",
+                "  vmaestate ",
+                "  vmaerec ",
+            ]
+            .iter()
+            .any(|p| l.starts_with(p))
         })
         .map(|l| format!("{l}\n"))
         .collect()

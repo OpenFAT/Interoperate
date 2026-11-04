@@ -318,4 +318,16 @@ impl Host for MockDb {
     fn bound(&self, name: &str) -> bool {
         SIGNATURES.iter().any(|(n, _)| *n == name)
     }
+
+    fn call_files(
+        &mut self,
+        name: &str,
+        args: &[V],
+        files: &mut BTreeMap<String, String>,
+    ) -> Option<Result<V, String>> {
+        match mae::call_files(self, name, args, files) {
+            Some(r) => Some(r),
+            None => self.call(name, args),
+        }
+    }
 }

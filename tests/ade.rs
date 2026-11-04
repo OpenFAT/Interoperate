@@ -58,6 +58,7 @@ fn maestro(text: &str) -> Vec<Record> {
         .unwrap_or(recs.len() - 1);
     recs[k..recs.len() - 1]
         .iter()
+        .filter(|r| !matches!(r.tag.as_str(), "maesdb" | "maestate"))
         .map(|r| Record::new(&r.tag, r.fields.clone()))
         .collect()
 }
@@ -86,7 +87,9 @@ fn import(text: &str, existing: &Files) -> (String, Notes) {
     let text: String = String::from_utf8(tb.1.clone())
         .unwrap()
         .lines()
-        .filter(|l| !l.starts_with("  vsym ") && !l.starts_with("  vsch "))
+        .filter(|l| {
+            !l.starts_with("  vsym ") && !l.starts_with("  vsch ") && !l.starts_with("  vmae")
+        })
         .map(|l| format!("{l}\n"))
         .collect();
     (text, imp.notes)
