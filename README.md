@@ -347,7 +347,11 @@ its `call` (`tests/skill/mockdb/`); the SKILL parts are already in `src/skill.rs
 
 Rules for every lane:
 
-- Never commit `interop.wasm` or `Cargo.lock`: the integration rebuilds both.
+- Never commit `interop.wasm` or `Cargo.lock`: the integration rebuilds both. The working
+  tree's `Cargo.lock` holds the local path sources of `.cargo/config.toml`'s patches, so stage
+  files by name (`git add <paths>`, never `git commit -a` or `git add -A`) and, before each
+  commit, check that `git diff --cached --name-only` lists none of `Cargo.lock`,
+  `interop.wasm`, `.cargo/` and `tests/fixtures/cadence/`.
 - The spec text (`docs/spec/interop.md`, in the Schemify repository) and "What does not
   cross" above are edited only at integration.
 - Build with a `CARGO_TARGET_DIR` of the lane's own.
