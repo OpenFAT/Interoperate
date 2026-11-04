@@ -308,7 +308,7 @@
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
     axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode
-    hdbOpen hdbSetTopCellViewName hdbSave hdbClose))
+    axlGetTestToolArgs hdbOpen hdbSetTopCellViewName hdbSave hdbClose))
 
 ;; Logs the Virtuoso version and every Cadence function this release cannot call (also
 ;; printed to the CIW), so one run tells what a missing function would cost.

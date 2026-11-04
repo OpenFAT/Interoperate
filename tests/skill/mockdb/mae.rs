@@ -65,6 +65,7 @@ pub const ROWS: &[(&str, &str)] = &[
     ("maeSetSimOption", "t ?options ?session"),
     ("maeGetSimOption", "t ?includeEmpty ?option ?session"),
     ("axlGetTest", "x t"),
+    ("axlGetTestToolArgs", "x"),
     ("axlGetMainSetupDB", "t"),
     ("axlGetCorner", "x t"),
     ("axlGetEnabled", "x"),
@@ -803,6 +804,23 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
                 })
             }
             _ => Err("*Error* axlGetTest: argument #1 should be a setup database handle".into()),
+        },
+        // G31 settled: the design binding as pairs; a test on a config has no state or path.
+        "axlGetTestToolArgs" => match m.resolve(&a[0]) {
+            Some(Handle::Test(k, n)) => Ok(m.test(k, &n).map_or(V::Nil, |t| {
+                let (lib, cell, view) = &t.design;
+                let mut args = vec![("view", view.as_str()), ("sim", t.simulator.as_str())];
+                if view != "config" {
+                    args.extend([("state", "active"), ("path", "$AXL_SETUPDB_DIR")]);
+                }
+                args.extend([("lib", lib.as_str()), ("cell", cell.as_str())]);
+                V::list(
+                    args.iter()
+                        .map(|(k, v)| V::list(vec![V::str(k), V::str(v)]))
+                        .collect(),
+                )
+            })),
+            _ => Err("*Error* axlGetTestToolArgs: argument #1 should be a test handle".into()),
         },
         "axlGetMainSetupDB" => {
             let kw2 = vec![("session".to_owned(), V::str(&s0(0)))];

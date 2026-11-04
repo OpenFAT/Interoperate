@@ -312,3 +312,21 @@ fn mock_hdb_refuses_what_hdb_refuses() {
             .is_err()
     );
 }
+
+#[test]
+fn a_maestro_test_on_the_config_dumps_bound_to_it() {
+    // G31: the dumper writes the view axlGetTestToolArgs answers, not "schematic".
+    for view in ["config", "schematic"] {
+        let mut i = virtuoso();
+        i.files.insert("/t/in.sfyx".into(), dump(PROBE, Some(view)));
+        let ok = run(&mut i, r#"(SfyImport "/t/in.sfyx")"#);
+        assert!(ok.truthy(), "{}", i.files["/t/in.sfyx.log"]);
+        run(
+            &mut i,
+            r#"(SfyExport "/t/out.sfyx" "sfyprobe_lib" (list "hier"))"#,
+        );
+        let recs = sfyx::read(&i.files["/t/out.sfyx"]).unwrap();
+        let m = recs.iter().find(|r| r.tag == "maestro").expect("maestro");
+        assert_eq!(m.str(3).unwrap(), view);
+    }
+}

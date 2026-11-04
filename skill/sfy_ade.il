@@ -155,12 +155,19 @@
         (setq r (list (SfyAdeOutExpr so) (SfyAdeOutSignal so)))))
     r))
 
+;; The design view test handle th runs (G31: axlGetTestToolArgs answers its view, "config"
+;; for a config), else "schematic". The record keeps the maestro's lib and cell.
+(procedure (SfyAdeTestView th)
+  (let ((v (and th (cadr (assoc "view" (car (errset (axlGetTestToolArgs th))))))))
+    (if (and (stringp v) (nequal v "")) v "schematic")))
+
 ;; The records of one test, in spec 9 order; stored (SfyAdeStored's records) right after
 ;; its maestro record.
 (procedure (SfyAdeDumpTest port lib cell sess sdb test stored)
   (let ((outs nil) (specs nil) (defs nil) (c nil) (m nil) (vl nil) (o nil) (p nil)
         (line nil) (segs nil) (e nil) (th nil) (tp nil) (sd nil))
-    (SfyPut port "maestro" (list test lib cell "schematic" "spectre"))
+    (setq th (car (errset (axlGetTest sdb test))))
+    (SfyPut port "maestro" (list test lib cell (SfyAdeTestView th) "spectre"))
     (foreach r stored (SfyPut port (car r) (cdr r)))
     ;; The variables this test sees: the global ones (GUESS(G18): maeGetSetup ?typeName
     ;; "variables" lists their names), then the test's own, which override a global of the
@@ -169,7 +176,6 @@
     (setq vl nil)
     (foreach n (car (errset (maeGetSetup ?typeName "variables" ?session sess)))
       (setq vl (cons (list n (SfyAtomStr (car (errset (maeGetVar n ?session sess))))) vl)))
-    (setq th (car (errset (axlGetTest sdb test))))
     (when th
       (foreach n (cadr (car (errset (axlGetVars th))))
         (setq vl (cons (list n (SfyAtomStr (car (errset (axlGetVarValue (axlGetVar th n))))))
