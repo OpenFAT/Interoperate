@@ -155,18 +155,6 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
             }
         }
     }
-    for (k, reason) in [
-        (RecordKind::Montecarlo, "montecarlo"),
-        (RecordKind::Optimize, "optimize"),
-    ] {
-        for r in c.records(k) {
-            notes.review(
-                reason,
-                cell,
-                format!("{reason} {}: not mapped (§9.3)", c.field(r, 0)),
-            );
-        }
-    }
     // The OCEAN script runs one test: the first enabled one.
     let pick = done
         .iter()

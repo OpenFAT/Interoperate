@@ -114,6 +114,7 @@ pub fn export(
             if !b.records.is_empty() {
                 // §9.7: a view from Virtuoso goes back with its own setup (lane L1).
                 ade::with_stored(&d.cells[ci], &mut b.records);
+                ade::export_run_modes(&d.cells[ci], &mut b.records, &mut notes);
                 restored.push((dump.maestro.len(), ci));
                 dump.maestro.push(std::mem::take(&mut b.records));
                 ocean.push(b);

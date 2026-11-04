@@ -18,7 +18,7 @@
 //!
 //! Submodules: `export` (bench → test), `import` (test → bench, with the records' check),
 //! `ocean` (the OCEAN script, §9.6), `outputs` (output expressions both ways), `syntax`
-//! (the words both directions share), `runmode` (Monte Carlo and optimizer, to come),
+//! (the words both directions share), `runmode` (Monte Carlo and optimizer, §9.8),
 //! `mae_xml` (Maestro's setup XML, parsed for the mappings) and `restore` (the view's own
 //! setup kept in the bench header and sent back, §9.7).
 
@@ -53,6 +53,7 @@ use mae_xml::Setup;
 use ocean::*;
 pub use outputs::*;
 pub use restore::{VMAEREC, VMAESDB, VMAESTATE, only_changed, with_stored};
+pub use runmode::export_run_modes;
 use syntax::*;
 
 /// Rows per kind (vars, analyses, corners, models, outputs, specs, definition files) of one
