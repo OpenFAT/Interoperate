@@ -257,8 +257,12 @@ are followed once SpiceRack holds sections as data (an `issue` line counts them 
 
 Every conversion lists its losses in the report. The main ones:
 
-- Virtuoso config views (hierarchy editor), and maestro Monte Carlo and optimizer setups. They
-  are kept on the Schemify side.
+- Virtuoso config views (hierarchy editor). They are kept on the Schemify side.
+- Maestro setups now round-trip in full: the view's own setup rides in the bench, and a
+  re-export updates the tests in place with only what you changed, instead of recreating
+  them. What is not yet mapped into Schemify records (pending lanes L5 to L7): Monte Carlo,
+  optimizer, multi-test setups and ADE L. They come back to Virtuoso unchanged but cannot be
+  edited in Schemify.
 - PDK CDF callbacks inside Schemify. Derived parameters (`ad`, `as`, finger widths) stay
   Virtuoso's: see "Derived parameters" above.
 - On a cellview you redraw, every surviving object keeps how Virtuoso drew it (label fonts,
