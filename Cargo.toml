@@ -14,7 +14,7 @@ repository = "https://github.com/OpenFAT/Interoperate"
 crate-type = ["cdylib", "rlib"]
 
 [features]
-# The native command line (`src/cli.rs`, `schemify-interop`): file system access, so never
+# The native command line (`src/cli/`, `schemify-interop`): file system access, so never
 # part of the wasm guest. SpiceRack reads the PDK model files `pdk-scan` serves.
 cli = ["dep:spicerack", "dep:serde_json"]
 

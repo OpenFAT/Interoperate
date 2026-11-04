@@ -295,7 +295,7 @@ No Cadence tool runs here, so:
 | `src/virtuoso/` | `write` (export), `read` (import), `ael` (values), `devices` (analogLib table), `ade` (maestro) |
 | `src/merge.rs`, `src/remap.rs`, `src/map.rs` | keeping Schemify-only data, re-mastering, `interop.map` |
 | `src/xschem_out.rs`, `src/translate.rs` … | xschem export and import |
-| `src/job.rs` | one conversion as pure steps, driven by `src/plugin.rs` (editor) and `src/cli.rs` |
+| `src/job.rs` | one conversion as pure steps, driven by `src/plugin.rs` (editor) and `src/cli/` (one module per subcommand) |
 | `skill/*.il` | the parts of `schemify.il` |
 | `tests/` | `virtuoso_rust`, `virtuoso_skill`, `skill_lint`, `virtuoso_e2e`, `ade`, `exercise1` (a course's benches: maestro + OCEAN goldens), `xschem_export`, and the xschem import suites |
 
