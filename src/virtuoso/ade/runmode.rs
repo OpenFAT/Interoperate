@@ -372,9 +372,24 @@ pub(super) fn import(
         assert_eq!(out.record_count(), bench.record_count());
         *bench = out;
     }
+    let vars: Vec<String> = (1..bench.record_count())
+        .filter(|&r| bench.record_kind(r) == RecordKind::Var)
+        .filter_map(|r| bench.field(r, 0).map(str::to_owned))
+        .collect();
+    let has_var = |v: &str| vars.iter().any(|x| x == v);
+    for (v, ..) in m.ranges.iter().filter(|x| !has_var(&x.0)) {
+        notes.review(
+            "optimize",
+            cell,
+            format!(
+                "maestro var {v}: an optimizer range, but the var did not come back: not varied"
+            ),
+        );
+    }
     for r in &m.recs {
         // The format's attribute order (format.md rank 6), the unknown ones last.
         let mut attrs = r.attrs.clone();
+        attrs.retain(|a| !(a.0 == "vary" && a.1.len() == 1 && !has_var(&a.1[0])));
         attrs.sort_by_key(|a| {
             ATTR_ORDER
                 .iter()
