@@ -518,3 +518,41 @@ fn hierarchy_config_takes_its_default_view_or_is_reviewed() {
         "{t}"
     );
 }
+
+/// inv_xschem row X15: a schematic's `V {}` Verilog text is the cell's `code … verilog`
+/// (xschem writes it in the module body); a `devices/` symbol mapped to core loses its
+/// `verilog_format` with a review row (core cells have no Verilog format).
+#[test]
+fn verilog_text_is_code_and_a_core_device_verilog_format_is_reviewed() {
+    let mut files = fixture();
+    let res = files
+        .iter_mut()
+        .find(|f| f.0 == "x/devices/res.sym")
+        .unwrap();
+    res.1 = res.1.replace(
+        "template=",
+        "verilog_format=\"tran @name (@@P\\\\\\\\, @@M\\\\\\\\);\"\ntemplate=",
+    );
+    files.push((
+        "x/lib/vl.sch".into(),
+        "v {xschem version=3.4.7 file_version=1.2}\nV {assign #del Y=~A;\n$display(\"x\");}\nC {ipin.sym} 0 0 0 0 {name=p1 lab=A}\nC {opin.sym} 100 0 0 0 {name=p2 lab=Y}\n".into(),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let vl = file(&out, "lib/vl.shcomp");
+    assert!(
+        vl.contains(
+            "code schematic_verilog verilog\n  | assign #del Y=~A;\n  | $$display(\"x\");\n"
+        ),
+        "{vl}"
+    );
+    let t = report.text();
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:unsupported\tdevices/res.sym")
+                && l.contains("core:res has no Verilog format")
+        ),
+        "{t}"
+    );
+    assert!(!t.contains("other-netlister-text\tlib/vl.sch"), "{t}");
+}

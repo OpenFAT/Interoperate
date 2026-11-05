@@ -113,13 +113,20 @@ Export round trip agree: **547**
 ## Verilog (`xschem_verilog_differential`)
 
 `golden.sh` also writes `<name>.v` (`xschem -w`) for the 17 `xs-logic-*`/`xs-cosim-*`
-benches; the test compares our `Dialect::Verilog` netlist statement by statement (comments
-and spacing aside) and writes `netlist-out/VERILOG.txt`. 2026-11-04: **0 agree**, 10
-differ, 7 failed-to-elaborate. Root causes: the schematics' `V {}` Verilog text is dropped on
-import (reported, row X15) and Schemify writes a non-ANSI module header without the
-symbol's `parameter`s (netlist, core); `E013` for leaves with only a SPICE format (ccap,
-tgate, test_mos_verilog, sar_adc ×2); the parametric bus widths of the gate table (ram_tb,
-testbench, test_ngspice). Not ratcheted until something agrees.
+benches; the test compares our `Dialect::Verilog` netlist as statement sets (comments and
+spacing aside; ANSI and non-ANSI module headers read alike; an escaped identifier by its
+name) and writes `netlist-out/VERILOG.txt`; [VERILOG.rows](VERILOG.rows) is its per-row
+record (`rows.sh`, nightly).
+
+2026-11-04: 0 → **1 agree** (ainv) with the schematics' `V {}` text imported as the cell's
+`code schematic_verilog verilog`. Remaining (gaps2/core_X.md):
+
+| count | owner | root cause | benches |
+|---|---|---|---|
+| 6 | netlist (core) | the module header has no `#(parameter …)`: the cell's params (`del`) are missing, so `#del` in its text is undefined | bf, eo, ff, iv, latch, mux21 |
+| 2 | netlist (core) + import | no `parameter`s; bus ports written `\DIN[width-1:0]` (escaped name) instead of `[width-1:0] DIN`; `` `timescale `` from `verilog_timescale.sym` is a non-electrical instance (dropped, reported) | ram, sync_reg |
+| 5 | core | `E013`: a core cell (`core:res`, `nmos4`, `cap`, `vswitch`, …) has no Verilog format; xschem writes its symbol's `verilog_format` (`tran @name (@@P, @@M);`) or skips it (capacitor, vsource) or instantiates it by name (switch, ammeter). Import reports each such `devices/` symbol (`needs_review:unsupported … has no Verilog format`) | ccap, sar_adc, tb_sar_adc, tgate, test_mos_verilog |
+| 3 | import | parametric bus widths (the gate table) | ram_tb, testbench, test_ngspice |
 
 ## Remaining differences by root cause
 
