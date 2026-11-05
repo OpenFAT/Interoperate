@@ -269,3 +269,90 @@ fn port_order_without_term_order_is_virtuosos() {
     );
     assert!(n.contains("(na nm nz)"), "{n}");
 }
+
+/// The live dump with `edits` applied (`(after, inserted)` line pairs), imported.
+fn import_edited(edits: &[(&str, &str)], existing: &Files, analoglib: bool) -> String {
+    let mut text = fixture("gaps.sfyx");
+    for (after, ins) in edits {
+        let k = text.find(after).unwrap_or_else(|| panic!("{after}")) + after.len();
+        text.insert_str(k, &format!("\n{ins}"));
+    }
+    let opts = ImportOptions {
+        analoglib,
+        ..ImportOptions::default()
+    };
+    virtuoso::import(&text, existing, &Mapping::default(), &opts)
+        .expect("imports")
+        .notes
+        .text()
+}
+
+#[test]
+fn what_the_import_cannot_carry_is_a_report_row() {
+    // S17: a CDF button and an int whose default is an expression; S10: a callback that
+    // runs libInit.il code; S15: nets differing only in case.
+    let r = import_edited(
+        &[
+            (
+                r#"("param" "model" "string" "" "Model name" "" ("parseAsCEL") () "")"#,
+                r#"("param" "btn" "button" "" "Press" "" () () "")
+("param" "nf2" "int" "iPar(\"m\")*2" "nf2" "" () () "")"#,
+            ),
+            (
+                r#"("cell" "sub" "design")"#,
+                r#"("cdf" "")
+("param" "k" "string" "1" "k" "" () () "G_cb()" "libInit.il" "(procedure (G_cb) t)")"#,
+            ),
+            (
+                r#"("label" 12 7 "nD" 360000 0 "R0" "lowerLeft" "stick" 10000 "normal" "wire" "label")"#,
+                r#"("label" 13 0 "ND" 400000 0 "R0" "lowerLeft" "stick" 10000 "normal" "wire" "label")"#,
+            ),
+        ],
+        &Files::new(),
+        false,
+    );
+    for want in [
+        "dropped:display-only\tanalogLib/nmos\tparam btn: a CDF button",
+        "needs_review:expression\tanalogLib/nmos\tparam nf2: default `iPar(\"m\")*2` imported as 0",
+        "needs_review:callback\tsfyprobe_s/sub\tparam k: its callback runs libInit.il code",
+        "needs_review:name\tsfyprobe_s/e1\tnets ND nD differ only in case",
+        // S6: what the dumper skipped, from its own records.
+        "dropped:display-only\tsfyprobe_s/skip\tcvprop teamNote ×1 (schematic view)",
+        "dropped:display-only\tsfyprobe_s/skip\tdonut ×1 (symbol view)",
+        // S5: a multi-sheet index.
+        "needs_review:name\tsfyprobe_s/ms\tSH1: sheet sfyprobe_s/ms@sheet001",
+        // A sheet border has no pins: not imported.
+        "dropped:display-only\tUS_8ths/Asize\ta symbol without pins",
+    ] {
+        assert!(r.contains(want), "{want}\n{r}");
+    }
+    // S13: an analogLib property the core cell has no param for.
+    let r = import_edited(
+        &[(
+            r#"("label" 12 7 "nD" 360000 0 "R0" "lowerLeft" "stick" 10000 "normal" "wire" "label")"#,
+            r#"("prop" 2 "tc1" "string" "1m")"#,
+        )],
+        &Files::new(),
+        true,
+    );
+    assert!(
+        r.contains("dropped:unmapped\tsfyprobe_s/e1\tR0: tc1 = 1m has no param"),
+        "{r}"
+    );
+    // S2: a cell of another library the project holds as a component already.
+    let mut existing = Files::new();
+    existing.insert(
+        "schemify.project".into(),
+        b"schemify 1 project\n\nlib analogLib path analogLib\n".to_vec(),
+    );
+    existing.insert(
+        "analogLib/res.shcomp".into(),
+        b"schemify 1 shcomp\n\npin PLUS inout 0 0\npin MINUS inout 0 -60\n\nimpl schematic schematic\n"
+            .to_vec(),
+    );
+    let r = import_edited(&[], &existing, false);
+    assert!(
+        r.contains("remapped\tanalogLib/res\tinstances use analogLib/res.shcomp"),
+        "{r}"
+    );
+}

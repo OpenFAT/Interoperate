@@ -333,7 +333,18 @@ pub(super) fn schematic_in(
             } else if let Some(dv) = dev {
                 match dv.params.iter().find(|x| x.1 == p.name) {
                     Some(x) => (x.0.to_owned(), None),
-                    None => continue,
+                    // The core cell has no such param (res tc1, MOS ad): reported (S13).
+                    None => {
+                        notes.dropped(
+                            "unmapped",
+                            &cell,
+                            format!(
+                                "{}: {} = {} has no param on {new_cref}",
+                                inst.name, p.name, p.value
+                            ),
+                        );
+                        continue;
+                    }
                 }
             } else {
                 (p.name.clone(), None)
@@ -837,6 +848,33 @@ pub(super) fn schematic_in(
             &cell,
             format!("{dropped_alias} wire alias label(s)"),
         );
+    }
+    // Net and instance names that differ only in case are one name to ngspice (S15).
+    let nets = sv
+        .labels
+        .iter()
+        .filter(|l| l.layer == "wire")
+        .map(|l| l.text.as_str());
+    let insts = sv.insts.iter().map(|i| i.name.as_str());
+    for (what, all) in [
+        ("nets", nets.collect::<Vec<_>>()),
+        ("instances", insts.collect()),
+    ] {
+        let mut names: BTreeMap<String, BTreeSet<&str>> = BTreeMap::new();
+        for n in all {
+            names.entry(n.to_lowercase()).or_default().insert(n);
+        }
+        for v in names.values().filter(|v| v.len() > 1) {
+            let v: Vec<&str> = v.iter().copied().collect();
+            notes.review(
+                "name",
+                &cell,
+                format!(
+                    "{what} {} differ only in case: one name to ngspice",
+                    v.join(" ")
+                ),
+            );
+        }
     }
     joins.sort();
     joins.dedup();

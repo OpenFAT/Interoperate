@@ -186,19 +186,50 @@ pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn>
                 format!("param {}: callback not carried", p.name),
             );
         }
+        // A design-library callback that calls libInit.il code (S10): the code stays there.
+        if c.design && p.source.as_ref().is_some_and(|s| s.0 == "libInit.il") {
+            notes.review(
+                "callback",
+                &cell,
+                format!(
+                    "param {}: its callback runs libInit.il code, which a library without \
+                     that file lacks (not carried)",
+                    p.name
+                ),
+            );
+        }
+        // A default that is no constant (`iPar("m")*2`) imports as 0, reported (S17).
+        let zero = |notes: &mut Notes| {
+            if !p.def.trim().is_empty() {
+                notes.review(
+                    "expression",
+                    &cell,
+                    format!("param {}: default `{}` imported as 0", p.name, p.def),
+                );
+            }
+            "0".to_owned()
+        };
         let (kind, default) = match p.ty.as_str() {
-            "button" | "netSet" => continue,
+            "netSet" => continue,
+            "button" => {
+                notes.dropped(
+                    "display-only",
+                    &cell,
+                    format!("param {}: a CDF button (form-only)", p.name),
+                );
+                continue;
+            }
             "int" => (
                 "int",
                 if p.def.trim().parse::<i64>().is_ok() {
                     p.def.trim().to_owned()
                 } else {
-                    "0".into()
+                    zero(notes)
                 },
             ),
             "float" => (
                 "number",
-                own_default(&p.def, &names).unwrap_or_else(|| "0".into()),
+                own_default(&p.def, &names).unwrap_or_else(|| zero(notes)),
             ),
             "boolean" => (
                 "bool",

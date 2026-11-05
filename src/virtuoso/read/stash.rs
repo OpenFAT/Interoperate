@@ -72,7 +72,7 @@ pub(super) fn report_rest(sv: &Cv, cell: &str, notes: &mut Notes, tally: &mut Ta
         notes.dropped(
             "display-only",
             cell,
-            format!("{n} {kind} not dumped ({} view)", sv.view),
+            format!("{kind} ×{n} ({} view): not in the dump as drawn", sv.view),
         );
     }
     tally.reported += sv.conns.len() + sv.unknown.len() + sv.skipped.len();

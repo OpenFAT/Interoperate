@@ -429,6 +429,16 @@
                       b)))))
       (foreach e (SfySortByKey b)
         (SfyPut port "tnet" (caddr e))))
+    ;; Kept only in part: a pin figure that is not a rectangle (its box is dumped), net
+    ;; properties (no net record), the edits of a cellview open unsaved (they are dumped).
+    (foreach f pinfigs
+      (unless (equal (getSGq f objType) "rect")
+        (SfySkip (strcat "pin " (getSGq f objType) " (as its box)"))))
+    (foreach nt (getSGq cv nets)
+      (foreach p (getSGq nt prop)
+        (SfySkip (strcat "net prop " (getSGq p name)))))
+    (when (getSGq cv modifiedButNotSaved)
+      (SfySkip "unsaved edits (dumped as open)"))
     (foreach e (sort sfySkips (lambda (a c) (alphalessp (car a) (car c))))
       (SfyPut port "skipped" e))))
 

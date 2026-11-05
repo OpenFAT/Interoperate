@@ -20,6 +20,10 @@ pub(super) struct Target {
 }
 
 impl Target {
+    pub(super) fn path_of(&self, ext: &str) -> String {
+        cell_path(&self.dir, &self.stem, ext)
+    }
+
     pub(super) fn path(&self) -> String {
         cell_path(
             &self.dir,
@@ -138,6 +142,19 @@ impl<'a> Ctx<'a> {
             let i = ctx.iface_of_dump(k);
             ctx.ifaces.push(i);
         }
+        // Virtuoso names are case-sensitive; a case-insensitive file system (macOS, Windows)
+        // keeps one of two files whose paths differ only in case (S15).
+        let mut seen: BTreeMap<String, String> = BTreeMap::new();
+        for t in ctx.targets.iter().filter(|t| t.write) {
+            let p = t.path();
+            if let Some(q) = seen.insert(p.to_lowercase(), p.clone()) {
+                notes.review(
+                    "name",
+                    &p,
+                    format!("differs from {q} only in case: one file on a case-insensitive disk"),
+                );
+            }
+        }
         ctx
     }
 
@@ -161,6 +178,23 @@ impl<'a> Ctx<'a> {
             ..Target::default()
         };
         if t.slib == "core" || consumed(&c.lib, &c.name) {
+            return t;
+        }
+        // A cell of another library the project already holds as a component (an earlier
+        // import of that library, S2): its instances point there, no pinned leaf beside it.
+        if !c.design
+            && self
+                .existing
+                .contains_key(&cell_path(&t.dir, &t.stem, "shcomp"))
+        {
+            notes.add(
+                "remapped",
+                &format!("{}/{}", c.lib, c.name),
+                format!(
+                    "instances use {} (a reference cell here)",
+                    t.path_of("shcomp")
+                ),
+            );
             return t;
         }
         if c.is_global_symbol() {
