@@ -247,10 +247,17 @@ pub fn map(lib: &str, scan: &[Scanned], kit: &[Vcell]) -> Result<(String, Notes)
                         .is_some_and(|n| k.model.eq_ignore_ascii_case(n))
             })
             .collect();
+        // A termOrder naming one terminal twice ties two netlist ports inside the kit cell
+        // (live GF22FDX btbldnfet*: d g s s, the body on the source): one Schemify pin each
+        // would map onto one terminal, which a `pin` row cannot say.
+        let repeats = |k: &Vcell| {
+            let mut seen = BTreeSet::new();
+            !k.order.iter().all(|t| seen.insert(t))
+        };
         let mut fit: Vec<&Vcell> = cands
             .iter()
             .copied()
-            .filter(|k| k.order.len() == s.pins.len())
+            .filter(|k| k.order.len() == s.pins.len() && !repeats(k))
             .collect();
         fit.sort_by_key(|k| (!k.symbol_fits(), rank(k), &k.cell));
         let Some(&best) = fit.first() else {
@@ -271,6 +278,15 @@ pub fn map(lib: &str, scan: &[Scanned], kit: &[Vcell]) -> Result<(String, Notes)
                 format!(
                     "no candidate: no Virtuoso cell's CDF model is {}{hint}",
                     s.name
+                )
+            } else if let Some(k) = cands
+                .iter()
+                .find(|k| k.order.len() == s.pins.len() && repeats(k))
+            {
+                format!(
+                    "{}'s termOrder ({}) names a terminal twice: two pins on one terminal",
+                    k.name(),
+                    k.order.join(" ")
                 )
             } else {
                 let counts: Vec<String> = cands
@@ -427,6 +443,25 @@ mod tests {
         assert_eq!(
             notes.text(),
             "mapped\tk:nfoo\tb/nfoo_x: over a/nfoo by its symbol's terminals are its termOrder; not in its CDF: nf\n"
+        );
+    }
+
+    /// A termOrder that names one terminal twice (the body tied to the source inside the
+    /// kit cell) is no candidate: two pins on one terminal, reported (live GF22FDX).
+    #[test]
+    fn a_repeated_terminal_is_no_candidate() {
+        let kit = [vc(
+            "a",
+            "tied",
+            "tied",
+            &["D", "G", "S", "S"],
+            &["D", "G", "S"],
+        )];
+        let (text, notes) = map("k", &[sc("tied", &["d", "g", "s", "b"], &[])], &kit).unwrap();
+        assert_eq!(text, "");
+        assert_eq!(
+            notes.text(),
+            "needs_review:unmapped\tk:tied\ta/tied's termOrder (D G S S) names a terminal twice: two pins on one terminal\n"
         );
     }
 
