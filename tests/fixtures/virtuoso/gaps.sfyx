@@ -123,6 +123,7 @@
 ("shape" 10 "line" "device" "drawing" (0 -60000 0 -48000 -10000 -45000 10000 -39000 -10000 -33000 10000 -27000 -10000 -21000 10000 -15000 0 -12000 0 0) 0)
 ("prop" 2 "termType" "string" "circuit")
 ("skipped" "cvprop instNamePrefix" 1)
+("skipped" "pin polygon (as its box)" 2)
 ("cv" "symbol_xform" "schematicSymbol" 160000)
 ("skipped" "cvprop instNamePrefix" 1)
 ("skipped" "cvprop parameters" 1)
