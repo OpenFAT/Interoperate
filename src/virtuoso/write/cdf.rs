@@ -308,7 +308,12 @@ fn param_out(c: &Cell, r: u32, notes: &mut Notes) -> CdfParam {
                 .into();
         }
         "choice" => {
-            p.ty = "cyclic".into();
+            p.ty = if c.attr(r, "vradio").is_some() {
+                "radio"
+            } else {
+                "cyclic"
+            }
+            .into();
             p.choices = c
                 .attr_values(r, "choices")
                 .into_iter()

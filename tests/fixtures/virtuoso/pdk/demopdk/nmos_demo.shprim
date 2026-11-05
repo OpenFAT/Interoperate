@@ -1,7 +1,7 @@
 schemify 1 shprim
   provenance "virtuoso demopdk/nmos_demo"
   vibox none
-  vsym 20ba33f6679c9450
+  vsym 62e8322e5fde3cbb
 
 pin D inout 10 -40
   vplabel none
@@ -30,6 +30,7 @@ param style a
   kind choice
   choices a b c
   doc "Layout style"
+  vradio true
 param as w*70n
   doc "Source area"
 

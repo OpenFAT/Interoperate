@@ -591,6 +591,14 @@ pub(super) fn build(
             if p.kind == "choice" && !p.choices.is_empty() {
                 push_attr(&mut doc, "choices", &p.choices);
             }
+            // A radio CDF param is a choice drawn as radio buttons (`vradio`, gaps2 S17), so
+            // export writes radio, not cyclic, for an edited cell too.
+            if c.cdf
+                .as_ref()
+                .is_some_and(|d| d.params.iter().any(|q| q.name == p.name && q.ty == "radio"))
+            {
+                push_attr(&mut doc, "vradio", &["true"]);
+            }
             if let Some(d) = &p.doc {
                 push_attr(&mut doc, "doc", &[d]);
             }
@@ -672,6 +680,25 @@ pub(super) fn build(
                 );
                 continue;
             };
+            // A group's fallback (`[@w:w=%:w?]`) is what Virtuoso shows for an unset value;
+            // the template has no such branch (live ICADVM20.1: no SKILL evaluates NLP
+            // labels, so the drawn text goes back as it was, `vlabel`).
+            let fb = if l.kind == "NLP" {
+                nlp_fallbacks(&l.text)
+            } else {
+                Vec::new()
+            };
+            if !fb.is_empty() {
+                notes.review(
+                    "template",
+                    &cell,
+                    format!(
+                        "`{}` → `{tmpl}`: the fallback(s) `{}` for an unset value not shown",
+                        l.text,
+                        fb.join("`, `")
+                    ),
+                );
+            }
             // Virtuoso writes `w:7u` for a value at the CDF default and `w=7u` for one the
             // instance sets (skcompref cdsParam); the template has one form.
             if l.text.starts_with("cdsParam(") && tmpl.contains('=') {

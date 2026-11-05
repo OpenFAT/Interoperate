@@ -468,3 +468,74 @@ fn cds_param_counts_value_only_words() {
     let (_, r) = import();
     assert!(!r.contains("symbol label `cdsParam(3)` dropped"), "{r}");
 }
+
+#[test]
+fn a_two_group_nlp_label_and_a_radio_param_cross_both_ways() {
+    // Live s_nlp (fixtures/virtuoso/gaps_nlp.sfyx): G23, a label `[@w:w=%:w?][@l: l=%]`;
+    // S17, a radio param.
+    let imp = virtuoso::import(
+        &fixture("gaps_nlp.sfyx"),
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .expect("imports");
+    let r = imp.notes.text();
+    let files: Files = imp.files.into_iter().collect();
+    let two = String::from_utf8(files["sfyprobe_s/two.shprim"].clone()).unwrap();
+    assert!(
+        two.contains("R0 {w={w} l={l}}") || two.contains("w={w} l={l}"),
+        "{two}"
+    );
+    assert!(two.contains("vradio true"), "{two}");
+    assert!(
+        r.contains("the fallback(s) `w?` for an unset value not shown"),
+        "{r}"
+    );
+    // `two` is a mirror (no schematic): it never goes back. The same label and a radio
+    // param on blk (a component) do, also once its interface is edited.
+    let mut text = fixture("gaps_more.sfyx");
+    let p = r#"("param" "mode" "cyclic" "a" "mode" "" () ("a" "b") "")"#;
+    assert!(text.contains(p));
+    text = text.replace(p, &p.replace("cyclic", "radio"));
+    let sh = r#"("shape" 3 "rect" "device" "drawing" (-80000 -40000 80000 40000) 0)
+("cell" "cg" "design")"#;
+    assert!(text.contains(sh));
+    text = text.replace(
+        sh,
+        &format!(
+            "(\"label\" 4 0 \"[@w:w=%:w?][@l: l=%]\" 0 48000 \"R0\" \"lowerLeft\" \"stick\" 10000 \"NLP\" \"annotate\" \"drawing\")\n{sh}"
+        ),
+    );
+    let files: Files = virtuoso::import(
+        &text,
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .expect("imports")
+    .files
+    .into_iter()
+    .collect();
+    let blk = String::from_utf8(files["sfyprobe_s/blk.shcomp"].clone()).unwrap();
+    assert!(blk.contains("vradio true"), "{blk}");
+    let export = |files: &Files| {
+        let d = common::load_all(files);
+        let top = d.find("sfyprobe_s/blk.shcomp").expect("blk");
+        virtuoso::export(&d, &[top], &Mapping::default(), &ExportOptions::default())
+            .expect("exports")
+            .sfyx
+    };
+    let out = export(&files);
+    assert!(out.contains(r#""[@w:w=%:w?][@l: l=%]""#), "{out}");
+    assert!(out.contains(r#"("param" "mode" "radio""#), "{out}");
+    let mut edited = files.clone();
+    edited.insert(
+        "sfyprobe_s/blk.shcomp".into(),
+        blk.replacen("\nparam ", "\nparam extra 1\nparam ", 1)
+            .into_bytes(),
+    );
+    let out = export(&edited);
+    assert!(out.contains(r#"("param" "mode" "radio""#), "{out}");
+    assert!(out.contains(r#""[@w:w=%:w?][@l: l=%]""#), "{out}");
+}
