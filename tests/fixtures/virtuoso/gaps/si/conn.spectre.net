@@ -1,0 +1,12 @@
+
+// Library name: sfyprobe_s
+// Cell name: conn
+// View name: schematic
+R6 (net2 n6m) resistor r=1K
+R4 (net1 n4m) resistor r=1K
+R8 (n_tee n_float) resistor r=1K
+R7 (n_corner net3) resistor r=1K
+R5 (n5p net2) resistor r=1K
+R3 (vdd! net1) resistor r=1K
+R2 (n_mid n_off) resistor r=1K
+R1 (n_edge n_in) resistor r=1K

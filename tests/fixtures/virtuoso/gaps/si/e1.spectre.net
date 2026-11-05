@@ -1,0 +1,6 @@
+
+// Library name: sfyprobe_s
+// Cell name: e1
+// View name: schematic
+M0 (nD nG nS 0) nmos
+R0 (nD nS) resistor r=1K
