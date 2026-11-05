@@ -540,8 +540,10 @@ fn mark_pdk(proj: &Path, text: &str) -> Vec<String> {
 }
 
 /// The refresh edit (§8.3): in `files`, the first instance of a marked mirror cell with
-/// cached derived values gets its first number input doubled. Returns the files changed
-/// and (design file, instance name) of the edit; `None` when no instance qualifies.
+/// cached derived values gets its first number input doubled and its first whole-number
+/// input above zero (a finger count) one more (gaps2 P2: an nf resize, which the doubled
+/// width leaves room for). Returns the files changed and (design file, instance name) of
+/// the edit; `None` when no instance qualifies.
 fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, String)> {
     use schemify_format::{RecordKind, parse};
     for (path, bytes) in files
@@ -561,7 +563,21 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
                 .find_attr(0, "vinputs")
                 .map(|a| (0..).map_while(|i| m.attr_value(a, i)).collect())
                 .unwrap_or_default();
-            // The first number input with a constant value: doubled.
+            // The first number input with a constant value: doubled; the first whole one
+            // after it: one more.
+            let value = |n: &str| -> Option<f64> {
+                let pr = (1..m.record_count())
+                    .find(|&q| m.record_kind(q) == RecordKind::Param && m.field(q, 0) == Some(n))?;
+                let kind = m.find_attr(pr, "kind").and_then(|a| m.attr_value(a, 0));
+                if kind.is_some_and(|k| k != "number" && k != "int") {
+                    return None;
+                }
+                let v = d
+                    .find_attr(r, n)
+                    .and_then(|a| d.attr_value(a, 0))
+                    .or_else(|| m.field(pr, 1))?;
+                schemify_expr::parse_num(v.trim()).ok()
+            };
             let pick = vinputs.iter().find_map(|n| {
                 let pr = (1..m.record_count())
                     .find(|&q| m.record_kind(q) == RecordKind::Param && m.field(q, 0) == Some(n))?;
@@ -577,6 +593,11 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
                     interop::virtuoso::characterize::canonical_value(&format!("({v})*2"), false)?;
                 Some(((*n).to_owned(), x))
             })?;
+            let count = vinputs.iter().filter(|n| **n != pick.0).find_map(|n| {
+                let x = value(n)?;
+                (x >= 1.0 && x.fract() == 0.0 && x < 64.0)
+                    .then(|| ((*n).to_owned(), format!("{}", x as i64 + 1)))
+            });
             // The instance's block in the canonical text: its override replaced, or added
             // after its name line.
             let name = d
@@ -589,27 +610,29 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
             let end = text[start + head.len()..]
                 .find("\n\n")
                 .map_or(text.len(), |e| start + head.len() + e + 1);
-            let block = &text[start..end];
-            let key = format!("  {} ", pick.0);
-            let new_line = format!("  {} {}\n", pick.0, pick.1);
-            let edited = match block.lines().position(|l| l.starts_with(&key)) {
-                Some(i) => block
-                    .lines()
-                    .enumerate()
-                    .map(|(j, l)| {
-                        if j == i {
-                            new_line.clone()
-                        } else {
-                            format!("{l}\n")
-                        }
-                    })
-                    .collect::<String>(),
-                None => block.replacen(
-                    &format!("  name {name}\n"),
-                    &format!("  name {name}\n{new_line}"),
-                    1,
-                ),
-            };
+            let mut edited = text[start..end].to_owned();
+            for (k, v) in std::iter::once(&pick).chain(count.as_ref()) {
+                let key = format!("  {k} ");
+                let new_line = format!("  {k} {v}\n");
+                edited = match edited.lines().position(|l| l.starts_with(&key)) {
+                    Some(i) => edited
+                        .lines()
+                        .enumerate()
+                        .map(|(j, l)| {
+                            if j == i {
+                                new_line.clone()
+                            } else {
+                                format!("{l}\n")
+                            }
+                        })
+                        .collect::<String>(),
+                    None => edited.replacen(
+                        &format!("  name {name}\n"),
+                        &format!("  name {name}\n{new_line}"),
+                        1,
+                    ),
+                };
+            }
             let out = format!("{}{edited}{}", &text[..start], &text[end..]);
             return Some((path.clone(), out.into_bytes(), name));
         }
