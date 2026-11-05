@@ -64,6 +64,32 @@ fn nlp_groups(t: &str) -> Option<Vec<&str>> {
     Some(out)
 }
 
+/// The fallbacks (`[@w:w=%:none]`'s `none`: what Virtuoso shows while the property has no
+/// value) of an NLP label's groups; the template keeps none of them.
+pub(super) fn nlp_fallbacks(text: &str) -> Vec<String> {
+    nlp_groups(text.trim())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|g| {
+            let inner = g.strip_prefix("[@")?.strip_suffix(']')?;
+            let mut esc = false;
+            let mut parts = vec![String::new()];
+            for ch in inner.chars() {
+                match ch {
+                    _ if esc => {
+                        parts.last_mut()?.push(ch);
+                        esc = false;
+                    }
+                    '\\' => esc = true,
+                    ':' => parts.push(String::new()),
+                    _ => parts.last_mut()?.push(ch),
+                }
+            }
+            (parts.len() == 3).then(|| parts[2].clone())
+        })
+        .collect()
+}
+
 /// NLP label text → Schemify template (§3.5 import), `None` when dropped.
 pub(super) fn nlp_in(text: &str, label_set: &str) -> Option<String> {
     let t = text.trim();
