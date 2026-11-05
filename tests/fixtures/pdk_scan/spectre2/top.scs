@@ -1,0 +1,12 @@
+// A made-up Spectre kit for pdk-scan's issue lines: no real PDK data. An ESD-style device
+// instancing a Verilog-A module the kit loads and a master it does not declare, and a
+// parameter declared twice.
+simulator lang=spectre
+ahdl_include "mon.va"
+subckt prot (a b)
+parameters w=1u
+parameters w=2u l=1u
+x0 (a b) mon_va
+x1 (a b) parasitic_rc
+x2 (b a) parasitic_rc
+ends prot

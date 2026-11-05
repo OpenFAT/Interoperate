@@ -122,7 +122,7 @@ fn a_spectre_kit_reports_its_notes_and_refusals_by_code() {
     let (direct, twice) = (scratch("direct"), scratch("twice"));
     // Every section is followed: ff's include is not in the kit, and is reported at its path;
     // the `simulator lang=spice` region is copied as text (W0027).
-    let want = "converted 5 file(s)\ndiag corners.lib.scs W0027 1\n\
+    let want = "converted 5 file(s)\ndiag corners.lib.scs W0027 1 simulator\n\
                 diag ff_missing.scs R0006 1\nend\n";
     assert_eq!(
         run(&kit, "top.scs", "spectre", "spectre", &direct),
@@ -173,7 +173,7 @@ fn a_spectre_kit_reports_its_notes_and_refusals_by_code() {
     // region is Spectre's text (W0001). Flip when SpiceRack handles both.
     let _ = std::fs::remove_dir_all(&spice);
     let (out, code) = run(&kit, "top.scs", "spectre", "spice", &spice);
-    let want = "not written\ndiag top.scs W0004 1\ndiag corners.lib.scs W0001 1\n\
+    let want = "not written\ndiag top.scs W0004 1 ahdl_include\ndiag corners.lib.scs W0001 1 simulator\n\
                 diag ff_missing.scs R0006 1\nend\n";
     assert_eq!((out.as_str(), code), (want, 2));
     assert!(!spice.exists(), "nothing written on a refusal");

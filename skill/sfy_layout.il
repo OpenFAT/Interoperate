@@ -44,6 +44,14 @@
     (close p)
     (reverse recs)))
 
+;; The layer map file of technology tech: <techlib>.layermap in the technology library's
+;; directory, or nil.
+(procedure (SfyLayoutTechMap tech)
+  (let ((l (ddGetObj (getSGq tech libName))) (f nil))
+    (setq f (and l (stringp (getSGq l readPath))
+                 (strcat (getSGq l readPath) "/" (getSGq tech libName) ".layermap")))
+    (and f (isFile f) f)))
+
 ;; The open cellviews of lib/cell/view.
 (procedure (SfyLayoutOpen lib cell view)
   (setof cv (dbGetOpenCellViews)
@@ -54,7 +62,7 @@
 ;; lib/cell/view into dir (created; an earlier bundle's oa/ is replaced) and returns dir.
 ;; Pins go out as shape and text with property 100 (-pinAttNum), which strmin reads back.
 (procedure (SfyLayoutExport lib cell dir @optional (view "layout"))
-  (let ((vdir (SfyLayoutDir lib cell view)) (q (SfyLayoutQ dir)) tech cv p)
+  (let ((vdir (SfyLayoutDir lib cell view)) (q (SfyLayoutQ dir)) tech cv p lm)
     (unless (ddGetObj lib cell view) (error "schemify: no view %s/%s/%s" lib cell view))
     (setq tech (techGetTechFile (ddGetObj lib)))
     (unless tech (error "schemify: library %s has no technology" lib))
@@ -91,10 +99,17 @@
     (SfyLayoutPut p (list "end"))
     (close p)
     (dbClose cv)
-    ;; XST_AUTO_LM writes the map it used to ./xStrmOut_layerMap.txt.
+    ;; The technology library's own layer map (<techlib>.layermap in its directory: a
+    ;; kit's GDS numbers, live GF22FDX cmos22fdsoi_tech.layermap; gaps2 P8), copied as the
+    ;; bundle's (writable: a kit's file is read-only, and the next export replaces it); without one XST_AUTO_LM, which writes the map it used to
+    ;; ./xStrmOut_layerMap.txt.
+    (setq lm (SfyLayoutTechMap tech))
     (SfyLayoutSh "strmout"
-      (sprintf nil "strmout -library %s -topCell %s -view %s -strmFile %s/layout.gds -layerMap XST_AUTO_LM -ignoreCurrentTimestamp -convertPin geometryAndText -pinAttNum 100 -logFile %s/strmout.log -summaryFile %s/strmout.sum >/dev/null 2>&1 && mv xStrmOut_layerMap.txt %s/layermap"
-        (SfyLayoutQ lib) (SfyLayoutQ cell) (SfyLayoutQ view) q q q q))
+      (if lm
+        (sprintf nil "strmout -library %s -topCell %s -view %s -strmFile %s/layout.gds -layerMap %s -ignoreCurrentTimestamp -convertPin geometryAndText -pinAttNum 100 -logFile %s/strmout.log -summaryFile %s/strmout.sum >/dev/null 2>&1 && rm -f %s/layermap && cp %s %s/layermap && chmod u+w %s/layermap"
+          (SfyLayoutQ lib) (SfyLayoutQ cell) (SfyLayoutQ view) q (SfyLayoutQ lm) q q q (SfyLayoutQ lm) q q)
+        (sprintf nil "strmout -library %s -topCell %s -view %s -strmFile %s/layout.gds -layerMap XST_AUTO_LM -ignoreCurrentTimestamp -convertPin geometryAndText -pinAttNum 100 -logFile %s/strmout.log -summaryFile %s/strmout.sum >/dev/null 2>&1 && mv xStrmOut_layerMap.txt %s/layermap"
+          (SfyLayoutQ lib) (SfyLayoutQ cell) (SfyLayoutQ view) q q q q)))
     (SfyLayoutSh "copy of the view"
       (sprintf nil "cd %s && for f in *; do case $f in *cdslck*) ;; *) cp -p \"$f\" %s/oa/ ;; esac; done"
         (SfyLayoutQ vdir) q))
