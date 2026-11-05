@@ -272,6 +272,12 @@ fn sky130_from_xschem_maps_to_a_virtuoso_kit_and_back() {
     let mut files3 = manifest.clone();
     files3.extend(imp.files);
     let mirror = text(&files3, "sky130_fd_pr/nfet_01v8.shprim");
+    // Without the map the re-mastering stubs are M1's connections (live check x_xs2v).
+    let (scs, _) = netlist(&files3, TB, schemify_elab::Dialect::Spectre);
+    assert!(
+        scs.contains("M1 (D G GND GND) sky130_fd_pr__nfet_01v8"),
+        "{scs}"
+    );
     assert!(
         mirror.contains("provenance \"virtuoso sky130_fd_pr/nfet_01v8\"")
             && !mirror.contains("format spice"),
@@ -329,4 +335,281 @@ fn sky130_from_xschem_maps_to_a_virtuoso_kit_and_back() {
         "{}",
         imp.notes.text()
     );
+}
+
+// ------------------------------------------------------------------- live (x_drive.sh)
+
+/// A Schemify project over `files`, every cell opened (as tests/xschem_export.rs).
+fn project(
+    files: &Files,
+) -> (
+    schemify_doc::Project,
+    std::collections::BTreeMap<String, schemify_doc::DocHandle>,
+) {
+    use std::collections::BTreeMap;
+    let manifest = files.get("schemify.project").map(Vec::as_slice);
+    let libs = manifest.map_or_else(BTreeMap::new, |m| {
+        interop::design::manifest_libs(m).unwrap()
+    });
+    let mut p = schemify_doc::Project::new(manifest, None, 7).unwrap();
+    type Listing<'a> = Vec<(String, &'a [u8], String)>;
+    let mut groups: BTreeMap<&str, Listing> = BTreeMap::new();
+    for (path, bytes) in files {
+        if ![".shprim", ".shcomp", ".shbench"]
+            .iter()
+            .any(|x| path.ends_with(x))
+        {
+            continue;
+        }
+        let (lib, rel) = libs
+            .iter()
+            .find(|(_, d)| path.starts_with(&format!("{d}/")))
+            .map_or(("", path.as_str()), |(n, d)| {
+                (n.as_str(), &path[d.len() + 1..])
+            });
+        groups
+            .entry(lib)
+            .or_default()
+            .push((rel.to_owned(), bytes.as_slice(), path.clone()));
+    }
+    p.index_library("core", "builtin", schemify_doc::core_library())
+        .unwrap();
+    for (lib, list) in &groups {
+        let listing: Vec<(&str, &[u8])> = list.iter().map(|(r, b, _)| (r.as_str(), *b)).collect();
+        p.index_library(lib, "", &listing).unwrap();
+    }
+    let mut handles = BTreeMap::new();
+    for (lib, list) in &groups {
+        for (rel, bytes, path) in list {
+            let o = p.open(lib, rel, bytes, None).unwrap();
+            handles.insert(path.clone(), o.handle);
+        }
+    }
+    (p, handles)
+}
+
+/// `top`'s netlist in `dialect`, and its blocking violations.
+fn netlist(files: &Files, top: &str, dialect: schemify_elab::Dialect) -> (String, Vec<String>) {
+    let (p, h) = project(files);
+    let req = schemify_elab::Request {
+        config: None,
+        corner: None,
+        overrides: &[],
+        env: &[],
+        dialect,
+    };
+    let e = schemify_elab::elaborate(&p, h[top], &req, &mut schemify_elab::no_funcs);
+    let errors = e
+        .violations
+        .rows
+        .iter()
+        .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
+        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
+        .collect();
+    (schemify_netlist::emit(&e, dialect).text, errors)
+}
+
+/// Spectre instance lines `name (nets) master k=v …` as SPICE calls `X<name> nets master
+/// k=v …` (continuations joined, `gnd!` read as `0`, every other statement left out), so
+/// spicecmp compares two Spectre netlists by connectivity and evaluated values. ponytail:
+/// instances only; a Spectre front end in spicecmp if more is needed.
+fn spectre_as_spice(text: &str) -> String {
+    let joined = text.replace("\\\n", " ");
+    let mut out = String::new();
+    for l in joined.lines().map(str::trim) {
+        let Some((name, rest)) = l.split_once(" (") else {
+            continue;
+        };
+        let Some((nets, tail)) = rest.split_once(')') else {
+            continue;
+        };
+        if name.contains(char::is_whitespace) || name.starts_with("//") {
+            continue;
+        }
+        let nets: Vec<&str> = nets
+            .split_whitespace()
+            .map(|n| {
+                if n.eq_ignore_ascii_case("gnd!") {
+                    "0"
+                } else {
+                    n
+                }
+            })
+            .collect();
+        out.push_str(&format!("X{name} {} {}\n", nets.join(" "), tail.trim()));
+    }
+    out.push_str(".end\n");
+    out
+}
+
+/// The Schemify half of live/checks/x_xs2v.il, driven by live/checks/x_drive.sh:
+/// `SCHEMIFY_XS2V_DIR=<dir> SCHEMIFY_XS2V_STEP=prepare` reads `<dir>/cdf.sfyx` (SfyCdfNames
+/// of the kit library `SCHEMIFY_XS2V_LIB`, default sfyprobe_x), maps the xschem sky130
+/// stand-in onto it with pdk-map and writes the re-mastered export `<dir>/in.sfyx`; `verify`
+/// reads `<dir>/back.sfyx` (SfyExport of the library) and `<dir>/si.scs` (si's spectre
+/// netlist of tb) and checks the way back. Prints PASS/FAIL lines; fails on any FAIL.
+#[test]
+#[ignore]
+fn live_xs2v() {
+    let Some(dir) = std::env::var_os("SCHEMIFY_XS2V_DIR").map(std::path::PathBuf::from) else {
+        return;
+    };
+    let lib = std::env::var("SCHEMIFY_XS2V_LIB").unwrap_or_else(|_| "sfyprobe_x".into());
+    let step = std::env::var("SCHEMIFY_XS2V_STEP").unwrap_or_default();
+    let read =
+        |f: &str| std::fs::read_to_string(dir.join(f)).unwrap_or_else(|e| panic!("{f}: {e}"));
+    let mut fails = Vec::new();
+    let mut verdict = |what: &str, ok: bool, why: String| {
+        println!(
+            "{} {what}{}",
+            if ok { "PASS" } else { "FAIL" },
+            if ok {
+                String::new()
+            } else {
+                format!(": {why}")
+            }
+        );
+        if !ok {
+            fails.push(what.to_owned());
+        }
+    };
+    let files = import_xschem();
+    let scan: Vec<pdk_map::Scanned> = files
+        .iter()
+        .filter(|(p, _)| p.starts_with("sky130_fd_pr/") && p.ends_with(".shprim"))
+        .map(|(p, b)| {
+            let stem = p
+                .rsplit('/')
+                .next()
+                .unwrap()
+                .strip_suffix(".shprim")
+                .unwrap();
+            pdk_map::scanned(stem, b).unwrap()
+        })
+        .collect();
+    let dump = pdk_map::read_dump(&read("cdf.sfyx")).unwrap();
+    let (map_text, _) = pdk_map::map("sky130_fd_pr", &scan, &dump).unwrap();
+    let map = Mapping::parse(&map_text).unwrap();
+    let mut eopts = ExportOptions {
+        analoglib: true,
+        producer: "live_xs2v".into(),
+        ..ExportOptions::default()
+    };
+    eopts.lib_map.insert("mylib".into(), lib.clone());
+    let mut iopts = ImportOptions {
+        analoglib: true,
+        ..ImportOptions::default()
+    };
+    iopts.lib_map.insert(lib.clone(), "mylib".into());
+    if step == "prepare" {
+        verdict(
+            "pdk-map maps nfet_01v8 with W/L scaled",
+            map_text.contains(&format!("virtuoso {lib} nfet_01v8\n"))
+                && map_text.contains("param W w scale 1e-6"),
+            map_text.clone(),
+        );
+        std::fs::write(dir.join("interop.map"), &map_text).unwrap();
+        let d = load_closed(&files, &[TB]).unwrap();
+        let x = virtuoso::export(&d, &[d.find(TB).unwrap()], &map, &eopts).unwrap();
+        std::fs::write(dir.join("in.sfyx"), &x.sfyx).unwrap();
+        std::fs::write(dir.join("in.report.txt"), x.notes.text()).unwrap();
+        verdict(
+            "M1 re-mastered onto the kit cell",
+            x.notes
+                .text()
+                .contains(&format!("M1: nfet_01v8 → {lib}/nfet_01v8")),
+            x.notes.text(),
+        );
+    } else {
+        let back = read("back.sfyx");
+        // Spectre: si's netlist of tb against Schemify's spectre netlist of what Virtuoso
+        // holds (the dump imported without the map: the kit cell as its mirror).
+        let manifest: Files = files
+            .iter()
+            .filter(|(p, _)| *p == "schemify.project")
+            .map(|(p, b)| (p.clone(), b.clone()))
+            .collect();
+        let plain = virtuoso::import(&back, &manifest, &Mapping::default(), &iopts).unwrap();
+        let mut vfiles = manifest.clone();
+        vfiles.extend(plain.files);
+        let (ours, errs) = netlist(&vfiles, TB, schemify_elab::Dialect::Spectre);
+        std::fs::write(dir.join("ours.scs"), &ours).unwrap();
+        let si = read("si.scs");
+        let c = schemify_spicecmp::compare(
+            &spectre_as_spice(&si),
+            &spectre_as_spice(&ours),
+            &schemify_spicecmp::Options::default(),
+        );
+        verdict(
+            "si's spectre netlist of tb = Schemify's (instances, connectivity and values)",
+            errs.is_empty() && c.is_equal(),
+            format!("{errs:?} {:?}", c.diffs),
+        );
+        verdict(
+            "si netlists M1 on the kit model with w=2e-6 l=5e-7",
+            si.lines().any(|l| {
+                l.trim_start().starts_with("M1 ")
+                    && l.contains("sky130_fd_pr__nfet_01v8")
+                    && ["w=2e-6", "w=2e-06", "w=2u"].iter().any(|w| l.contains(w))
+                    && ["l=5e-7", "l=5e-07", "l=500n"]
+                        .iter()
+                        .any(|v| l.contains(v))
+            }),
+            si.clone(),
+        );
+        // Back: the reverse lookup gives the xschem cell with W/L in micrometres.
+        let imp = virtuoso::import(&back, &files, &map, &iopts).unwrap();
+        let mut files2 = files.clone();
+        files2.extend(imp.files);
+        let tb = text(&files2, TB);
+        verdict(
+            "tb comes back on sky130_fd_pr:nfet_01v8 with L 0.5 W 2",
+            tb.contains("sky130_fd_pr:nfet_01v8\n  at 0 0 R0\n  name M1\n  L 0.5\n  W 2\n"),
+            tb.clone(),
+        );
+        // And out to xschem, netlisted by real xschem, against Schemify's ngspice netlist of
+        // the original import.
+        let d = load_closed(&files2, &[TB]).unwrap();
+        let xs = xschem_out::export(&d, &[d.find(TB).unwrap()]).unwrap();
+        let xdir = dir.join("xschem");
+        let _ = std::fs::remove_dir_all(&xdir);
+        for (p, b) in &xs.files {
+            let path = xdir.join("export").join(p);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b).unwrap();
+        }
+        for (p, b) in inputs().iter().filter(|(p, _)| p.starts_with("x/")) {
+            let path = xdir.join(p);
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, b).unwrap();
+        }
+        std::fs::write(
+            xdir.join("rc"),
+            format!(
+                "append XSCHEM_LIBRARY_PATH :{}\nsource {}\n",
+                xdir.join("x").display(),
+                xdir.join("export/xschemrc").display()
+            ),
+        )
+        .unwrap();
+        std::fs::create_dir_all(xdir.join("net")).unwrap();
+        std::fs::create_dir_all(xdir.join("home")).unwrap();
+        let run = std::process::Command::new("xschem")
+            .args(["-q", "-x", "-n", "-s", "-r", "--rcfile"])
+            .arg(xdir.join("rc"))
+            .arg("--netlist_path")
+            .arg(xdir.join("net"))
+            .arg(xdir.join("export/mylib/tb.sch"))
+            .env("HOME", xdir.join("home"))
+            .output();
+        let theirs = std::fs::read_to_string(xdir.join("net/tb.spice")).unwrap_or_default();
+        let (orig, _) = netlist(&files, TB, schemify_elab::Dialect::Ngspice);
+        let c = schemify_spicecmp::compare(&orig, &theirs, &schemify_spicecmp::Options::default());
+        verdict(
+            "real xschem's netlist of the way back = Schemify's of the xschem import",
+            !theirs.is_empty() && c.is_equal(),
+            format!("{run:?} {:?}\n{orig}\n---\n{theirs}", c.diffs),
+        );
+    }
+    assert!(fails.is_empty(), "{fails:?}");
 }
