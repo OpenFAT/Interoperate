@@ -71,13 +71,19 @@ mkdir -p "$work/out" "$work/libs"
 work="$(cd "$work" && pwd)"
 out="$work/out"
 
-# The Rust steps: one ignored test of the interop crate.
+# The Rust steps: one ignored test of the interop crate, built from Cargo.lock as committed
+# (--locked) with rust-toolchain.toml's toolchain (rustup reads it in the checkout). A
+# `[patch]` in a .cargo/config.toml above the checkout would swap a git dependency for a
+# local copy (on iccad4 ~/sfytest/.cargo/config.toml pointed SpiceRack at a stale tree:
+# "could not find `syntax` in `spicerack`"); --locked refuses that instead. Cargo reads
+# configuration from its working directory up, so it runs in the checkout, not in --work.
 host() {
   command -v cargo >/dev/null || die "cargo not found: the $1 step needs the Rust toolchain (README.md: Requirements)"
   SCHEMIFY_LIVE_DIR="$work" SCHEMIFY_LIVE_STEP="$1" \
   SCHEMIFY_LIVE_CELLS="${cells[*]-}" SCHEMIFY_LIVE_PROJECTS="${projects[*]-}" SCHEMIFY_LIVE_PDK="$pdk" \
   SCHEMIFY_LIVE_CALLBACKS="$callbacks" \
-    cargo test --quiet --manifest-path "$repo/Cargo.toml" \
+    bash -c 'cd "$1" && shift && exec "$@"' _ "$repo" \
+    cargo test --locked --quiet --manifest-path "$repo/Cargo.toml" \
       --test virtuoso_live live_step -- --ignored --exact --nocapture
 }
 

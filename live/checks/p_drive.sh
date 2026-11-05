@@ -25,7 +25,7 @@ lib=sfyprobe_p
 tmp="${SFYCHECK_LOCAL:-$(mktemp -d)}"
 mkdir -p "$tmp/il"
 
-cargo build -q --release --features cli --bin schemify-interop --manifest-path "$repo/Cargo.toml"
+cargo build -q --locked --release --features cli --bin schemify-interop --manifest-path "$repo/Cargo.toml"
 "${CARGO_TARGET_DIR:-$repo/target}/release/schemify-interop" install-skill "$tmp/il" >/dev/null
 ssh "$host" "mkdir -p $work/src $work/out"
 tar cf - -C "$here" . | ssh "$host" "tar xf - -C $work/src"
@@ -47,7 +47,7 @@ RUN
 cat "$tmp/run.txt"
 ssh "$host" "cd $work/out && tar cf - p_terms.sfyx p_terms.sfyx.log p_si p_char.sfyx" | tar xf - -C "$tmp"
 for f in "$tmp"/p_si/*.net; do cp "$f" "$tmp/$(basename "$f")"; done
-SFY_P_DIR="$tmp" cargo test -q --release --manifest-path "$repo/Cargo.toml" \
+SFY_P_DIR="$tmp" cargo test -q --locked --release --manifest-path "$repo/Cargo.toml" \
   --test virtuoso_rust live_p_terms -- --ignored --nocapture || status=1
 
 # The refresh (gaps2 P2, P10): the characterized nfet and resistor marked, the dump
@@ -75,7 +75,7 @@ cat "$tmp/refresh.txt"
 ssh "$host" "cd $work/refresh && tar cf - refresh.*.sfyx" | tar xf - -C "$tmp/refresh"
 ssh "$host" "cat $work/out/p_truth.txt" > "$tmp/p_truth.txt"
 "$bin" virtuoso-refresh "$p" --apply "$tmp/refresh"
-SFY_P_DIR="$tmp" cargo test -q --release --manifest-path "$repo/Cargo.toml" \
+SFY_P_DIR="$tmp" cargo test -q --locked --release --manifest-path "$repo/Cargo.toml" \
   --test virtuoso_rust live_p_refresh -- --ignored --nocapture || status=1
 echo "p_drive: files in $tmp"
 exit $status
