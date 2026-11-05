@@ -701,7 +701,12 @@ fn tally(into: &mut BTreeMap<&'static str, usize>, lines: &[String]) {
 
 /// Appends `d` to `out` unless its name cannot be a cell file, a port repeats, or a device of
 /// that name came first (each reported).
-fn add(out: &mut Vec<Device>, issues: &mut Vec<String>, d: Device) {
+fn add(out: &mut Vec<Device>, issues: &mut Vec<String>, mut d: Device) {
+    // A parameter declared twice is one (Spectre keeps the last value; only the name is
+    // served): live GF22FDX esdpdnw_sti declares wiring_style twice, and two `param`
+    // records of one name are E024.
+    let mut seen = BTreeSet::new();
+    d.params.retain(|p| seen.insert(p.clone()));
     let safe = d
         .target
         .bytes()

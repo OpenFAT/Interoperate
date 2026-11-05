@@ -12,6 +12,7 @@ model pch_core bsim4 type=p vth0=-0.3876
 subckt rhigh (p n)
 parameters r=1k \
     w=1u l=2u
+parameters l=3u
 r0 (p n) resistor r=r
 x0 (p n) parasitic_rc
 x1 (n p) parasitic_rc

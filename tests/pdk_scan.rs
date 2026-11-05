@@ -441,7 +441,7 @@ fn a_spectre_kit_reads_through_spicerack() {
     }
     assert!(
         cell("rhigh.shprim").contains("param r \"\"")
-            && cell("rhigh.shprim").contains("param l \"\""),
+            && cell("rhigh.shprim").matches("param l \"\"").count() == 1,
         "{out}"
     );
     assert!(
