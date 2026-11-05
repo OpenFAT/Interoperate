@@ -15,7 +15,11 @@ second oracle, ngspice results of ours vs the golden, is the ignored test
 `schemify netlist` and runs `diff_all.sh`: raw comparison, no code stripping or binding.)
 
 The count may only go up. Every remaining difference is annotated below with its root
-cause and owner.
+cause and owner. Per row too: [RATCHET.rows](RATCHET.rows) (and
+[ROUNDTRIP.rows](ROUNDTRIP.rows) for the export round trip) records every bench and mode that
+does not agree, with its category; `corpus/rows.sh <RESULTS.txt> <rows>` fails when a row
+moves to a worse category, so a move never hides inside an unchanged sum. Rewrite the record
+(`rows.sh --record`) in the change that improves it.
 
 ## Categories
 
