@@ -97,6 +97,15 @@ m1 feb9899); 198 with precompiled Verilog-A bodies emitted; 246 with this change
 | import | instance `format`/`lvs_format`/`spice_sym_def` as variant cells `<cell>__<instance>` (import §3); a blank format netlists nothing; a symbol's `spice_sym_def` is its netlist text with `@pinlist` in the included `.subckt`'s order (§2); `c='C'` keeps the assigned name | test_format_override ×2, ainv ×2, boost/buck_boost/sky130_mismatch (cdl), tb_symbol_include ×2, ccap ×2 (now golden-unevaluated) |
 | spicecmp | ngspice 45 rules, checked by running ngspice: a bare word after a `.subckt` line's parameters is ignored (`delay=200 ps`); a call's overrides are in scope before the subckt's other defaults are evaluated | doublepin ×2, loading ×2 |
 
+## Export round trip (`corpus/roundtrip.sh`)
+
+xschem → Schemify → xschem: every mapped bench imported (`NETLIST=none import_all.sh`),
+exported with `xschem-export`, netlisted by the pinned xschem and compared with its golden
+(xschem against xschem: a bench that agrees above and differs here is an export bug).
+Nightly ratchets the agree count (2026-11-04, of 602 rows; 1 golden-unevaluated, 54 differ):
+
+Export round trip agree: **547**
+
 ## Remaining differences by root cause
 
 Rows are `bench (mode)`; SPICE unless marked. 12 SPICE and 23 CDL (code stripped)
