@@ -187,6 +187,53 @@ pub(super) struct ParamIn {
     pub(super) computed: Option<String>,
 }
 
+/// The detail of a reference cell's callback row before `group_kit_callbacks`.
+const KIT_CALLBACK: &str = "kit callback not carried: ";
+
+/// A kit's callback rows, one per param of every reference cell (15066 for GF22FDX), as
+/// one row per (library, callback function): how many params of how many cells, the first
+/// as an example (gaps2 P13). A design cell's rows stay as they are.
+pub(super) fn group_kit_callbacks(notes: &mut Notes) {
+    // (lib, function) → (params, cells, example)
+    let mut g: BTreeMap<(String, String), (usize, BTreeSet<String>, String)> = BTreeMap::new();
+    notes.rows.retain(|r| {
+        let ref_row = r.class == "needs_review:callback" && r.cell.contains('/');
+        let Some((param, cb)) = r.detail.split_once(": ").filter(|_| ref_row) else {
+            return true;
+        };
+        let Some(cb) = cb
+            .strip_prefix(KIT_CALLBACK)
+            .filter(|_| param.starts_with("param "))
+        else {
+            return true;
+        };
+        let (lib, cell) = r.cell.split_once('/').expect("lib/cell");
+        // `GFcdfCallback('w)` and `(pdkCb)` alike: the function's name.
+        let fun = cb
+            .trim_start_matches('(')
+            .split(['(', ' ', ')'])
+            .next()
+            .unwrap_or(cb)
+            .to_owned();
+        let e = g
+            .entry((lib.to_owned(), fun))
+            .or_insert_with(|| (0, BTreeSet::new(), format!("{cell} {param}: {cb}")));
+        e.0 += 1;
+        e.1.insert(cell.to_owned());
+        false
+    });
+    for ((lib, fun), (n, cells, first)) in g {
+        notes.review(
+            "callback",
+            &lib,
+            format!(
+                "{fun}: callbacks of {n} params in {} cells not carried (e.g. {first})",
+                cells.len()
+            ),
+        );
+    }
+}
+
 /// The §6.3 import table over a cell's CDF.
 pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn> {
     let cell = format!("{}/{}", c.lib, c.name);
@@ -198,7 +245,7 @@ pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn>
             notes.review(
                 "callback",
                 &cell,
-                format!("param {}: callback not carried", p.name),
+                format!("param {}: {KIT_CALLBACK}{}", p.name, p.callback.trim()),
             );
         }
         // A design-library callback that calls libInit.il code (S10): the code stays there.
@@ -799,19 +846,129 @@ fn inst_params(si: &SimInfo, params: &[ParamIn]) -> Vec<(String, String, bool)> 
         .collect()
 }
 
-/// Terminal order of a simInfo in Schemify pin names (falling back to the pin order).
-fn sim_order(si: &SimInfo, pins: &[PinRow]) -> Vec<String> {
+/// The pin part of a format from a simInfo's termOrder: a terminal by its pin's hole
+/// (`term_pin`, so a stopping view's inherited terminal is its inherited pin); a
+/// `progn(<param>)` entry (analogLib's auCdl bulk) by the net the param's value names, a
+/// terminal of the cell or else a net (live ICADVM20.1, p_terms: `bn` `S` netlists the S
+/// terminal's net, `vdd!` that net). Any other entry, or a drawn pin it leaves out, gives
+/// the pin order, reported (gaps2 S8, P1).
+fn sim_pins(
+    c: &DCell,
+    si: &SimInfo,
+    params: &[ParamIn],
+    pins: &[PinRow],
+    notes: &mut Notes,
+) -> String {
     let ordinary: Vec<&PinRow> = pins.iter().filter(|p| p.alias.is_none()).collect();
+    let names: Vec<String> = ordinary.iter().map(|p| p.name.clone()).collect();
+    let fallback = pins_template(&names);
     let order = si.list("termOrder");
-    let named: Vec<String> = order.iter().map(|t| net_from_virtuoso(t).text).collect();
-    if !named.is_empty()
-        && named.len() == ordinary.len()
-        && named.iter().all(|n| ordinary.iter().any(|p| p.name == *n))
-    {
-        named
-    } else {
-        ordinary.iter().map(|p| p.name.clone()).collect()
+    if order.is_empty() || fallback == "{pins}" {
+        return fallback;
     }
+    let cell = format!("{}/{}", c.lib, c.name);
+    let sym = c.cv("symbol");
+    let mut holes = Vec::new();
+    let mut named = Vec::new();
+    for t in &order {
+        let progn = t
+            .strip_prefix("progn(")
+            .or_else(|| t.strip_prefix("(progn "))
+            .and_then(|x| x.strip_suffix(')'))
+            .map(str::trim)
+            .filter(|p| params.iter().any(|x| x.name == *p));
+        if let Some(p) = progn {
+            // A terminal's name picks that pin's net; any other value is the net itself.
+            let mut e = p.to_owned();
+            for term in sym
+                .iter()
+                .flat_map(|s| s.terms.iter().map(move |x| (s, x)))
+                .rev()
+            {
+                e = format!(
+                    "{p} == \"{}\" ? {} : {e}",
+                    term.1.name,
+                    term_pin(term.0, term.1)
+                );
+            }
+            holes.push(format!("{{{e}}}"));
+            continue;
+        }
+        let n = match sym.and_then(|s| s.terms.iter().find(|x| x.name == *t).map(|x| (s, x))) {
+            Some((s, term)) => term_pin(s, term),
+            None => net_from_virtuoso(t).text,
+        };
+        if !names.contains(&n) {
+            notes.review(
+                "format",
+                &cell,
+                format!(
+                    "{} termOrder names `{t}`, which no pin is: the pin order",
+                    si.sim
+                ),
+            );
+            return fallback;
+        }
+        holes.push(format!("{{{n}}}"));
+        named.push(n);
+    }
+    if let Some(p) = ordinary
+        .iter()
+        .find(|p| p.inherit.is_none() && !named.contains(&p.name))
+    {
+        notes.review(
+            "format",
+            &cell,
+            format!(
+                "{} termOrder leaves out pin `{}`: the pin order",
+                si.sim, p.name
+            ),
+        );
+        return fallback;
+    }
+    holes.join(" ")
+}
+
+/// What a cell's simInfo holds that its formats do not carry, as one report line (gaps2
+/// S9, P14): spectre and auCdl keys outside the ones the formats read (a netlist
+/// procedure, string/enum parameter lists, terminal mappings and operating-point
+/// expressions for results, …) and every other simulator's simInfo (hspiceD, auLvs, ams).
+pub(super) fn siminfo_not_carried(cdf: &Cdf) -> Option<String> {
+    // ponytail: one row per cell, keys only; a kit has hundreds of cells with the same few.
+    let read = |sim: &str, k: &str, v: &SimVal| {
+        let empty = match v {
+            SimVal::Str(s) => s.is_empty() || s == "nil",
+            SimVal::List(l) => l.is_empty(),
+            SimVal::Pairs(p) => p.is_empty(),
+        };
+        empty
+            || matches!(
+                k,
+                "termOrder" | "instParameters" | "propMapping" | "componentName"
+            )
+            || (k == "otherParameters"
+                && matches!(v, SimVal::List(l) if l.iter().all(|x| x == "model")))
+            || (sim == "auCdl" && matches!(k, "namePrefix" | "modelName"))
+            || (sim == "auCdl" && k == "netlistProcedure")
+    };
+    let mut out = Vec::new();
+    for si in &cdf.siminfo {
+        match si.sim.as_str() {
+            "spectre" | "auCdl" => {
+                let keys: Vec<&str> = si
+                    .fields
+                    .iter()
+                    .filter(|(k, v)| !read(&si.sim, k, v))
+                    .map(|(k, _)| k.as_str())
+                    .collect();
+                if !keys.is_empty() {
+                    out.push(format!("{} {}", si.sim, keys.join(" ")));
+                }
+            }
+            other => out.push(format!("{other} (all)")),
+        }
+    }
+    (!out.is_empty()).then(|| format!("simInfo not carried: {}", out.join("; ")))
 }
 
 /// `t` with each ` k={c}` of a string or choice param `c` in the optional form
@@ -862,11 +1019,16 @@ pub(super) fn spectre_format(
     si: &SimInfo,
     params: &[ParamIn],
     pins: &[PinRow],
+    notes: &mut Notes,
 ) -> String {
-    let order = sim_order(si, pins);
+    let pins = sim_pins(c, si, params, pins, notes);
+    // The model param names the master when it has a default or simInfo passes it to the
+    // netlister (`otherParameters`: analogLib nmos, model "" set per instance; live
+    // ICADVM20.1 p_terms `M0 (n_D n_G n_S 0) nch`).
+    let other = si.list("otherParameters");
     let has_model = params
         .iter()
-        .any(|p| p.name == "model" && !p.default.is_empty());
+        .any(|p| p.name == "model" && (!p.default.is_empty() || other.contains(&p.name)));
     let master = if has_model {
         "{model}".to_owned()
     } else {
@@ -875,7 +1037,7 @@ pub(super) fn spectre_format(
             .unwrap_or(&c.name)
             .to_owned()
     };
-    let mut t = format!("{{name}} ({}) {master}", pins_template(&order));
+    let mut t = format!("{{name}} ({pins}) {master}");
     for (k, cn, num) in inst_params(si, params) {
         if num {
             t.push_str(&format!(" {k}={{{cn}}}"));
@@ -893,12 +1055,19 @@ pub(super) fn cdl_format(
     pins: &[PinRow],
     notes: &mut Notes,
 ) -> String {
-    let order = sim_order(si, pins);
-    let kv: String = inst_params(si, params)
-        .iter()
-        .map(|(k, cn, _)| format!(" {k}={{{cn}}}"))
-        .collect();
-    let pins = pins_template(&order);
+    let holes = sim_pins(c, si, params, pins, notes);
+    // `k=` per instParameters entry; one naming an inherited pin is a node, which auCdl
+    // writes `$k=<net>` (live ICADVM20.1, p_terms: `RR0 a b $SUB=VSS! $[opnpcres] r=…`).
+    let kv = |skip: &str| -> String {
+        inst_params(si, params)
+            .iter()
+            .filter(|x| x.0 != skip)
+            .map(|(k, cn, _)| {
+                let node = pins.iter().any(|p| p.inherit.is_some() && p.name == *cn);
+                format!(" {}{k}={{{cn}}}", if node { "$" } else { "" })
+            })
+            .collect()
+    };
     if si.str("netlistProcedure") == Some("ansCdlSubcktCall") {
         let comp = si
             .str("componentName")
@@ -908,7 +1077,7 @@ pub(super) fn cdl_format(
             .str("namePrefix")
             .filter(|s| !s.is_empty())
             .unwrap_or("X");
-        return format!("{prefix}{{name}} {pins} / {comp}{kv}");
+        return format!("{prefix}{{name}} {holes} / {comp}{}", kv(""));
     }
     notes.review(
         "cdl-approximate",
@@ -921,17 +1090,20 @@ pub(super) fn cdl_format(
         .unwrap_or("X");
     let model_name = si.str("modelName").filter(|s| !s.is_empty() && *s != "nil");
     let has_model = params.iter().any(|p| p.name == "model");
-    if matches!(prefix, "R" | "C" | "L" | "D")
+    // A diode's model is positional, as a MOS's or a BJT's (live ICADVM20.1, p_terms:
+    // `DD0 D0_sx D0_nd diodenx Area=1p perim=4u`); R, C and L name theirs `$[m]`.
+    if matches!(prefix, "R" | "C" | "L")
         && let Some(m) = model_name
     {
-        return format!("{prefix}{{name}} {pins}{kv} $[{m}]");
+        return format!("{prefix}{{name}} {holes}{} $[{m}]", kv(""));
     }
-    let model = match model_name {
-        Some(m) => format!(" {m}"),
-        None if has_model => " {model}".into(),
-        None => format!(" {}", c.name),
-    };
-    format!("{prefix}{{name}} {pins}{model}{kv}")
+    match model_name {
+        Some(m) => format!("{prefix}{{name}} {holes} {m}{}", kv("")),
+        // The model is the master; auCdl writes no `model=` beside it (live ICADVM20.1,
+        // p_terms: `MMN OUT IN VSS inh_lSup nfet m=1 w=200n …`, gaps2 G7).
+        None if has_model => format!("{prefix}{{name}} {holes} {{model}}{}", kv("model")),
+        None => format!("{prefix}{{name}} {holes} {}{}", c.name, kv("")),
+    }
 }
 
 #[cfg(test)]

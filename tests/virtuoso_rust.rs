@@ -135,8 +135,13 @@ fn golden(name: &str, files: &[(String, Vec<u8>)], report: &str) {
 
 /// Elaborates `bench` of the imported files (plus the core library) and emits ngspice.
 fn netlist(files: &[(String, Vec<u8>)], bench: &str) -> String {
+    netlist_in(files, bench, schemify_elab::Dialect::Ngspice)
+}
+
+/// The same in `dialect`.
+fn netlist_in(files: &[(String, Vec<u8>)], bench: &str, dialect: schemify_elab::Dialect) -> String {
     use schemify_doc::{Project, core_library};
-    use schemify_elab::{Dialect, Request, elaborate, no_funcs};
+    use schemify_elab::{Request, elaborate, no_funcs};
     let manifest = files
         .iter()
         .find(|f| f.0 == "schemify.project")
@@ -189,7 +194,7 @@ fn netlist(files: &[(String, Vec<u8>)], bench: &str) -> String {
         corner: None,
         overrides: &[],
         env: &[],
-        dialect: Dialect::Ngspice,
+        dialect,
     };
     let e = elaborate(&p, handles[bench], &req, &mut no_funcs);
     let blocking: Vec<String> = e
@@ -200,7 +205,7 @@ fn netlist(files: &[(String, Vec<u8>)], bench: &str) -> String {
         .map(|v| format!("{} {}", v.code.as_str(), v.detail))
         .collect();
     assert!(blocking.is_empty(), "{bench}: {blocking:?}");
-    schemify_netlist::emit(&e, Dialect::Ngspice).text
+    schemify_netlist::emit(&e, dialect).text
 }
 
 fn same_netlist(name: &str, ours: &str) {
@@ -1498,4 +1503,422 @@ fn a_parent_param_hole_crosses_as_ppar() {
         got.contains("  w {w}\n") && got.contains("  l {l*2}\n"),
         "{got}"
     );
+}
+
+/// A made-up kit whose MOS has three symbol pins and its bulk only in the stopping views:
+/// spectre's termOrder names `B`, a pinless term `[@bsub:%:vss!]` (as SfyStopTerms dumps a
+/// stopping view's terminal), auCdl's `progn(bn)`; its resistor's `sx` is in spectre's
+/// termOrder only (gaps2 S8, P1; the shapes of analogLib nmos and of a commercial kit's
+/// nfet and poly resistor, live ICADVM20.1 p_probe).
+const IMPLICIT_DUMP: &str = r#"("sfyx" 1 "test")
+("lib" "demopdk")
+("cell" "nch3_demo" "ref")
+("cdf" "")
+("param" "model" "string" "demo_nch" "Model" "" ("storeDefault") () "")
+("param" "w" "string" "300n" "Width" "lengthMetric" ("parseAsNumber" "parseAsCEL") () "demoCB('w)")
+("param" "l" "string" "30n" "Length" "lengthMetric" ("parseAsNumber" "parseAsCEL") () "demoCB('l)")
+("param" "bn" "string" "S" "Bulk node" "" ("parseAsCEL") () "")
+("siminfo" "auCdl" (("instParameters" ("w")) ("modelName" "NDEMO") ("namePrefix" "M") ("netlistProcedure" "ansCdlCompPrim") ("termOrder" ("D" "G" "S" "progn(bn)"))))
+("siminfo" "hspiceD" (("instParameters" ("w")) ("termOrder" ("D" "G" "S" "B"))))
+("siminfo" "spectre" (("instParameters" ("w")) ("opParamExprList" ("(\"id\" \"OP(mappedRoot(\\\".m0\\\") \\\"id\\\")\")")) ("otherParameters" ("model")) ("termMapping" (("D" ":1") ("G" ":2"))) ("termOrder" ("D" "G" "S" "B"))))
+("cv" "symbol" "schematicSymbol" 160)
+("term" "B" "inputOutput" "[@bsub:%:vss!]")
+("term" "D" "inputOutput" "")
+("term" "G" "input" "")
+("term" "S" "inputOutput" "")
+("pinfig" 1 "D" 8 38 12 42)
+("pinfig" 2 "G" -32 -2 -28 2)
+("pinfig" 3 "S" 8 -42 12 -38)
+("cell" "res3_demo" "ref")
+("cdf" "")
+("param" "r" "string" "2k" "R" "resistance" ("parseAsNumber" "parseAsCEL") () "demoCB('r)")
+("param" "rsub" "netSet" "[@lsup:%:vss!]" "Bulk" "" ("storeDefault") () "")
+("siminfo" "auCdl" (("instParameters" ("r")) ("modelName" "RDEMO") ("namePrefix" "R") ("netlistProcedure" "ansCdlCompPrim") ("termOrder" ("in" "out"))))
+("siminfo" "spectre" (("componentName" "resistor") ("instParameters" ("r")) ("termOrder" ("in" "out" "sx"))))
+("cv" "symbol" "schematicSymbol" 160)
+("term" "in" "inputOutput" "")
+("term" "out" "inputOutput" "")
+("term" "sx" "inputOutput" "[@rsub:%:NOTSET!]")
+("pinfig" 1 "in" -2 28 2 32)
+("pinfig" 2 "out" -2 -32 2 -28)
+("lib" "demo")
+("cell" "amp" "design")
+("cv" "schematic" "schematic" 160)
+("inst" 1 "M0" "demopdk" "nch3_demo" "symbol" 0 0 "R0")
+("inst" 2 "R0" "demopdk" "res3_demo" "symbol" 100 0 "R0")
+("wire" 3 (10 40 10 60) 0)
+("wire" 4 (-30 0 -50 0) 0)
+("wire" 5 (10 -40 10 -60) 0)
+("wire" 6 (100 30 100 50) 0)
+("wire" 7 (100 -30 100 -50) 0)
+("label" 8 3 "d" 10 60 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 9 4 "g" -50 0 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 10 5 "s" 10 -60 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 11 6 "d" 100 50 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 12 7 "s" 100 -50 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("inst" 13 "M1" "demopdk" "nch3_demo" "symbol" 200 0 "R0")
+("wire" 14 (210 40 210 60) 0)
+("wire" 15 (170 0 150 0) 0)
+("wire" 16 (210 -40 210 -60) 0)
+("label" 17 14 "d" 210 60 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 18 15 "g" 150 0 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("label" 19 16 "x" 210 -60 "R0" "lowerLeft" "stick" 10 "normal" "wire" "label")
+("prop" 13 "bn" "string" "D")
+("end")
+"#;
+
+#[test]
+fn stopping_view_terminals_become_inherited_pins_in_both_formats() {
+    let imp = virtuoso::import(
+        IMPLICIT_DUMP,
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .unwrap();
+    let cell = |stem: &str| {
+        let f = imp.files.iter().find(|f| f.0.ends_with(stem)).unwrap();
+        String::from_utf8_lossy(&f.1).into_owned()
+    };
+    let nch = cell("nch3_demo.shprim");
+    for want in [
+        "pin bsub inout 0 0\n  inherit vss\n",
+        r#"format spectre "{name} ({D} {G} {S} {bsub}) {model} w={w}""#,
+        r#"format cdl "M{name} {D} {G} {S} {bn == \"B\" ? bsub : bn == \"D\" ? D : bn == \"G\" ? G : bn == \"S\" ? S : bn} NDEMO w={w}""#,
+    ] {
+        assert!(nch.contains(want), "{want}\n{nch}");
+    }
+    let res = cell("res3_demo.shprim");
+    for want in [
+        "pin rsub inout 0 0\n  inherit vss\n",
+        r#"format spectre "{name} ({in} {out} {rsub}) resistor r={r}""#,
+        r#"format cdl "R{name} {in} {out} r={r} $[RDEMO]""#,
+    ] {
+        assert!(res.contains(want), "{want}\n{res}");
+    }
+    let text = imp.notes.text();
+    assert!(!text.contains("termOrder"), "{text}");
+    assert!(
+        text.contains(
+            "needs_review:inherit\tdemopdk/res3_demo\trsub defaults to the inherited lsup"
+        ),
+        "{text}"
+    );
+    // What simInfo the formats leave, one row per cell; the kit's callbacks one row per
+    // (library, function) (gaps2 S9, P14, P13).
+    for want in [
+        "needs_review:format\tdemopdk/nch3_demo\tsimInfo not carried: hspiceD (all); spectre opParamExprList termMapping\n",
+        "needs_review:callback\tdemopdk\tdemoCB: callbacks of 3 params in 2 cells not carried (e.g. nch3_demo param w: demoCB('w))\n",
+    ] {
+        assert!(text.contains(want), "{want}\n{text}");
+    }
+    assert_eq!(text.matches("needs_review:callback").count(), 1, "{text}");
+    assert!(!text.contains("res3_demo\tsimInfo"), "{text}");
+    loads(&imp.files);
+    let spectre = netlist_in(
+        &imp.files,
+        "demo/amp.shbench",
+        schemify_elab::Dialect::Spectre,
+    );
+    assert!(
+        spectre.contains("M0 (d g s vss) demo_nch w=3e-7"),
+        "{spectre}"
+    );
+    assert!(
+        spectre.contains("R0 (d s vss) resistor r=2000"),
+        "{spectre}"
+    );
+    let cdl = netlist_in(&imp.files, "demo/amp.shbench", schemify_elab::Dialect::Cdl);
+    // bn names a terminal: its net (S's by default, D's on M1), as auCdl does.
+    assert!(cdl.contains("MM0 d g s s NDEMO w=3e-7"), "{cdl}");
+    assert!(cdl.contains("MM1 d g x d NDEMO w=3e-7"), "{cdl}");
+}
+
+/// The device lines of a Spectre netlist (`\` continuations joined): (name, nodes, master).
+fn spectre_devices(text: &str) -> Vec<(String, Vec<String>, String)> {
+    let joined = text.replace("\\\n", " ");
+    joined
+        .lines()
+        .filter_map(|l| {
+            let (name, rest) = l.trim().split_once(" (")?;
+            let (nodes, tail) = rest.split_once(')')?;
+            let master = tail.split_whitespace().next()?.to_owned();
+            Some((
+                name.to_owned(),
+                nodes.split_whitespace().map(str::to_owned).collect(),
+                master,
+            ))
+        })
+        .filter(|d| !d.0.contains(' ') && d.0 != "subckt")
+        .collect()
+}
+
+/// Lane P's live comparison (live/checks/p_drive.sh): `$SFY_P_DIR/p_terms.sfyx` imported;
+/// per cell, Schemify's spectre netlist against si's (every device with its master and as
+/// many nodes) and its CDL against auCdl (spicecmp, auCdl's `$[model]` names left out).
+/// One PASS/FAIL line each; the netlists and the report are written beside them.
+#[test]
+#[ignore]
+fn live_p_terms() {
+    let Some(dir) = std::env::var_os("SFY_P_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let dump = std::fs::read_to_string(dir.join("p_terms.sfyx")).unwrap();
+    let imp = virtuoso::import(
+        &dump,
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .unwrap();
+    std::fs::write(dir.join("p_terms.report.txt"), imp.notes.text()).unwrap();
+    for (p, b) in &imp.files {
+        let path = dir.join("project").join(p);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b).unwrap();
+    }
+    let mut fails = 0;
+    for cell in ["inv_tb", "bulk", "res", "dev"] {
+        let Some(path) = imp.files.iter().map(|f| &f.0).find(|p| {
+            p.ends_with(&format!("/{cell}.shbench")) || p.ends_with(&format!("/{cell}.shcomp"))
+        }) else {
+            println!("FAIL {cell}: not imported");
+            fails += 1;
+            continue;
+        };
+        let read = |sim: &str| std::fs::read_to_string(dir.join(format!("{cell}.{sim}.net")));
+        let ours = netlist_in(&imp.files, path, schemify_elab::Dialect::Spectre);
+        std::fs::write(dir.join(format!("{cell}.spectre.ours")), &ours).unwrap();
+        if let Ok(want) = read("spectre") {
+            let (a, b) = (spectre_devices(&ours), spectre_devices(&want));
+            let same = a.len() == b.len()
+                && b.iter().all(|w| {
+                    a.iter()
+                        .any(|o| o.0 == w.0 && o.2 == w.2 && o.1.len() == w.1.len())
+                });
+            if !same {
+                fails += 1;
+            }
+            println!(
+                "{} netlist.spectre.{cell}: ours {a:?} si {b:?}",
+                if same { "PASS" } else { "FAIL" }
+            );
+        } else {
+            println!("SKIP netlist.spectre.{cell}: no si netlist");
+        }
+        let ours = netlist_in(&imp.files, path, schemify_elab::Dialect::Cdl);
+        std::fs::write(dir.join(format!("{cell}.auCdl.ours")), &ours).unwrap();
+        match read("auCdl") {
+            Ok(want) => {
+                // auCdl's `$[model]` names out, and the `+` lines continuing its `*.GLOBAL`
+                // and `*.PIN` comments (spicecmp would join them to `.PARAM`).
+                let mut comment = false;
+                let strip = |t: &str| -> String {
+                    t.lines()
+                        .map(|l| match l.find(" $[") {
+                            Some(k) => {
+                                let end = l[k..].find(']').map_or(l.len(), |e| k + e + 1);
+                                format!("{}{}\n", &l[..k], &l[end..])
+                            }
+                            None => format!("{l}\n"),
+                        })
+                        .collect()
+                };
+                let want: String = want
+                    .lines()
+                    .filter(|l| {
+                        let cont = l.starts_with('+');
+                        if !cont {
+                            comment = l.starts_with('*');
+                        }
+                        !(cont && comment)
+                    })
+                    .map(|l| format!("{l}\n"))
+                    .collect();
+                // Globals by Schemify's spelling (§3.3: `gnd!` is GND, an inherited default
+                // `x!` is the global `x`).
+                let mut bangs: Vec<(String, String)> = vec![("gnd!".into(), "0".into())];
+                for w in want.split(|ch: char| ch.is_whitespace()) {
+                    if let Some(x) = w.strip_suffix('!')
+                        && w != "gnd!"
+                        && !bangs.iter().any(|b| b.0 == w)
+                    {
+                        bangs.push((w.to_owned(), x.to_owned()));
+                    }
+                }
+                let c = schemify_spicecmp::compare(
+                    &strip(&ours),
+                    &strip(&want),
+                    &schemify_spicecmp::Options {
+                        path_aliases: bangs,
+                        ..schemify_spicecmp::Options::default()
+                    },
+                );
+                println!(
+                    "{} netlist.cdl.{cell}: {:?}",
+                    if c.is_equal() { "PASS" } else { "WARN" },
+                    c.diffs
+                );
+            }
+            Err(_) => println!("SKIP netlist.cdl.{cell}: no auCdl netlist"),
+        }
+    }
+    assert_eq!(fails, 0, "see the FAIL lines");
+}
+
+/// gaps2 P12: a 4-pin cell mapped onto a kit device whose bulk is an inherited pin of its
+/// mirror (`pin b bsub`): the drawn pins are placed by the mirror's geometry, the bulk is
+/// a `conn` request the loader turns into the instance's netSet override.
+#[test]
+fn a_pin_mapped_onto_an_inherited_terminal_is_a_loader_connection() {
+    let mut f = Files::new();
+    f.insert(
+        "schemify.project".into(),
+        b"schemify 1 project\n\nlib dev path dev\nlib demopdk path demopdk\n".to_vec(),
+    );
+    f.insert(
+        "dev/n4.shprim".into(),
+        b"schemify 1 shprim\n\npin d inout 10 40\npin g in -30 0\npin s inout 10 -40\npin b inout 30 0\n\nparam W 1\n\nimpl spice spice\n\nline 0 -30 0 30\n".to_vec(),
+    );
+    f.insert(
+        "demopdk/nch3_demo.shprim".into(),
+        b"schemify 1 shprim\n  provenance \"virtuoso demopdk/nch3_demo\"\n\npin D inout 10 40\npin G in -30 0\npin S inout 10 -40\npin bsub inout 0 0\n  inherit vss\n\nparam w 1\n\nimpl spice spice\n\nline 0 -30 0 30\n".to_vec(),
+    );
+    f.insert(
+        "tb.shbench".into(),
+        b"schemify 1 shbench\n\ninst aaaaaa dev:n4\n  at 0 0 R0\n  name M1\n\nwire bbbbbb 30 0 50 0\nlabel cccccc 50 0 R0 VBB\n".to_vec(),
+    );
+    let d = design(&f);
+    let tops = [d.find("tb.shbench").unwrap()];
+    let m = Mapping::parse(
+        "map dev:n4 virtuoso demopdk nch3_demo\n  pin d D\n  pin g G\n  pin s S\n  pin b bsub\n  param W w\n",
+    )
+    .unwrap();
+    let x = virtuoso::export(&d, &tops, &m, &ExportOptions::default()).unwrap();
+    // The three drawn pins land where n4's were (no request); the bulk is one.
+    assert_eq!(x.sfyx.matches("(\"conn\" ").count(), 1, "{}", x.sfyx);
+    assert!(x.sfyx.contains("\"bsub\" \"VBB\")"), "{}", x.sfyx);
+}
+
+/// A drawn inherited terminal whose net expression names another property (`B`,
+/// `[@bsub:%:vss!]`): the pin keeps the terminal's name and records the property
+/// (`vinherit`), so an instance's netSet `bsub` imports as `inherit B` and exports back as
+/// `bsub`, not `B` (gaps2 P1 follow-up).
+#[test]
+fn an_inherited_terminal_named_apart_from_its_property_keeps_the_property() {
+    let dump = r#"("sfyx" 1 "test")
+("lib" "demopdk")
+("cell" "n4b" "ref")
+("cdf" "")
+("param" "w" "string" "1u" "W" "" ("parseAsNumber" "parseAsCEL") () "")
+("siminfo" "spectre" (("componentName" "nch") ("instParameters" ("w")) ("termOrder" ("D" "G" "S" "B"))))
+("cv" "symbol" "schematicSymbol" 160)
+("term" "B" "inputOutput" "[@bsub:%:vss!]")
+("term" "D" "inputOutput" "")
+("term" "G" "input" "")
+("term" "S" "inputOutput" "")
+("pinfig" 1 "B" 28 -2 32 2)
+("pinfig" 2 "D" 8 38 12 42)
+("pinfig" 3 "G" -32 -2 -28 2)
+("pinfig" 4 "S" 8 -42 12 -38)
+("lib" "demo")
+("cell" "t" "design")
+("cv" "schematic" "schematic" 160)
+("inst" 1 "M0" "demopdk" "n4b" "symbol" 0 0 "R0")
+("prop" 1 "bsub" "netSet" "VDDA")
+("end")
+"#;
+    let imp = virtuoso::import(dump, &Files::new(), &Mapping::default(), &import_opts()).unwrap();
+    let file = |stem: &str| {
+        let f = imp.files.iter().find(|f| f.0.ends_with(stem)).unwrap();
+        String::from_utf8_lossy(&f.1).into_owned()
+    };
+    let m = file("n4b.shprim");
+    assert!(
+        m.contains("pin B inout 30 0\n  inherit vss\n  vinherit bsub\n"),
+        "{m}"
+    );
+    let t = file("t.shbench");
+    assert!(t.contains("  inherit B VDDA\n"), "{t}");
+    assert!(
+        !imp.notes.text().contains("netSet bsub"),
+        "{}",
+        imp.notes.text()
+    );
+    let files: Files = imp.files.iter().cloned().collect();
+    let d = design(&files);
+    let tops = [d.find("demo/t.shbench").unwrap()];
+    let x = virtuoso::export(&d, &tops, &Mapping::default(), &ExportOptions::default()).unwrap();
+    assert!(
+        x.sfyx.contains("\"bsub\" \"netSet\" \"VDDA\")"),
+        "{}",
+        x.sfyx
+    );
+}
+
+/// Lane P's live refresh comparison (live/checks/p_drive.sh): in `$SFY_P_DIR/project`
+/// refreshed by `virtuoso-refresh --apply`, every `cached` value of the resized kit nfet MN
+/// (inv) and resistor R0 (res) against what the callbacks derive for the same sizes
+/// (`p_truth.txt`, `<inst> <param> <value>` lines). One PASS/FAIL line each.
+#[test]
+#[ignore]
+fn live_p_refresh() {
+    let Some(dir) = std::env::var_os("SFY_P_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let truth = std::fs::read_to_string(dir.join("p_truth.txt")).unwrap();
+    let num = |s: &str| schemify_expr::parse_num(s.trim()).ok();
+    let mut fails = 0;
+    for (file, inst) in [
+        ("sfyprobe_p/inv.shcomp", "MN"),
+        ("sfyprobe_p/res.shbench", "R0"),
+    ] {
+        let text = std::fs::read_to_string(dir.join("project").join(file)).unwrap();
+        let block: Vec<&str> = text
+            .split("\n\n")
+            .find(|b| b.lines().any(|l| l == format!("  name {inst}")))
+            .unwrap_or_default()
+            .lines()
+            .collect();
+        let cached: Vec<(&str, &str)> = block
+            .iter()
+            .filter_map(|l| {
+                let mut w = l.split_whitespace();
+                (w.next() == Some("cached"))
+                    .then(|| (w.next().unwrap_or(""), w.next().unwrap_or("")))
+            })
+            .collect();
+        let mut bad = Vec::new();
+        for (p, v) in &cached {
+            let want = truth.lines().find_map(|l| {
+                let mut w = l.splitn(3, ' ');
+                (w.next() == Some(inst) && w.next() == Some(p)).then(|| w.next().unwrap_or(""))
+            });
+            // A string value is written quoted and escaped (`"\"\""`), the truth bare.
+            let v = &v.trim_matches(['"', '\\']);
+            let same = match (want, num(v), want.and_then(num)) {
+                (_, Some(a), Some(b)) => (a - b).abs() <= 1e-6 * a.abs().max(b.abs()),
+                (Some(w), _, _) => w == *v,
+                _ => false,
+            };
+            if !same {
+                bad.push(format!("{p}: ours {v} callbacks {want:?}"));
+            }
+        }
+        let ok = !cached.is_empty() && bad.is_empty();
+        if !ok {
+            fails += 1;
+        }
+        println!(
+            "{} refresh.{inst}: {} cached value(s) {}",
+            if ok { "PASS" } else { "FAIL" },
+            cached.len(),
+            if bad.is_empty() {
+                "equal the callbacks'".to_owned()
+            } else {
+                bad.join("; ")
+            }
+        );
+    }
+    assert_eq!(fails, 0, "see the FAIL lines");
 }

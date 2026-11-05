@@ -16,7 +16,10 @@ On the machine that runs Virtuoso:
 - Virtuoso on `PATH`, and a `cds.lib` that defines `analogLib` and `basic`. Your usual project directory has one.
 - This repository with its submodules, and the Rust toolchain (`rustup`, installable in your
   home directory without root). The kit's host steps are a Rust test of this crate. The first
-  run compiles it, which takes a few minutes.
+  run compiles it, which takes a few minutes. It builds with `--locked` and the toolchain of
+  `rust-toolchain.toml`: if it stops with "cannot update the lock file", a `.cargo/config.toml`
+  in the checkout or a directory above it patches a dependency (`[patch]` to a local copy).
+  Remove that patch or keep the checkout outside its directory.
 - Optional, each enables more checks: `si` (netlists), `ocean` and `spectre` (simulation). The
   kit finds them on `PATH` and reports SKIP for what it could not run.
 

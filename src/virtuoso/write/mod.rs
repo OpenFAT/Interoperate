@@ -264,6 +264,16 @@ fn inst_info(d: &Design, plan: &Plan, m: &Mapping, ci: usize, path: &str) -> Opt
     })
 }
 
+/// The Virtuoso property an inherited pin of `c` is overridden by: the pin's `vinherit`
+/// (import's record of a terminal whose net expression names another property, GF22-style
+/// `[@lSup:%:VSS!]` on terminal `b`), else the pin's own name (§6.2).
+pub(crate) fn inherit_prop(c: &Cell, pin: &str) -> String {
+    c.records(RecordKind::Pin)
+        .find(|&r| c.field(r, 0) == pin)
+        .and_then(|r| c.attr(r, "vinherit"))
+        .map_or_else(|| vname(pin), str::to_owned)
+}
+
 /// Builds the dump tables of Design cell `ci`.
 fn cell_out(d: &Design, ci: usize, plan: &Plan, m: &Mapping, notes: &mut Notes) -> DCell {
     let c = &d.cells[ci];

@@ -18,6 +18,9 @@
 ;; wide  declared w and l (ad = w times a table of l) and twelve boolean layout options
 ;;       that each move lx (how many are on): 14 inputs, a rule's search reads only the
 ;;       inputs whose probe moved its param.
+;; fing  declared w (number) and nf (count); ad = w/nf times 80n, and nf is put back to 1
+;;       when w/nf would be below 80n, which every nf nudge at the default w (80n) is; it
+;;       netlists ad as adx (propMapping), as a kit resistor netlists r from value.
 ;; zeta and sel declare their inputs in paramLabelSet; tab and chaos declare none (the
 ;; influence graph's sources are their inputs).
 ;; sel   inputs gx (number), mode (a choice of a b c) and dbl (a boolean); pz is 3gx, 5gx or
@@ -88,6 +91,14 @@
     (zpdkSet "lx" (sprintf nil "%d" n))
     t))
 
+(procedure (fingCB)
+  (let ((w (atof (zpdkGet "w"))) (nf (zpdkGet "nf")))
+    (when (lessp (quotient w nf) 8e-08)
+      (setq nf 1)
+      (zpdkSet "nf" 1))
+    (zpdkSet "ad" (sprintf nil "%g" (times (quotient w nf) 8e-08)))
+    t))
+
 (procedure (SfyFixCharPdk)
   (let ((cdf nil))
     (SfyFixSymbol "zpdk" "zeta" (list (list "A" "inputOutput" 0 40) (list "B" "inputOutput" 0 -40)))
@@ -102,6 +113,16 @@
     (cdfCreateParam cdf ?name "sig" ?type "string" ?defValue "2e-07" ?prompt "sig" ?parseAsNumber "yes")
     (setSGq cdf (list nil 'spectre (list nil 'termOrder '(A B) 'instParameters '(zq kappa ct rho sig))) simInfo)
     (setSGq cdf "-model zq kappa ct" paramLabelSet)
+    (cdfSaveCDF cdf)
+    (SfyFixSymbol "zpdk" "fing" (list (list "A" "inputOutput" 0 40) (list "B" "inputOutput" 0 -40)))
+    (setq cdf (SfyFixCdf "zpdk" "fing"))
+    (cdfCreateParam cdf ?name "w" ?type "string" ?defValue "8e-08" ?prompt "w" ?parseAsNumber "yes" ?callback "(fingCB)")
+    (cdfCreateParam cdf ?name "nf" ?type "int" ?defValue 1 ?prompt "nf" ?callback "(fingCB)")
+    (cdfCreateParam cdf ?name "ad" ?type "string" ?defValue "6.4e-15" ?prompt "ad" ?parseAsNumber "yes")
+    (setSGq cdf (list nil 'spectre (list nil 'termOrder '(A B) 'instParameters '(w nf adx)
+                                    'propMapping '(nil adx ad)))
+      simInfo)
+    (setSGq cdf "w nf" paramLabelSet)
     (cdfSaveCDF cdf)
     (SfyFixSymbol "zpdk" "tab" (list (list "A" "inputOutput" 0 40) (list "B" "inputOutput" 0 -40)))
     (setq cdf (SfyFixCdf "zpdk" "tab"))

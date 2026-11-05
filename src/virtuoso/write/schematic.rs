@@ -118,11 +118,11 @@ pub(super) fn schematic_out(
             .iter()
             .find(|x| map::mirror_of(x).is_some_and(|(l, cl)| (l.as_str(), cl.as_str()) == target))
             .map(|x| {
+                // Its inherited pins are drawn nowhere: the loader connects them (netSet).
                 let sp = sym_pins(x);
-                sp.name
-                    .iter()
-                    .zip(&sp.at)
-                    .map(|(nm, at)| (vname(nm), *at))
+                (0..sp.name.len())
+                    .filter(|&i| sp.inherit[i].is_none())
+                    .map(|i| (vname(&sp.name[i]), sp.at[i]))
                     .collect::<Vec<_>>()
             })
             // analogLib's pins, as measured (devices::alib_pins).
@@ -313,7 +313,7 @@ pub(super) fn schematic_out(
                     // inherited-connection override (G13).
                     cv.props.push(Prop::new(
                         r,
-                        &vname(pin),
+                        &inherit_prop(master, pin),
                         "netSet",
                         net_to_virtuoso(net, false).0,
                     ));

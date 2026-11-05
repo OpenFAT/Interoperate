@@ -1,7 +1,7 @@
 schemify 1 shprim
   provenance "virtuoso analogLib/pmos4"
   vibox -22 -32 25 32
-  vsym 42eb1bea59826902
+  vsym 99adbc7d22ee7ccc
 
 pin D inout 20 30
   vplabel none
@@ -26,7 +26,7 @@ param m 1
 
 impl spice spice
   format spice "M{name} {D} {G} {S} {B} {model} w={w} l={l} m={m}"
-  format spectre "{name} ({D} {G} {S} {B}) pmos4 w={w} l={l} m={m}"
+  format spectre "{name} ({D} {G} {S} {B}) {model} w={w} l={l} m={m}"
 
 circle -3 0 3
 

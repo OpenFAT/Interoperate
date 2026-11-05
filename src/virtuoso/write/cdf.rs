@@ -38,7 +38,7 @@ pub(super) fn cdf_out(c: &Cell, core: bool, notes: &mut Notes) -> Cdf {
     for k in 0..pins.name.len() {
         if let (Some(net), None) = (&pins.inherit[k], &pins.alias[k]) {
             cdf.params.push(CdfParam {
-                name: vname(&pins.name[k]),
+                name: inherit_prop(c, &pins.name[k]),
                 ty: "netSet".into(),
                 def: net_to_virtuoso(net, true).0,
                 prompt: pins.name[k].clone(),

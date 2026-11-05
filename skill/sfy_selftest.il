@@ -82,7 +82,9 @@
 ;; (spec 9.7, 9.11); and without the skipped counts, which name what no load restores.
 (procedure (SfySelfKeep recs)
   (setof r recs
-    (not (or (member (car (cadr r)) (list "maesdb" "maestate" "maefile" "skipped"))
+    ;; skipview and libcdf name what the dump does not carry (other views, the library
+    ;; CDF): the scratch library has neither, by design.
+    (not (or (member (car (cadr r)) (list "maesdb" "maestate" "maefile" "skipped" "skipview" "libcdf"))
              (and (equal (car (cadr r)) "prop")
                   (stringp (nth 2 (cadr r)))
                   (geqp (strlen (nth 2 (cadr r))) 8)

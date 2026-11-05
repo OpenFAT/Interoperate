@@ -26,7 +26,11 @@ pub(super) fn symbol_out(c: &Cell, ids: &mut Ids, notes: &mut Notes) -> Cv {
         let term = vname(pins.alias[k].as_deref().unwrap_or(&pins.name[k]));
         if pins.alias[k].is_none() {
             let netexpr = pins.inherit[k].as_ref().map_or(String::new(), |net| {
-                format!("[@{}:%:{}]", term, net_to_virtuoso(net, true).0)
+                format!(
+                    "[@{}:%:{}]",
+                    inherit_prop(c, &pins.name[k]),
+                    net_to_virtuoso(net, true).0
+                )
             });
             cv.terms.push(Term {
                 name: term.clone(),

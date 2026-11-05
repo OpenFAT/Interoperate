@@ -266,9 +266,23 @@
     (foreach x (SfySortByKey (setof x vl (nequal (cadr x) "")))
       (SfyPut port "testvar" x))
     ;; Every simulator option but temp (the temperature above): Rust drops the defaults.
+    ;; One equal to the session's spectre.opts value is the site's, not the test's: a kit's
+    ;; cdsinit envSetVal("spectre.opts" "additionalArgs" 'string "vdsatmod=gds") answers
+    ;; for every test, the setup stores "", and a load elsewhere has another (live
+    ;; ICADVM20.1, GF22FDX pdk.cdsinit: SfySelfTest's second dump lacked it).
     (setq vl nil)
     (foreach kv (car (errset (maeGetSimOption test ?session sess)))
-      (when (and (listp kv) (stringp (car kv)) (nequal (car kv) "temp"))
+      ;; An analysis severity at "None" is no setting: a test the loader creates answers
+      ;; acSeverity ... tranSeverity "None", one restored from its files no such keys (live
+      ;; ICADVM20.1, SfySelfTest of the kit's rclive_tb).
+      (when (and (listp kv) (stringp (car kv)) (nequal (car kv) "temp")
+                 (not (and (equal (SfyAtomStr (cadr kv)) "None")
+                           (geqp (strlen (car kv)) 8)
+                           (equal (substring (car kv) (difference (strlen (car kv)) 7) 8)
+                                  "Severity")))
+                 (not (and (nequal (SfyAtomStr (cadr kv)) "")
+                           (equal (SfyAtomStr (cadr kv))
+                                  (SfyAtomStr (car (errset (envGetVal "spectre.opts" (car kv)))))))))
         (setq vl (cons (list (car kv) (SfyAtomStr (cadr kv))) vl))))
     (foreach x (SfySortByKey vl)
       (SfyPut port "simoption" x))
