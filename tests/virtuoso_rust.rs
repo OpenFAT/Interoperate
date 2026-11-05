@@ -1799,3 +1799,59 @@ fn a_pin_mapped_onto_an_inherited_terminal_is_a_loader_connection() {
     assert_eq!(x.sfyx.matches("(\"conn\" ").count(), 1, "{}", x.sfyx);
     assert!(x.sfyx.contains("\"bsub\" \"VBB\")"), "{}", x.sfyx);
 }
+
+/// A drawn inherited terminal whose net expression names another property (`B`,
+/// `[@bsub:%:vss!]`): the pin keeps the terminal's name and records the property
+/// (`vinherit`), so an instance's netSet `bsub` imports as `inherit B` and exports back as
+/// `bsub`, not `B` (gaps2 P1 follow-up).
+#[test]
+fn an_inherited_terminal_named_apart_from_its_property_keeps_the_property() {
+    let dump = r#"("sfyx" 1 "test")
+("lib" "demopdk")
+("cell" "n4b" "ref")
+("cdf" "")
+("param" "w" "string" "1u" "W" "" ("parseAsNumber" "parseAsCEL") () "")
+("siminfo" "spectre" (("componentName" "nch") ("instParameters" ("w")) ("termOrder" ("D" "G" "S" "B"))))
+("cv" "symbol" "schematicSymbol" 160)
+("term" "B" "inputOutput" "[@bsub:%:vss!]")
+("term" "D" "inputOutput" "")
+("term" "G" "input" "")
+("term" "S" "inputOutput" "")
+("pinfig" 1 "B" 28 -2 32 2)
+("pinfig" 2 "D" 8 38 12 42)
+("pinfig" 3 "G" -32 -2 -28 2)
+("pinfig" 4 "S" 8 -42 12 -38)
+("lib" "demo")
+("cell" "t" "design")
+("cv" "schematic" "schematic" 160)
+("inst" 1 "M0" "demopdk" "n4b" "symbol" 0 0 "R0")
+("prop" 1 "bsub" "netSet" "VDDA")
+("end")
+"#;
+    let imp = virtuoso::import(dump, &Files::new(), &Mapping::default(), &import_opts()).unwrap();
+    let file = |stem: &str| {
+        let f = imp.files.iter().find(|f| f.0.ends_with(stem)).unwrap();
+        String::from_utf8_lossy(&f.1).into_owned()
+    };
+    let m = file("n4b.shprim");
+    assert!(
+        m.contains("pin B inout 30 0\n  inherit vss\n  vinherit bsub\n"),
+        "{m}"
+    );
+    let t = file("t.shbench");
+    assert!(t.contains("  inherit B VDDA\n"), "{t}");
+    assert!(
+        !imp.notes.text().contains("netSet bsub"),
+        "{}",
+        imp.notes.text()
+    );
+    let files: Files = imp.files.iter().cloned().collect();
+    let d = design(&files);
+    let tops = [d.find("demo/t.shbench").unwrap()];
+    let x = virtuoso::export(&d, &tops, &Mapping::default(), &ExportOptions::default()).unwrap();
+    assert!(
+        x.sfyx.contains("\"bsub\" \"netSet\" \"VDDA\")"),
+        "{}",
+        x.sfyx
+    );
+}

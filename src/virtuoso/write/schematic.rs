@@ -296,7 +296,7 @@ pub(super) fn schematic_out(
                     // inherited-connection override (G13).
                     cv.props.push(Prop::new(
                         r,
-                        &vname(pin),
+                        &inherit_prop(master, pin),
                         "netSet",
                         net_to_virtuoso(net, false).0,
                     ));

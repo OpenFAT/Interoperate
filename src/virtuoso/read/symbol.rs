@@ -79,9 +79,8 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
 pub(super) fn term_pin(sym: &Cv, t: &Term) -> String {
     let pinless = !sym.pinfigs.iter().any(|f| f.term == t.name);
     match parse_netexpr(&t.netexpr) {
-        // ponytail: a drawn inherited terminal keeps its name (its instances' property must
-        // then be spelled like it); two inheriting one property would give two pins of one
-        // name.
+        // A drawn inherited terminal keeps its name; its property goes to `vinherit`.
+        // ponytail: two inheriting one property would give two pins of one name.
         Some((p, _)) if pinless && !sym.terms.iter().any(|x| x.name == p) => {
             net_from_virtuoso(&p).text
         }
@@ -112,6 +111,16 @@ fn netset_default(c: &DCell, prop: &str, notes: &mut Notes) -> Option<String> {
         return Some(d);
     }
     parse_netexpr(&format!("[@{prop}:%:{}]", p.def.trim())).map(|x| x.1)
+}
+
+/// The property instances override inherited pin `pin` by, when it is not the pin's own
+/// name: a drawn terminal whose net expression names another property (kept as the pin's
+/// `vinherit`, so import reads such an instance property as `inherit` and export writes
+/// it back).
+pub(super) fn inherit_prop(sym: &Cv, pin: &str) -> Option<String> {
+    let t = sym.terms.iter().find(|t| term_pin(sym, t) == pin)?;
+    let (p, _) = parse_netexpr(&t.netexpr)?;
+    (crate::virtuoso::write::vname(pin) != p).then_some(p)
 }
 
 /// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `GND`, §3.3).
@@ -500,6 +509,9 @@ pub(super) fn build(
         doc.push_field_coord(p.at[1]);
         if let Some(i) = &p.inherit {
             push_attr(&mut doc, "inherit", &[i]);
+            if let Some(v) = sym.and_then(|sv| inherit_prop(sv, &p.name)) {
+                push_attr(&mut doc, "vinherit", &[&v]);
+            }
         }
         if let Some(a) = &p.alias {
             push_attr(&mut doc, "alias", &[a]);

@@ -214,8 +214,9 @@ impl<'a> Ctx<'a> {
             i.pins = pins_in(c, sym, &mut Notes::default());
             for p in &i.pins {
                 if p.inherit.is_some() {
-                    i.inherit_props
-                        .push((crate::virtuoso::write::vname(&p.name), p.name.clone()));
+                    let prop = inherit_prop(sym, &p.name)
+                        .unwrap_or_else(|| crate::virtuoso::write::vname(&p.name));
+                    i.inherit_props.push((prop, p.name.clone()));
                 }
             }
         }
@@ -285,8 +286,9 @@ impl<'a> Ctx<'a> {
                         alias: attr("alias"),
                     };
                     if row.inherit.is_some() {
-                        i.inherit_props
-                            .push((crate::virtuoso::write::vname(&row.name), row.name.clone()));
+                        let prop = attr("vinherit")
+                            .unwrap_or_else(|| crate::virtuoso::write::vname(&row.name));
+                        i.inherit_props.push((prop, row.name.clone()));
                     }
                     i.pins.push(row);
                 }
