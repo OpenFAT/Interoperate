@@ -407,7 +407,17 @@ fn value_lists_and_lvs_ignore_are_reviewed() {
     // Row 15: a dialect Schemify has no impl for is counted.
     assert!(t.contains("unused-attr\tsymbol tedax_format\t1\n"), "{t}");
     let vec = file(&out, "lib/vec.shbench");
-    assert!(vec.contains("name R2,R1\n") && !vec.contains("?1"), "{vec}");
+    // The elements keep the default; the list rides in `xsprop` and goes back to xschem.
+    assert!(
+        vec.contains("name R2,R1\n  xsprop value \"?1 1k,'1k/2'\"\n") && !vec.contains("  value "),
+        "{vec}"
+    );
+    let files: interop::design::Files = out.into_iter().collect();
+    let d = interop::design::load_closed(&files, &["lib/vec.shbench"]).unwrap();
+    let x = interop::xschem_out::export(&d, &[d.find("lib/vec.shbench").unwrap()]).unwrap();
+    let sch = String::from_utf8_lossy(&x.files.iter().find(|f| f.0 == "lib/vec.sch").unwrap().1)
+        .into_owned();
+    assert!(sch.contains("{name=R2,R1 value=\"?1 1k,'1k/2'\""), "{sch}");
 }
 
 /// inv_xschem row 10: xschem netlists a repeated instance name twice (golden nand2), elab
@@ -432,4 +442,29 @@ fn a_repeated_instance_name_is_renamed() {
         "{}",
         report.text()
     );
+}
+
+/// inv_xschem row 14: schematic drawings become rank-3 `shape` records (and go back out
+/// through the xschem export); a graph box stays a `dropped:schematic-graphic` row.
+#[test]
+fn schematic_drawings_become_shapes() {
+    let (out, report) = run(&fixture());
+    let inv = file(&out, "lib/inv.shcomp");
+    assert!(
+        inv.lines()
+            .any(|l| l.starts_with("shape ") && l.ends_with(" line 0 0 10 10")),
+        "{inv}"
+    );
+    let t = report.text();
+    assert!(
+        t.lines().any(|l| l
+            .starts_with("dropped:schematic-graphic\tlib/tb.sch\t0\t1\t1 L/B/P/A records (graphs")),
+        "{t}"
+    );
+    let files: interop::design::Files = out.into_iter().collect();
+    let d = interop::design::load_closed(&files, &["lib/inv.shcomp"]).unwrap();
+    let x = interop::xschem_out::export(&d, &[d.find("lib/inv.shcomp").unwrap()]).unwrap();
+    let sch = String::from_utf8_lossy(&x.files.iter().find(|f| f.0 == "lib/inv.sch").unwrap().1)
+        .into_owned();
+    assert!(sch.contains("\nL 4 0 0 10 10 {}"), "{sch}");
 }

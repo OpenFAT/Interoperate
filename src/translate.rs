@@ -2274,17 +2274,112 @@ impl<'o> Tables<'o> {
             doc.push_value_coord(f.texts.scale[i][0]);
             acc.out(fid, 1);
         }
-        // Drawings.
-        let drawings =
-            (f.lines.xy.len() + f.boxes.xy.len() + f.polygons.layer.len() + f.arcs.layer.len())
-                as u32;
-        if drawings > 0 {
+        // Drawings → rank-3 `shape` records (inv_xschem row 14); graphs and images (boxes
+        // with `flags=graph` or `image=`) have no Schemify form and stay reported.
+        let mut dropped = 0u32;
+        let layer_ok = |l: u8| u32::from(l) < CAD_LAYERS;
+        let mut shape = |doc: &mut Document, line: u32, form: &str, vals: &[i32], layer: u8| {
+            doc.begin_record(RecordKind::Shape);
+            doc.push_field(&ids.next(line, 0));
+            doc.push_field(form);
+            vals.iter().for_each(|&v| doc.push_field_coord(v));
+            push_layer(doc, layer);
+        };
+        for i in 0..f.lines.layer.len() {
+            if !layer_ok(f.lines.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            shape(
+                doc,
+                f.lines.line[i],
+                "line",
+                &f.lines.xy[i],
+                f.lines.layer[i],
+            );
+            let props = Attrs::parse(f.str(f.lines.props[i]));
+            if let Some(d) = props
+                .get("dash")
+                .filter(|d| d.trim().parse::<u32>().is_ok_and(|n| n > 0))
+            {
+                doc.push_attr("dash");
+                doc.push_value(d.trim());
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.boxes.layer.len() {
+            let props = Attrs::parse(f.str(f.boxes.props[i]));
+            if !layer_ok(f.boxes.layer[i])
+                || props.get("flags").is_some_and(|v| v.contains("graph"))
+                || props.get("image").is_some()
+            {
+                dropped += 1;
+                continue;
+            }
+            shape(
+                doc,
+                f.boxes.line[i],
+                "rect",
+                &f.boxes.xy[i],
+                f.boxes.layer[i],
+            );
+            if props.get("fill").map(str::trim) != Some("false") {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.polygons.layer.len() {
+            let (first, count) = (f.polygons.first[i] as usize, f.polygons.count[i] as usize);
+            let mut pts = f.points[first..first + count].to_vec();
+            let closed = pts.len() > 2 && pts.first() == pts.last();
+            if closed {
+                pts.pop();
+            }
+            if pts.len() < 2 || !layer_ok(f.polygons.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            let flat: Vec<i32> = pts.iter().flatten().copied().collect();
+            shape(doc, f.polygons.line[i], "poly", &flat, f.polygons.layer[i]);
+            let props = Attrs::parse(f.str(f.polygons.props[i]));
+            if matches!(props.get("fill").map(str::trim), Some("true" | "full")) {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            if closed {
+                doc.push_attr("closed");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.arcs.layer.len() {
+            if !layer_ok(f.arcs.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            let [cx, cy, r] = f.arcs.circle[i];
+            let [start, sweep] = f.arcs.angles[i];
+            if sweep.abs() >= 360_000 {
+                shape(doc, f.arcs.line[i], "circle", &[cx, cy, r], f.arcs.layer[i]);
+            } else {
+                let v = [cx, cy, r, start, sweep];
+                shape(doc, f.arcs.line[i], "arc", &v, f.arcs.layer[i]);
+            }
+            let props = Attrs::parse(f.str(f.arcs.props[i]));
+            if matches!(props.get("fill").map(str::trim), Some("true" | "full")) {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        if dropped > 0 {
             acc.item(
                 fid,
                 0,
                 Class::Dropped(Drop::Graphic),
-                drawings,
-                format!("{drawings} L/B/P/A records"),
+                dropped,
+                format!("{dropped} L/B/P/A records (graphs, images, layer ≥ 22, < 2 points)"),
             );
         }
         // Interface pins bound by name only (xschem binds subcircuit ports by net name):
@@ -2515,6 +2610,30 @@ impl<'o> Tables<'o> {
                     .filter(|v| collapse_ws(v) != collapse_ws(xs_tpl.get(pname).unwrap_or(""))),
             };
             let Some(v) = value else { continue };
+            // xschem's per-element list on an iterated instance (`C="?1 1p,'1p/2',…"`,
+            // golden sar_adc: `xb6 … C=1p`): an override is one value for every element
+            // (format.md), so the elements keep the default; the text rides in `xsprop`
+            // for the xschem export. ponytail: needs a per-element override in the core.
+            let t = v.trim();
+            if t.strip_prefix('?')
+                .and_then(|r| r.split_once(char::is_whitespace))
+                .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            {
+                doc.push_attr(crate::xschem_out::XSPROP);
+                doc.push_value(pname);
+                doc.push_value(t);
+                acc.item(
+                    fid,
+                    line,
+                    Class::Review(Reason::Expression),
+                    0,
+                    format!(
+                        "{pname}={t}: a per-element value list (Schemify has one value per \
+                         instance; kept as xsprop for the xschem export)"
+                    ),
+                );
+                continue;
+            }
             match override_text(v, *kind, known, &sc.parents) {
                 Ok(text) if map.is_some() && text == *pdefault => {}
                 Ok(text) => {
@@ -3183,18 +3302,6 @@ fn override_text(
     let fail = |reason| review(reason, t);
     if t.contains("tcleval(") {
         return Err(fail(Reason::Tcl));
-    }
-    // xschem's per-element list on an iterated instance (`C="?1 1p,'1p/2',…"`, golden
-    // sar_adc: `xb6 … C=1p`): an override is one value for every element (format.md).
-    // ponytail: reviewed, not split; needs a per-element override in the core (core.md).
-    if t.strip_prefix('?')
-        .and_then(|r| r.split_once(char::is_whitespace))
-        .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
-    {
-        return Err(review(
-            Reason::Expression,
-            format!("{t} (a per-element value list: Schemify has one value per instance)"),
-        ));
     }
     match kind {
         Kind::Number => {

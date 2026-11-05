@@ -71,6 +71,10 @@ enum Target {
     Original(String),
 }
 
+/// Instance attribute `xsprop <param> <text>`: an xschem value with no Schemify form (a
+/// per-element list `?1 a,b,…`, import §3), written back verbatim as `<param>=<text>`.
+pub const XSPROP: &str = "xsprop";
+
 /// Header attribute of a cell imported from xschem: [`fingerprint`] of the file as the
 /// import wrote it. While it matches, export references the original xschem file; after an
 /// edit the cell is written as its own (an edit to an imported sub-cell is never lost).
@@ -1025,6 +1029,16 @@ fn instance(
                     .iter()
                     .find(|(_, core)| *core == p.name)
                     .map_or(p.name, |(x, _)| x);
+                let kept = c
+                    .doc
+                    .attrs(r)
+                    .filter(|&a| c.doc.attr_key(a) == XSPROP)
+                    .find(|&a| c.doc.attr_value(a, 0) == Some(p.name))
+                    .and_then(|a| c.doc.attr_value(a, 1));
+                if let Some(v) = kept {
+                    props.push(kv(key, v));
+                    continue;
+                }
                 let src = over(p.name).unwrap_or(p.default);
                 match xschem_value(p.kind, src, sc, false) {
                     Ok(v) => props.push(kv(key, &v)),
@@ -1043,6 +1057,10 @@ fn instance(
                     continue;
                 }
                 let src = c.doc.attr_value(a, 0).unwrap_or("");
+                if key == XSPROP {
+                    props.push(kv(src, c.doc.attr_value(a, 1).unwrap_or("")));
+                    continue;
+                }
                 let Some(p) = mparams.iter().find(|p| p.name == key) else {
                     notes.review(
                         "expression",
