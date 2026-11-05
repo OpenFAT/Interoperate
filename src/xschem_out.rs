@@ -71,6 +71,107 @@ enum Target {
     Original(String),
 }
 
+/// Instance attribute `xsprop <param> <text>`: an xschem value with no Schemify form (a
+/// per-element list `?1 a,b,…`, import §3), written back verbatim as `<param>=<text>`.
+pub const XSPROP: &str = "xsprop";
+
+/// Header attribute of a cell imported from xschem: [`fingerprint`] of the file as the
+/// import wrote it. While it matches, export references the original xschem file; after an
+/// edit the cell is written as its own (an edit to an imported sub-cell is never lost).
+pub const XFP: &str = "xfp";
+
+/// What a Virtuoso import keeps for the way back to Virtuoso (interop.md §7.5): no xschem
+/// field, so a trip through Virtuoso that adds them edits nothing xschem sees.
+const VIRTUOSO_ONLY: &[&str] = &[
+    "vcell",
+    "vjoin",
+    "vview",
+    "vsym",
+    "vsch",
+    "vcdf",
+    "vcdfrec",
+    "vibox",
+    "vimg",
+    "vimg_header",
+    "vimg_rank1",
+    "vimg_rank2",
+    "vflags",
+    "voff",
+    "vinst",
+    "vorient",
+    "vwidth",
+    "vpath",
+    "vellipse",
+    "vstyle",
+    "vprop",
+    "vtd",
+    "vpin",
+    "vfig",
+    "vexpr",
+    "vlabel",
+    "vplabel",
+    "vpfig",
+    "vlib",
+    "vlayout",
+    "vadel",
+    "vadelfile",
+    "vmae",
+    "vmaesdb",
+    "vmaestate",
+    "vmaerec",
+    "vmaefile",
+    "vmaefiles",
+];
+
+/// FNV-1a 64 of every header attribute but [`XFP`] and every record of `doc` (attribute
+/// lines sorted, rank-3 records sorted: the writer's order is not meaning), Virtuoso's
+/// bookkeeping attributes left out.
+pub fn fingerprint(doc: &schemify_format::Document<'_>) -> String {
+    let kept = |a| !VIRTUOSO_ONLY.contains(&doc.attr_key(a));
+    let rank3 = |k| {
+        use RecordKind as K;
+        matches!(
+            k,
+            K::Inst | K::Wire | K::Label | K::Port | K::Noconn | K::Text | K::Shape
+        )
+    };
+    let line = |key: &str, vals: &mut dyn Iterator<Item = &str>| {
+        let mut l = format!("  {key}");
+        vals.for_each(|v| {
+            l.push(' ');
+            l.push_str(v);
+        });
+        l + "\n"
+    };
+    let (mut head, mut ordered, mut sorted) = (Vec::new(), String::new(), Vec::new());
+    for a in doc.attrs(0).filter(|&a| doc.attr_key(a) != XFP && kept(a)) {
+        head.push(line(doc.attr_key(a), &mut doc.attr_values(a)));
+    }
+    head.sort();
+    for r in 1..doc.record_count() {
+        let mut t = line(doc.record_word(r), &mut doc.fields(r));
+        let mut attrs: Vec<String> = doc
+            .attrs(r)
+            .filter(|&a| kept(a))
+            .map(|a| line(doc.attr_key(a), &mut doc.attr_values(a)))
+            .collect();
+        attrs.sort();
+        t.push_str(&attrs.concat());
+        for v in doc.verbatim(r) {
+            t.push_str("  | ");
+            t.push_str(v);
+            t.push('\n');
+        }
+        if rank3(doc.record_kind(r)) {
+            sorted.push(t);
+        } else {
+            ordered.push_str(&t);
+        }
+    }
+    sorted.sort();
+    crate::merge::digest(&(head.concat() + &ordered + &sorted.concat()))
+}
+
 /// Exports cells `tops` (indices into `d.cells`) and every cell they instantiate as
 /// xschem files.
 ///
@@ -113,6 +214,42 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
         .map(|ci| live[ci].then(|| target_of(d, ci, tops.contains(&ci), &root_dir)))
         .collect();
     let mut notes = Notes::default();
+    for (ci, t) in targets.iter().enumerate() {
+        let c = &d.cells[ci];
+        let Some(p) = c
+            .header("provenance")
+            .and_then(|p| p.strip_prefix("xschem "))
+        else {
+            continue;
+        };
+        match t {
+            Some(Target::Own(_)) if !tops.contains(&ci) && c.header(XFP).is_some() => {
+                notes.review(
+                    "header",
+                    &c.path,
+                    format!("edited since its xschem import: written as its own cell, not {p}"),
+                );
+            }
+            Some(Target::Original(_)) if c.header(XFP).is_none() => notes.review(
+                "header",
+                &c.path,
+                format!("imported without `{XFP}`: an edit since cannot be told, {p} is used"),
+            ),
+            // ponytail: the bench copy is not merged back into its component's file.
+            Some(Target::Own(_)) if c.kind() == FileKind::Shbench && c.name.ends_with("__top") => {
+                notes.review(
+                    "header",
+                    &c.path,
+                    format!(
+                        "the bench copy of {p} is its own {}.sch: xschem's one file with \
+                         only_toplevel text is not rebuilt",
+                        c.name
+                    ),
+                );
+            }
+            _ => {}
+        }
+    }
     let mut files = Vec::new();
     let mut dirs = BTreeSet::new();
     let mut globals = BTreeSet::new();
@@ -187,6 +324,8 @@ fn target_of(d: &Design, ci: usize, top: bool, root_dir: &str) -> Target {
         && (p.ends_with(".sch")
             || p.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(s, _)| s)
                 == Some(&c.name))
+        // Edited since the import: written as its own cell (a note in `export`).
+        && c.header(XFP).is_none_or(|fp| fp == fingerprint(&c.doc))
     {
         // The importer records the reference as resolved over its search roots; files of
         // older imports say `<lib>/<file>`, and `devices` is on xschem's default path.
@@ -893,6 +1032,16 @@ fn instance(
                     .iter()
                     .find(|(_, core)| *core == p.name)
                     .map_or(p.name, |(x, _)| x);
+                let kept = c
+                    .doc
+                    .attrs(r)
+                    .filter(|&a| c.doc.attr_key(a) == XSPROP)
+                    .find(|&a| c.doc.attr_value(a, 0) == Some(p.name))
+                    .and_then(|a| c.doc.attr_value(a, 1));
+                if let Some(v) = kept {
+                    props.push(kv(key, v));
+                    continue;
+                }
                 let src = over(p.name).unwrap_or(p.default);
                 match xschem_value(p.kind, src, sc, false) {
                     Ok(v) => props.push(kv(key, &v)),
@@ -911,6 +1060,10 @@ fn instance(
                     continue;
                 }
                 let src = c.doc.attr_value(a, 0).unwrap_or("");
+                if key == XSPROP {
+                    props.push(kv(src, c.doc.attr_value(a, 1).unwrap_or("")));
+                    continue;
+                }
                 let Some(p) = mparams.iter().find(|p| p.name == key) else {
                     notes.review(
                         "expression",

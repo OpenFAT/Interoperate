@@ -272,6 +272,18 @@ pub(super) fn schematic_out(
             };
             match key {
                 "at" | "name" | "ignore" | "vview" => continue,
+                // xschem's per-element value list (`xschem_out::XSPROP`): no Virtuoso form.
+                crate::xschem_out::XSPROP => {
+                    notes.review(
+                        "expression",
+                        &c.path,
+                        format!(
+                            "{}.{val}: an xschem per-element value list, not sent",
+                            g.inst_name[k]
+                        ),
+                    );
+                    continue;
+                }
                 // A property Schemify has no param for, as Virtuoso had it; an override of
                 // the same name wins.
                 "vprop" => {

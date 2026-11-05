@@ -450,53 +450,70 @@ fn run_bounded(cmd: &mut Command, limit: Duration) -> Option<std::process::Outpu
     child.wait_with_output().ok()
 }
 
-#[test]
-fn real_xschem_netlists_like_schemify() {
-    let Some(bin) = xschem_bin() else {
+/// xschem's SPICE netlist of export `x`'s top (written under the test's tmp dir `name`).
+fn xschem_netlist(bin: &Path, name: &str, x: &XschemExport, top: &str) -> Result<String, String> {
+    let dir = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
+        .join("xschem_export")
+        .join(name);
+    let _ = std::fs::remove_dir_all(&dir);
+    for (p, b) in &x.files {
+        let path = dir.join("export").join(p);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, b).unwrap();
+    }
+    let out = dir.join("netlist");
+    let home = dir.join("home");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::create_dir_all(&home).unwrap();
+    let sch = exported_top(x, top);
+    let run = run_bounded(
+        Command::new(bin)
+            .args(["-q", "-x", "-n", "-s", "-r", "--rcfile"])
+            .arg(dir.join("export/xschemrc"))
+            .arg("--netlist_path")
+            .arg(&out)
+            .arg(dir.join("export").join(&sch))
+            .env("HOME", &home)
+            .current_dir(&dir),
+        Duration::from_secs(60),
+    );
+    let stem = sch
+        .rsplit('/')
+        .next()
+        .unwrap()
+        .strip_suffix(".sch")
+        .unwrap();
+    std::fs::read_to_string(out.join(format!("{stem}.spice")))
+        .map_err(|_| format!("{name}: xschem wrote no netlist: {run:?}"))
+}
+
+/// The xschem binary, or `None` after the skip note (a failure under
+/// `SCHEMIFY_REQUIRE_XSCHEM=1`).
+fn xschem_or_skip() -> Option<PathBuf> {
+    let bin = xschem_bin();
+    if bin.is_none() {
         let msg = "xschem not on PATH: real-xschem oracle skipped (nix shell nixpkgs#xschem)";
         assert!(
             std::env::var("SCHEMIFY_REQUIRE_XSCHEM").as_deref() != Ok("1"),
             "{msg}"
         );
         eprintln!("{msg}");
-        return;
-    };
-    let base = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("xschem_export");
+    }
+    bin
+}
+
+#[test]
+fn real_xschem_netlists_like_schemify() {
+    let Some(bin) = xschem_or_skip() else { return };
     let mut failures = Vec::new();
     for f in fixtures() {
         let x = export_fixture(&f);
-        let dir = base.join(&f.name);
-        let _ = std::fs::remove_dir_all(&dir);
-        for (p, b) in &x.files {
-            let path = dir.join("export").join(p);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, b).unwrap();
-        }
-        let out = dir.join("netlist");
-        let home = dir.join("home");
-        std::fs::create_dir_all(&out).unwrap();
-        std::fs::create_dir_all(&home).unwrap();
-        let sch = exported_top(&x, &f.top);
-        let run = run_bounded(
-            Command::new(&bin)
-                .args(["-q", "-x", "-n", "-s", "-r", "--rcfile"])
-                .arg(dir.join("export/xschemrc"))
-                .arg("--netlist_path")
-                .arg(&out)
-                .arg(dir.join("export").join(&sch))
-                .env("HOME", &home)
-                .current_dir(&dir),
-            Duration::from_secs(60),
-        );
-        let stem = sch
-            .rsplit('/')
-            .next()
-            .unwrap()
-            .strip_suffix(".sch")
-            .unwrap();
-        let Ok(theirs) = std::fs::read_to_string(out.join(format!("{stem}.spice"))) else {
-            failures.push(format!("{}: xschem wrote no netlist: {run:?}", f.name));
-            continue;
+        let theirs = match xschem_netlist(&bin, &f.name, &x, &f.top) {
+            Ok(t) => t,
+            Err(e) => {
+                failures.push(e);
+                continue;
+            }
         };
         let (ours, _) = netlist(&f.files, &f.top);
         let r = compare(&ours, &theirs, &CmpOptions::default());
@@ -591,4 +608,116 @@ fn export_is_deterministic() {
         assert_eq!(a.notes.text(), b.notes.text(), "{}", f.name);
         assert!(a.files.iter().any(|p| p.0 == "xschemrc"));
     }
+}
+
+// ------------------------------------------------------------------- xschem → Schemify → xschem
+
+/// An xschem library of a subcircuit `sub` and a bench `top` placing it, over xschem's
+/// `devices` (system or stand-ins): import inputs and search roots.
+fn xschem_lib() -> (Vec<(String, Vec<u8>)>, Vec<String>) {
+    let (dev_root, mut files) = devices();
+    let v = "v {xschem version=3.4.7 file_version=1.2}\n";
+    for (p, t) in [
+        (
+            "x/lib/sub.sym",
+            "K {type=subcircuit\nformat=\"@name @pinlist @symname\"\ntemplate=\"name=x1\"}\nB 5 -42.5 -2.5 -37.5 2.5 {name=A dir=in}\nB 5 37.5 -2.5 42.5 2.5 {name=Z dir=out}\nL 4 -40 0 40 0 {}\n",
+        ),
+        (
+            "x/lib/sub.sch",
+            "C {res.sym} 0 0 0 0 {name=R1 value=1k}\nC {ipin.sym} 0 -30 0 0 {name=p1 lab=A}\nC {opin.sym} 0 30 0 0 {name=p2 lab=Z}\n",
+        ),
+        (
+            "x/lib/top.sch",
+            "C {sub.sym} 0 0 0 0 {name=x1}\nC {lab_pin.sym} -40 0 0 0 {name=l1 lab=IN}\nC {lab_pin.sym} 40 0 0 0 {name=l2 lab=OUT}\nC {res.sym} 100 0 0 0 {name=R9 value=5k}\nC {lab_pin.sym} 100 -30 0 0 {name=l3 lab=OUT}\nC {lab_pin.sym} 100 30 0 0 {name=l4 lab=IN}\n",
+        ),
+    ] {
+        files.push((p.to_owned(), format!("{v}{t}").into_bytes()));
+    }
+    (files, vec!["x".to_owned(), dev_root])
+}
+
+/// `translate_library` over `files` with search path `roots`: the Schemify files.
+fn import(files: &[(String, Vec<u8>)], roots: &[String]) -> Files {
+    let refs: Vec<(&str, &[u8])> = files
+        .iter()
+        .map(|(p, b)| (p.as_str(), b.as_slice()))
+        .collect();
+    let opts = Options {
+        roots,
+        ..Options::default()
+    };
+    translate_library(&refs, &opts).0.into_iter().collect()
+}
+
+/// inv_xschem row 4 (§11 "a non-top cell with header `provenance xschem`"): a sub-cell
+/// imported from xschem is referenced as the original while unchanged; an edit in Schemify
+/// writes it as its own cell, with a note, and xschem netlists the edit.
+#[test]
+fn an_edited_imported_subcell_is_written_not_lost() {
+    let (inputs, roots) = xschem_lib();
+    let mut files = import(&inputs, &roots);
+    let sub = String::from_utf8(files["lib/sub.shcomp"].clone()).unwrap();
+    assert!(sub.contains("\n  xfp "), "{sub}");
+    let top = "lib/top.shbench";
+    let d = load_design(&files, top);
+    let x = export(&d, &[d.find(top).unwrap()]).unwrap();
+    assert!(
+        !x.files.iter().any(|f| f.0.starts_with("lib/sub.")),
+        "unchanged: the original is used"
+    );
+    assert!(
+        !x.notes.text().contains("edited since"),
+        "{}",
+        x.notes.text()
+    );
+    let edited = sub.replace("  name R1\n", "  name R1\n  value 2k\n");
+    assert_ne!(edited, sub, "{sub}");
+    files.insert("lib/sub.shcomp".into(), edited.into_bytes());
+    let d = load_design(&files, top);
+    let x = export(&d, &[d.find(top).unwrap()]).unwrap();
+    let text = |p: &str| {
+        x.files
+            .iter()
+            .find(|f| f.0 == p)
+            .map(|f| String::from_utf8_lossy(&f.1).into_owned())
+            .unwrap_or_else(|| panic!("no {p}"))
+    };
+    text("lib/sub.sym");
+    assert!(text("lib/sub.sch").contains("value=2k"));
+    assert!(text("lib/top.sch").contains("C {lib/sub.sym}"));
+    assert!(
+        x.notes
+            .text()
+            .contains("needs_review:header\tlib/sub.shcomp\tedited since its xschem import"),
+        "{}",
+        x.notes.text()
+    );
+    let Some(bin) = xschem_or_skip() else { return };
+    let theirs = xschem_netlist(&bin, "edited_subcell", &x, top).unwrap();
+    let (ours, _) = netlist(&files, top);
+    let r = compare(&ours, &theirs, &CmpOptions::default());
+    assert!(r.is_equal(), "{:#?}\n{ours}\n---\n{theirs}", r.diffs);
+}
+
+/// inv_xschem row 13: a schematic with `only_toplevel` text imports as `X.shcomp` and its
+/// bench copy `X__top.shbench`; exporting the copy says the single file is not rebuilt.
+#[test]
+fn a_bench_copy_exports_as_its_own_file_with_a_note() {
+    let (mut inputs, roots) = xschem_lib();
+    let sch = inputs.iter_mut().find(|f| f.0 == "x/lib/sub.sch").unwrap();
+    sch.1.extend_from_slice(
+        b"C {code_shown.sym} 0 -200 0 0 {name=STIM only_toplevel=true value=\"Vin A 0 1\"}\n",
+    );
+    let files = import(&inputs, &roots);
+    let top = "lib/sub__top.shbench";
+    let d = load_design(&files, top);
+    let x = export(&d, &[d.find(top).unwrap()]).unwrap();
+    assert!(x.files.iter().any(|f| f.0 == "lib/sub__top.sch"));
+    assert!(
+        x.notes.text().contains(
+            "needs_review:header\tlib/sub__top.shbench\tthe bench copy of lib/sub.sch is its own sub__top.sch"
+        ),
+        "{}",
+        x.notes.text()
+    );
 }
