@@ -19,7 +19,8 @@
 ;;       that each move lx (how many are on): 14 inputs, a rule's search reads only the
 ;;       inputs whose probe moved its param.
 ;; fing  declared w (number) and nf (count); ad = w/nf times 80n, and nf is put back to 1
-;;       when w/nf would be below 80n, which every nf nudge at the default w (80n) is.
+;;       when w/nf would be below 80n, which every nf nudge at the default w (80n) is; it
+;;       netlists ad as adx (propMapping), as a kit resistor netlists r from value.
 ;; zeta and sel declare their inputs in paramLabelSet; tab and chaos declare none (the
 ;; influence graph's sources are their inputs).
 ;; sel   inputs gx (number), mode (a choice of a b c) and dbl (a boolean); pz is 3gx, 5gx or
@@ -118,7 +119,9 @@
     (cdfCreateParam cdf ?name "w" ?type "string" ?defValue "8e-08" ?prompt "w" ?parseAsNumber "yes" ?callback "(fingCB)")
     (cdfCreateParam cdf ?name "nf" ?type "int" ?defValue 1 ?prompt "nf" ?callback "(fingCB)")
     (cdfCreateParam cdf ?name "ad" ?type "string" ?defValue "6.4e-15" ?prompt "ad" ?parseAsNumber "yes")
-    (setSGq cdf (list nil 'spectre (list nil 'termOrder '(A B) 'instParameters '(w nf ad))) simInfo)
+    (setSGq cdf (list nil 'spectre (list nil 'termOrder '(A B) 'instParameters '(w nf adx)
+                                    'propMapping '(nil adx ad)))
+      simInfo)
     (setSGq cdf "w nf" paramLabelSet)
     (cdfSaveCDF cdf)
     (SfyFixSymbol "zpdk" "tab" (list (list "A" "inputOutput" 0 40) (list "B" "inputOutput" 0 -40)))

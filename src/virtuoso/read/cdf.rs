@@ -1090,7 +1090,9 @@ pub(super) fn cdl_format(
         .unwrap_or("X");
     let model_name = si.str("modelName").filter(|s| !s.is_empty() && *s != "nil");
     let has_model = params.iter().any(|p| p.name == "model");
-    if matches!(prefix, "R" | "C" | "L" | "D")
+    // A diode's model is positional, as a MOS's or a BJT's (live ICADVM20.1, p_terms:
+    // `DD0 D0_sx D0_nd diodenx Area=1p perim=4u`); R, C and L name theirs `$[m]`.
+    if matches!(prefix, "R" | "C" | "L")
         && let Some(m) = model_name
     {
         return format!("{prefix}{{name}} {holes}{} $[{m}]", kv(""));

@@ -1883,7 +1883,7 @@ fn live_p_refresh() {
         let cached: Vec<(&str, &str)> = block
             .iter()
             .filter_map(|l| {
-                let mut w = l.trim().split_whitespace();
+                let mut w = l.split_whitespace();
                 (w.next() == Some("cached"))
                     .then(|| (w.next().unwrap_or(""), w.next().unwrap_or("")))
             })
@@ -1894,8 +1894,8 @@ fn live_p_refresh() {
                 let mut w = l.splitn(3, ' ');
                 (w.next() == Some(inst) && w.next() == Some(p)).then(|| w.next().unwrap_or(""))
             });
-            // A string value is written quoted (`""`), the truth bare.
-            let v = &v.trim_matches('"');
+            // A string value is written quoted and escaped (`"\"\""`), the truth bare.
+            let v = &v.trim_matches(['"', '\\']);
             let same = match (want, num(v), want.and_then(num)) {
                 (_, Some(a), Some(b)) => (a - b).abs() <= 1e-6 * a.abs().max(b.abs()),
                 (Some(w), _, _) => w == *v,
