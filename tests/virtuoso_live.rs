@@ -2386,7 +2386,10 @@ fn a_cell_past_the_param_table_imports_and_loads() {
         .find(|f| f.0.ends_with("port.shprim"))
         .expect("port.shprim");
     let shprim = String::from_utf8(port.clone()).unwrap();
-    assert_eq!(shprim.lines().filter(|l| l.starts_with("param ")).count(), 256);
+    assert_eq!(
+        shprim.lines().filter(|l| l.starts_with("param ")).count(),
+        256
+    );
     assert!(
         imp.notes.rows.iter().any(|n| n.class == "dropped:param"),
         "{}",

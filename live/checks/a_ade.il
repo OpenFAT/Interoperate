@@ -104,12 +104,16 @@ let((src lines port)
     chkHas(chkLines(strcat(chkOut "/a_tb/mx.txt")) '("[0-9]\\.[0-9]"))))
 
 ;; ---- import side: a maestro view as GUI users set it, dumped
-let((cv v i r c)
+let((cv v i r c r1)
   cv = dbOpenCellViewByType(chkLib "rc" "schematic" "schematic" "w")
   v = schCreateInst(cv dbOpenCellViewByType("analogLib" "vdc" "symbol") "V0" 0:0 "R0")
   i = schCreateInst(cv dbOpenCellViewByType("analogLib" "iprobe" "symbol") "IPRB0" 3:0 "R0")
   r = schCreateInst(cv dbOpenCellViewByType("analogLib" "res" "symbol") "R0" 6:0 "R0")
   c = schCreateInst(cv dbOpenCellViewByType("analogLib" "cap" "symbol") "C0" 9:0 "R0")
+  ;; R1 makes R0/R1 a divider: out is 0.5 V at the operating point only if gnd! is ground.
+  r1 = schCreateInst(cv dbOpenCellViewByType("analogLib" "res" "symbol") "R1" 12:0 "R0")
+  chkSet(r1 "r" "1k")
+  chkStub(cv r1 '(("PLUS" "out") ("MINUS" "gnd!")))
   foreach(kv '(("vdc" "1") ("acm" "1") ("pacm" "1")) chkSet(v car(kv) cadr(kv)))
   chkSet(r "r" "1k")
   chkSet(c "c" "C")

@@ -60,9 +60,6 @@ if scp -q "$host:$work/out/a_dump.sfyx" "$tmp/a_dump.sfyx"; then
   ls "$tmp/nl" >"$tmp/nl.txt"
   check "a Schemify netlist per test ($(tr '\n' ' ' <"$tmp/nl.txt"))" "ls $tmp/nl/*.scs >/dev/null 2>&1"
   if ls "$tmp/nl"/*.scs >/dev/null 2>&1; then
-    # ponytail: the empty `isnoisy=` of analogLib res (bug E1, lane S) is cut here so the
-    # analysis statements are what Spectre judges; drop the sed once E1 is fixed.
-    sed -i 's/ isnoisy= *$//; s/ isnoisy= / /' "$tmp/nl"/*.scs
     scp -q "$tmp/nl"/*.scs "$host:$work/out/a_nl/"
     ssh "$host" bash -s >"$tmp/spectre.txt" 2>&1 <<EOF || true
 cd \$HOME/$work/out/a_nl
@@ -77,6 +74,11 @@ EOF
       grep -q "^code ${f%.scs} spectre" "$b" || continue
       check "Spectre runs Schemify's netlist $f (exit $code, $n ERROR lines)" "[ '$code' = 0 ] && [ '$n' = 0 ]"
     done < <(grep ' exit ' "$tmp/spectre.txt")
+    # Ground: the D4 sweep's out is R0/R1's divider of V0's 1 V at every point.
+    scp -q -r "$host:$work/out/a_nl/D4.raw" "$tmp/" 2>/dev/null || true
+    cat "$tmp"/D4.raw/*.dc 2>/dev/null | grep '^"out" ' >"$tmp/ground.txt" || true
+    check "gnd! is Spectre's ground in Schemify's netlist: out = 0.5 V ($(grep -m1 "[0-9]" "$tmp/ground.txt"))" \
+      "grep -q '^\"out\" 5.000000000000000e-01' $tmp/ground.txt"
   fi
 else
   verdicts+=("FAIL a_drive: no dump")
