@@ -76,9 +76,51 @@ enum Target {
 /// edit the cell is written as its own (an edit to an imported sub-cell is never lost).
 pub const XFP: &str = "xfp";
 
+/// What a Virtuoso import keeps for the way back to Virtuoso (interop.md §7.5): no xschem
+/// field, so a trip through Virtuoso that adds them edits nothing xschem sees.
+const VIRTUOSO_ONLY: &[&str] = &[
+    "vsym",
+    "vsch",
+    "vcdf",
+    "vcdfrec",
+    "vibox",
+    "vimg",
+    "vimg_header",
+    "vimg_rank1",
+    "vimg_rank2",
+    "vflags",
+    "voff",
+    "vinst",
+    "vorient",
+    "vwidth",
+    "vpath",
+    "vellipse",
+    "vstyle",
+    "vprop",
+    "vtd",
+    "vpin",
+    "vfig",
+    "vexpr",
+    "vlabel",
+    "vplabel",
+    "vpfig",
+    "vlib",
+    "vlayout",
+    "vadel",
+    "vadelfile",
+    "vmae",
+    "vmaesdb",
+    "vmaestate",
+    "vmaerec",
+    "vmaefile",
+    "vmaefiles",
+];
+
 /// FNV-1a 64 of every header attribute but [`XFP`] and every record of `doc` (attribute
-/// lines sorted, rank-3 records sorted: the writer's order is not meaning).
+/// lines sorted, rank-3 records sorted: the writer's order is not meaning), Virtuoso's
+/// bookkeeping attributes left out.
 pub fn fingerprint(doc: &schemify_format::Document<'_>) -> String {
+    let kept = |a| !VIRTUOSO_ONLY.contains(&doc.attr_key(a));
     let rank3 = |k| {
         use RecordKind as K;
         matches!(
@@ -95,7 +137,7 @@ pub fn fingerprint(doc: &schemify_format::Document<'_>) -> String {
         l + "\n"
     };
     let (mut head, mut ordered, mut sorted) = (Vec::new(), String::new(), Vec::new());
-    for a in doc.attrs(0).filter(|&a| doc.attr_key(a) != XFP) {
+    for a in doc.attrs(0).filter(|&a| doc.attr_key(a) != XFP && kept(a)) {
         head.push(line(doc.attr_key(a), &mut doc.attr_values(a)));
     }
     head.sort();
@@ -103,6 +145,7 @@ pub fn fingerprint(doc: &schemify_format::Document<'_>) -> String {
         let mut t = line(doc.record_word(r), &mut doc.fields(r));
         let mut attrs: Vec<String> = doc
             .attrs(r)
+            .filter(|&a| kept(a))
             .map(|a| line(doc.attr_key(a), &mut doc.attr_values(a)))
             .collect();
         attrs.sort();

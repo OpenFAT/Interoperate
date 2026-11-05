@@ -163,6 +163,19 @@ impl<'a> Ctx<'a> {
         if t.slib == "core" || consumed(&c.lib, &c.name) {
             return t;
         }
+        // A kit cell a map row sends back to a Schemify cell of the same name (xschem's
+        // `sky130_fd_pr:nfet_01v8` ↔ the kit's `sky130_fd_pr/nfet_01v8`): its instances
+        // point at that cell (`master`), and a mirror would overwrite it. Without the
+        // cell in the project the mirror is written (with the row's `spice`, §8.2).
+        if !c.design
+            && self
+                .map
+                .by_virtuoso(&c.lib, &c.name)
+                .is_some_and(|r| r.cellref == format!("{}:{}", t.slib, t.stem))
+            && self.project_iface(&t.slib, &t.stem).is_some()
+        {
+            return t;
+        }
         let sym = c.cv("symbol").is_some();
         let sch = c.cv("schematic");
         t.kind = if !c.design {

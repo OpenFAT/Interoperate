@@ -335,7 +335,17 @@ pub fn map(lib: &str, scan: &[Scanned], kit: &[Vcell]) -> Result<(String, Notes)
                 .iter()
                 .find(|v| *v == p)
                 .or_else(|| best.params.iter().find(|v| v.eq_ignore_ascii_case(p)));
+            // Matched through the netlist name, the two `model` values differ by the
+            // cell's prefix (`nfet_01v8` against `sky130_fd_pr__nfet_01v8`): never crossed.
+            let by_netlist_name = !best.model.eq_ignore_ascii_case(&s.name);
             match v {
+                Some(_) if p == "model" && by_netlist_name => {
+                    text.push_str("  drop model\n");
+                    why.push_str(&format!(
+                        "; by its netlist name {}: model dropped",
+                        best.model
+                    ));
+                }
                 Some(v) if s.micro.contains(p) => {
                     text.push_str(&format!("  param {} {} scale 1e-6\n", word(p), word(v)));
                 }
