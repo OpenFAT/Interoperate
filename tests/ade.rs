@@ -219,6 +219,9 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
     if g.coin() {
         lines.push(".noise v(out) V1 dec 10 1 1meg".into());
     }
+    if g.coin() {
+        lines.push(".options reltol=1e-5 gmin=1e-14".into());
+    }
     if with_param {
         lines.push(".param k=2".into());
     }
@@ -497,7 +500,7 @@ fn fixtures() -> PathBuf {
 
 #[test]
 fn maestro_dumps_import_to_their_golden_benches() {
-    for name in ["spice", "native"] {
+    for name in ["spice", "native", "gaps2"] {
         let text = std::fs::read_to_string(fixtures().join(format!("{name}.sfyx"))).unwrap();
         let (got, notes) = import(&text, &Files::new());
         let out = format!("{got}\n--- report\n{}", notes.text());
@@ -837,6 +840,59 @@ fn test_variables_override_globals_in_their_test_only() {
     assert!(own("sim2").is_empty());
 }
 
+/// Gaps round 2 (lane A): simulator options, the corners a test runs and a test bound to
+/// another cell go through the loader and the dumper on the mock maestro and come back.
+#[test]
+fn sim_options_corner_runs_and_designs_cross_the_mock() {
+    let bench = "schemify 1 shbench\n\nvar vdd 1.8\n\ncorner c1\n  temp 27\ncorner c2\n  temp 85\n\n\
+                 test sim\n  code sim\n  corner c1\ntest t2\n  code sim\n  design ./other\n\n\
+                 code sim spice\n  | .tran 1n 1u\n  | .options reltol=1e-5 gmin=1e-14\n";
+    let (text, notes) = export(&project(bench));
+    for want in [
+        r#"("simoption" "gmin" "1e-14")"#,
+        r#"("simoption" "reltol" "1e-5")"#,
+        r#"("cornerrun" "c2" 0)"#,
+        r#"("testdesign" "schemify" "other")"#,
+    ] {
+        assert!(text.contains(want), "{want}\n{text}\n{}", notes.text());
+    }
+    let mut i = interp();
+    i.files.insert("/t/in.sfyx".into(), text);
+    assert!(
+        run(&mut i, r#"(SfyImport "/t/in.sfyx")"#).truthy(),
+        "{}",
+        i.log
+    );
+    let key = ("schemify".to_owned(), "tb".to_owned());
+    let su = &i.host.mae.saved[&key];
+    let t2 = su.tests.iter().find(|t| t.name == "t2").expect("t2");
+    assert_eq!(t2.design.1, "other", "t2's design cell");
+    let sim = su.tests.iter().find(|t| t.name == "sim").expect("sim");
+    assert!(
+        sim.sim
+            .iter()
+            .any(|(n, v)| n == "reltol" && v.as_str() == Some("1e-5"))
+    );
+    let c2 = su.corners.iter().find(|c| c.name == "c2").expect("c2");
+    assert_eq!(c2.disabled_tests, ["sim"]);
+    assert!(
+        run(
+            &mut i,
+            r#"(SfyExport "/t/out.sfyx" "schemify" (list "tb"))"#
+        )
+        .truthy()
+    );
+    let dump = i.files["/t/out.sfyx"].clone();
+    let (got, _) = import(&dump, &Files::new());
+    for want in [
+        "test sim\n  code sim\n  corner c1\n",
+        "  design ./other\n",
+        "  | .options reltol=1e-5 gmin=1e-14\n",
+    ] {
+        assert!(got.contains(want), "{want}\n{got}");
+    }
+}
+
 #[test]
 fn an_unnamed_maestro_output_is_skipped_not_fatal() {
     let (text, _) = export(&project(&canonical(&gen_bench(5, false).text)));
@@ -858,14 +914,26 @@ fn an_unnamed_maestro_output_is_skipped_not_fatal() {
     );
     let log = i.files["/t/out.sfyx.log"].clone();
     assert!(ok.truthy(), "{log}");
+    let dump = i.files["/t/out.sfyx"].clone();
     assert!(
-        log.contains("skipped: maestro sim output without a name"),
-        "{log}"
+        dump.contains(
+            r#"("maenote" "output" "an output without a name (nil \"/out\") is not dumped")"#
+        ),
+        "{dump}"
     );
-    // The dump still imports.
+    // The dump still imports, and the report names the output (a maenote).
     let mut man = Files::new();
     man.insert("schemify.project".into(), b"schemify 1 project\n".to_vec());
-    import(&i.files["/t/out.sfyx"].clone(), &man);
+    let (_, notes) = import(&dump, &man);
+    assert!(
+        notes
+            .rows
+            .iter()
+            .any(|n| n.class == "needs_review:output"
+                && n.detail.contains("an output without a name")),
+        "{}",
+        notes.text()
+    );
 }
 
 #[test]

@@ -78,6 +78,8 @@ pub const ROWS: &[(&str, &str)] = &[
     ("axlGetEnabled", "x"),
     ("axlSetEnabled", "x g"),
     ("axlGetModels", "x"),
+    ("axlGetCornerDisabledTests", "x"),
+    ("axlGetModelGroups", "x"),
     ("axlGetModel", "x t"),
     ("axlPutModel", "x t ?testName ?blockName"),
     ("axlGetModelFile", "x"),
@@ -186,6 +188,8 @@ pub struct Corner {
     pub vars: Vec<(String, String)>,
     /// Models `(name, file, section)` in creation order.
     pub models: Vec<(String, String, String)>,
+    /// The tests that do not run the corner (`maeSetCorner ?disableTests`).
+    pub disabled_tests: Vec<String>,
 }
 
 /// One open session.
@@ -631,13 +635,23 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
             };
             let n = s0(0);
             let en = key(&kw, "enabled").map(V::truthy);
-            match m.corner(k, &n) {
-                Some(c) => c.enabled = en.unwrap_or(c.enabled),
-                None => m.setup(k).corners.push(Corner {
-                    name: n,
-                    enabled: en.unwrap_or(true),
+            if m.corner(k, &n).is_none() {
+                m.setup(k).corners.push(Corner {
+                    name: n.clone(),
+                    enabled: true,
                     ..Corner::default()
-                }),
+                });
+            }
+            // ?disableTests adds tests that skip the corner, ?enableTests removes them.
+            let off = key(&kw, "disableTests").and_then(strs).unwrap_or_default();
+            let on = key(&kw, "enableTests").and_then(strs).unwrap_or_default();
+            let c = m.corner(k, &n).expect("made above");
+            c.enabled = en.unwrap_or(c.enabled);
+            c.disabled_tests.retain(|t| !on.contains(t));
+            for t in off {
+                if !c.disabled_tests.contains(&t) {
+                    c.disabled_tests.push(t);
+                }
             }
             Ok(V::T)
         }
@@ -985,6 +999,27 @@ pub fn call(db: &mut MockDb, name: &str, args: &[V]) -> Option<Result<V, String>
             }
             _ => Err("*Error* axlGetModels: argument #1 should be a corner handle".into()),
         },
+        // (handle names), live: (1331 ("N1" "N2")), (0 nil) for none.
+        "axlGetCornerDisabledTests" => match m.resolve(&a[0]) {
+            Some(Handle::Corner(k, c)) => {
+                let t = m
+                    .corner(k, &c)
+                    .map_or(Vec::new(), |x| x.disabled_tests.clone());
+                Ok(if t.is_empty() {
+                    V::list(vec![V::Int(0), V::Nil])
+                } else {
+                    V::list(vec![
+                        V::Int(1331),
+                        V::list(t.iter().map(|x| V::str(x)).collect()),
+                    ])
+                })
+            }
+            _ => Err(
+                "*Error* axlGetCornerDisabledTests: argument #1 should be a corner handle".into(),
+            ),
+        },
+        // No model groups are modelled: (0 nil), as live without any.
+        "axlGetModelGroups" => Ok(V::list(vec![V::Int(0), V::Nil])),
         "axlGetModel" | "axlPutModel" => match m.resolve(&a[0]) {
             Some(Handle::Corner(k, c)) => {
                 let n = s0(1);

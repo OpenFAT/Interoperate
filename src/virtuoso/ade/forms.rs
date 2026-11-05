@@ -40,6 +40,21 @@ pub(super) fn form_default(kind: &str, field: &str) -> Option<&'static str> {
     d.iter().find(|r| r.0 == kind && r.1 == field).map(|r| r.2)
 }
 
+/// Analyses that compute the large-signal steady state the small-signal periodic ones
+/// (`pac pnoise pxf pstb hbac hbnoise …`) read: netlisted before them.
+pub(super) const STEADY: [&str; 4] = ["pss", "hb", "qpss", "envlp"];
+
+/// Whether field `field` of analysis `kind` holds `v` as nothing set it: its form default,
+/// or that default as the one-element list ICADVM20.1 answers for some fields (`("1")`,
+/// live: pac `outmodharmvec`, hb `lsspharms`).
+pub(super) fn is_form_default(kind: &str, field: &str, v: &str) -> bool {
+    let d = form_default(kind, field);
+    d == Some(v)
+        || v.strip_prefix("(\"")
+            .and_then(|x| x.strip_suffix("\")"))
+            .is_some_and(|x| !x.contains('"') && d == Some(x))
+}
+
 /// Whether `name` is a parameter of Spectre's `kind` statement (`options` for simulator
 /// options).
 pub(super) fn is_spectre_param(kind: &str, name: &str) -> bool {

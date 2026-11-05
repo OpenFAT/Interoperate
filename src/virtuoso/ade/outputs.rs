@@ -611,13 +611,38 @@ fn ade_call_back(
         ("xval", [_]) => "x()".to_owned(),
         // `settle`'s own form (export): the step from the first to the last x, the
         // tolerance as a percent of it.
+        // ICADVM20.1 answers it parsed and printed, `((100 * tol) / abs((value(…) -
+        // value(…))))` (live): compared without white space and outer groups.
         ("settlingTime", [y, x0, a, x1, b, pct]) => {
             let (lo, hi) = (format!("ymin(xval({y}))"), format!("ymax(xval({y}))"));
-            let tail = format!("/abs(value({y} {hi})-value({y} {lo}))");
-            let tol = pct.strip_prefix("100*")?.strip_suffix(tail.as_str())?;
             if (*x0, *a, *x1, *b) != (lo.as_str(), "t", hi.as_str(), "t") {
                 return None;
             }
+            // ponytail: white space goes from the tolerance too; one with a
+            // space-separated call (`value(x 1)`) does not read back.
+            let bare = |s: &str| {
+                let mut s: String = s.chars().filter(|c| !c.is_whitespace()).collect();
+                while s.starts_with('(')
+                    && close_of(&out_tokens(&s)?, 0) == Some(out_tokens(&s)?.len() - 1)
+                {
+                    s = s[1..s.len() - 1].to_owned();
+                }
+                Some(s)
+            };
+            let p = bare(pct)?;
+            let tail = format!(
+                "/abs({})",
+                bare(&format!("value({y} {hi})-value({y} {lo})"))?
+            );
+            let tail2 = format!(
+                "/abs(({}))",
+                bare(&format!("value({y} {hi})-value({y} {lo})"))?
+            );
+            let head = p
+                .strip_suffix(tail.as_str())
+                .or_else(|| p.strip_suffix(tail2.as_str()))?;
+            let tol = bare(head)?;
+            let tol = tol.strip_prefix("100*")?;
             format!("settle({}, {})", back(y)?, back(tol)?)
         }
         // `delay` with every edge given: the difference of the two crossings (live OCEAN:

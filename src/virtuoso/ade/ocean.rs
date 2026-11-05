@@ -195,6 +195,18 @@ pub(super) fn ocean_script(
             let _ = writeln!(o, "desVar({} {})", skill_str(n), skill_str(v));
         }
     }
+    // ponytail: OCEAN's option() is not probed; the options ride in maestro only.
+    if !t.sim_opts.is_empty() {
+        let o: Vec<String> = t.sim_opts.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        notes.review(
+            "code",
+            cell,
+            format!(
+                "the OCEAN script sets no simulator options ({}): maestro has them",
+                o.join(" ")
+            ),
+        );
+    }
     let mut analyses = t.analyses.clone();
     analyses.sort_by(|a, b| a.0.cmp(&b.0));
     for (name, en, opts) in &analyses {

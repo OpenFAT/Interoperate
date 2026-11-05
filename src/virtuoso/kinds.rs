@@ -72,6 +72,12 @@ pub const KINDS: &[(&str, Scope)] = &[
     // so they have no row)
     ("varenable", Scope::Maestro),
     ("outenable", Scope::Maestro),
+    // ---- gaps round 2, lane A: a test's simulator options, the corners it runs, a design
+    // on another cell, and the settings no record carries (reported by the import)
+    ("simoption", Scope::Maestro),
+    ("cornerrun", Scope::Maestro),
+    ("testdesign", Scope::Maestro),
+    ("maenote", Scope::Maestro),
 ];
 
 /// The scope of record kind `tag`; `None` for a tag no row names.

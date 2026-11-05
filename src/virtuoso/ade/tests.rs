@@ -67,6 +67,14 @@ fn tests() -> impl Strategy<Value = Test> {
                 params: vec![("I0/I1/w".into(), "1u".into(), scope(0))],
                 var_enable: vec![("x".into(), corners.len().is_multiple_of(3))],
                 out_enable: vec![("o".into(), false)],
+                sim_opts: vec![("reltol".into(), "1e-5".into())],
+                corner_runs: corners
+                    .first()
+                    .map(|c| (c.clone(), false))
+                    .into_iter()
+                    .collect(),
+                design: Some(("lib".into(), "other".into())),
+                notes: vec![("output".into(), "a note".into())],
             }
         })
 }
@@ -174,6 +182,11 @@ fn multi_argument_outputs_read_back_from_maestro() {
         // settle's own settlingTime form, and delay with every keyword.
         (
             r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t 100*0.01/abs(value(VT("/out") ymax(xval(VT("/out"))))-value(VT("/out") ymin(xval(VT("/out"))))))"#,
+            "settle(v(out), 10m)",
+        ),
+        // As ICADVM20.1 prints it back (live a_probe dump).
+        (
+            r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t ((100 * 0.01) / abs((value(VT("/out") ymax(xval(VT("/out")))) - value(VT("/out") ymin(xval(VT("/out"))))))))"#,
             "settle(v(out), 10m)",
         ),
         (

@@ -111,7 +111,7 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                 // maeGetAnalysis answers every form field nothing set (`anaName`, the
                 // choosers, the options form; forms.tsv): they carry no meaning, so a dump
                 // of a setup we wrote reads as what we wrote. An empty field is unset.
-                opts.retain(|(k, v)| !v.is_empty() && form_default(n, k) != Some(v.as_str()));
+                opts.retain(|(k, v)| !v.is_empty() && !is_form_default(n, k, v));
                 t.analyses.push((n.into(), en, opts));
             }
             "corner" => {
@@ -217,6 +217,31 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                 }
                 rows.push((n.into(), en));
             }
+            "simoption" | "testdesign" | "maenote" => {
+                r.arity(2)?;
+                let (a, b) = (r.str(0)?, r.str(1)?);
+                match r.tag.as_str() {
+                    "simoption" if a.is_empty() || t.sim_opts.iter().any(|x| x.0 == a) => {
+                        return Err(r.err(format!("simoption `{a}` empty or twice")));
+                    }
+                    "simoption" => t.sim_opts.push((a.into(), b.into())),
+                    "testdesign" if t.design.is_some() || a.is_empty() || b.is_empty() => {
+                        return Err(r.err("testdesign twice, or an empty lib or cell"));
+                    }
+                    "testdesign" => t.design = Some((a.into(), b.into())),
+                    _ => t.notes.push((a.into(), b.into())),
+                }
+            }
+            "cornerrun" => {
+                r.arity(2)?;
+                let (c, on) = (r.str(0)?, flag(r, 1)?);
+                if !t.corners.iter().any(|x| x.0 == c) || t.corner_runs.iter().any(|x| x.0 == c) {
+                    return Err(r.err(format!(
+                        "cornerrun `{c}`: twice, or no such corner before it"
+                    )));
+                }
+                t.corner_runs.push((c.into(), on));
+            }
             "parameter" => {
                 r.arity(3)?;
                 let (p, v, sc) = (r.str(0)?, r.str(1)?, r.str(2)?);
@@ -242,6 +267,9 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
             t.params.len(),
             t.var_enable.len(),
             t.out_enable.len(),
+            t.sim_opts.len(),
+            t.corner_runs.len(),
+            t.notes.len(),
         ];
         if rows
             .iter()
@@ -440,8 +468,30 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
                 .collect()
         })
     };
-    let several =
-        ts.len() > 1 || !first.own.is_empty() || !enabled(first) || !omitted(first).is_empty();
+    let several = ts.len() > 1
+        || !first.own.is_empty()
+        || !enabled(first)
+        || !omitted(first).is_empty()
+        || first.design.is_some()
+        || first.corner_runs.iter().any(|x| !x.1);
+    // What the dumper read and no record carries, and a test Schemify cannot run as Maestro
+    // does (another simulator).
+    for t in &ts {
+        for (class, x) in &t.notes {
+            notes.review(class, cell, format!("maestro test {}: {x}", t.name));
+        }
+        if t.sim != "spectre" {
+            notes.review(
+                "config",
+                cell,
+                format!(
+                    "maestro test {} runs simulator {}: a Schemify run uses its own; the test \
+                     goes back to Maestro as spectre unless the setup XML restores it",
+                    t.name, t.sim
+                ),
+            );
+        }
+    }
     let globals: Vec<String> = first
         .vars
         .iter()
@@ -506,10 +556,22 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
     for (c, en) in &first.corners {
         push_record(bench, RecordKind::Corner, &[c]);
         for (_, f, sec) in first.models.iter().filter(|m| &m.0 == c) {
-            let sec = sec
-                .strip_prefix('"')
-                .and_then(|x| x.strip_suffix('"'))
-                .unwrap_or(sec);
+            // Several quoted sections (`"tt" "ss"`, live) make the corner a group over them:
+            // Schemify has none (core_A.md), the first comes back.
+            let secs: Vec<&str> = sec.split('"').filter(|x| !x.trim().is_empty()).collect();
+            if secs.len() > 1 {
+                notes.review(
+                    "corner",
+                    cell,
+                    format!(
+                        "corner {c} model {f} sections {}: a corner group; only {} comes back \
+                         (Schemify has no corner group)",
+                        secs.join(" "),
+                        secs[0]
+                    ),
+                );
+            }
+            let sec = secs.first().copied().unwrap_or("");
             if sec.is_empty() {
                 push_attr(bench, "include", &[&path_from_ade(f)]);
             } else {
@@ -621,6 +683,35 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
         if t.view != "schematic" {
             push_attr(bench, "config", &[&t.view]);
         }
+        // The corners the test runs: Maestro's per-corner disabled tests.
+        if t.corner_runs.iter().any(|x| !x.1) {
+            let runs: Vec<&str> = first
+                .corners
+                .iter()
+                .filter(|c| c.1 && !t.corner_runs.iter().any(|x| x.0 == c.0 && !x.1))
+                .map(|c| c.0.as_str())
+                .collect();
+            if runs.is_empty() {
+                notes.review(
+                    "corner",
+                    cell,
+                    format!(
+                        "maestro test {} runs no corner: a Schemify run gives it all",
+                        t.name
+                    ),
+                );
+            } else {
+                push_attr(bench, "corner", &runs);
+            }
+        }
+        if let Some((l, c)) = &t.design {
+            let r = if *l == t.lib {
+                format!("./{c}")
+            } else {
+                format!("{l}:{c}")
+            };
+            push_attr(bench, "design", &[&r]);
+        }
         if !enabled(t) {
             push_attr(bench, "enable", &["false"]);
         }
@@ -688,6 +779,15 @@ fn import_test(
             pts[0]
         })
         .filter(|v| v.parse::<f64>().is_ok_and(|x| x != 27.0) || v.parse::<f64>().is_err());
+    // The test's simulator options ADE would netlist: those not at their default (temp is
+    // the temperature above).
+    let sim_opts: Vec<&(String, String)> = t
+        .sim_opts
+        .iter()
+        .filter(|(k, v)| {
+            k != "temp" && !v.is_empty() && form_default("options", k) != Some(v.as_str())
+        })
+        .collect();
     let enabled: Vec<&Analysis> = t
         .analyses
         .iter()
@@ -728,6 +828,24 @@ fn import_test(
             });
         }
         lines.extend(spice_temp.filter(|x| !x.is_empty()));
+        let mut kvs = Vec::new();
+        for (k, v) in &sim_opts {
+            match NGSPICE_OPTIONS.iter().find(|o| o.0 == *k) {
+                Some((_, n)) if ael::number_to_ael(v).is_some() => kvs.push(format!("{n}={v}")),
+                _ => notes.review(
+                    "code",
+                    cell,
+                    format!(
+                        "maestro test {}: simulator option {k}={v} has no ngspice form: kept \
+                         in the setup XML only",
+                        t.name
+                    ),
+                ),
+            }
+        }
+        if !kvs.is_empty() {
+            lines.push(format!(".options {}", kvs.join(" ")));
+        }
         lines.extend(spice.unwrap_or_default());
     } else {
         for a in &enabled {
@@ -754,9 +872,32 @@ fn import_test(
         if let Some(v) = temp {
             lines.push(format!("temp options temp={}", spectre_word(v)));
         }
+        let mut l = String::from("simopts options");
+        for (k, v) in &sim_opts {
+            if is_spectre_param("options", k) {
+                l.push_str(&format!(" {k}={}", spectre_word(v)));
+            } else {
+                notes.review(
+                    "code",
+                    cell,
+                    format!(
+                        "maestro test {}: simulator option {k}={v} is not a Spectre option: \
+                         kept in the setup XML only",
+                        t.name
+                    ),
+                );
+            }
+        }
+        if l.contains('=') {
+            lines.push(l);
+        }
         // Each analysis as the statement ADE netlists (forms.rs): valid Spectre, not ADE's
         // form fields.
-        for (n, _, opts) in &enabled {
+        // The large-signal steady states first: Spectre's pac/pnoise/pxf/hbac read the
+        // pss/hb before them (ADE's netlist order).
+        let mut order = enabled.clone();
+        order.sort_by_key(|a| !STEADY.contains(&a.0.as_str()));
+        for (n, _, opts) in order {
             let (l, left) = to_spectre(n, opts);
             for why in left {
                 notes.review("code", cell, format!("maestro test {}: {why}", t.name));
@@ -863,6 +1004,25 @@ fn import_test(
     // Definition files: one block per name, shared by the tests whose file is the same.
     for (f, body) in &t.defns {
         let stem = f.strip_suffix(".scs").unwrap_or(f);
+        // A relative include resolves against the netlist's directory in Maestro, the
+        // bench's in Schemify (G22).
+        for l in body.lines() {
+            let w: Vec<&str> = l.split_whitespace().collect();
+            if let [inc, p, ..] = w[..]
+                && matches!(inc, "include" | "ahdl_include")
+                && !p.trim_matches('"').starts_with(['/', '$'])
+            {
+                notes.review(
+                    "code",
+                    cell,
+                    format!(
+                        "defn {f}: `{}` is relative: Maestro reads it beside the netlist, \
+                         Schemify beside the bench",
+                        l.trim()
+                    ),
+                );
+            }
+        }
         if taken.names.iter().any(|n| n == stem) {
             notes.review(
                 "code",
