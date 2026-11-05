@@ -1,0 +1,7 @@
+
+// Library name: sfyprobe_s
+// Cell name: pc
+// View name: schematic
+R1 (y y0) resistor r=1K
+R0 (x0 x) resistor r=1K
+T0 (x y) iprobe

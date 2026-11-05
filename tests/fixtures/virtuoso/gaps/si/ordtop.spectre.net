@@ -1,0 +1,13 @@
+
+// Library name: sfyprobe_s
+// Cell name: ord
+// View name: schematic
+subckt ord a m z
+    RS0 (z m) resistor r=1K
+ends ord
+// End of subcircuit definition.
+
+// Library name: sfyprobe_s
+// Cell name: ordtop
+// View name: schematic
+X0 (na nm nz) ord
