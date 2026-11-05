@@ -68,13 +68,17 @@ cargo install --git https://github.com/OpenFAT/Interoperate --features cli   # o
 schemify-interop virtuoso-export <project> <cell-file|dir>... -o <file.sfyx> [--lib L=V]... [--core-cells]
 schemify-interop virtuoso-import <project> <file.sfyx> [--lib L=V]... [--analoglib]
 schemify-interop xschem-export   <project> <cell-file|dir>... -o <dir>
-schemify-interop xschem-import   <lib-dir>... -o <out-dir> [...]        (spec import.md)
+schemify-interop xschem-import   <lib-dir>... -o <out-dir> [--root <dir>]... [--models <file>[:<section>]]... [--xschemrc <file>]...
+                                 [--spiceinit <file>] [--tech <file>] [--cdf <dump>] [--no-core]   (spec import.md)
 schemify-interop install-skill   <dir>
 schemify-interop pdk-derived     <project> <char.sfyx>                   (derived parameters, below)
 schemify-interop virtuoso-refresh <project> --scratch <lib> -o <dir> | --apply <dir>
-schemify-interop pdk-scan        --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S]   (PDK scan below)
-schemify-interop pdk-map         --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o interop.map   (PDK map below)
-schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (PDK models below)
+schemify-interop maestro-results <project> <dump.sfyx> <bench.shbench>   (Maestro results, below)
+schemify-interop layout-export   <project> <bundle-dir>                  (layout views, below)
+schemify-interop layout-import   <project> <lib>/<cell>[/<view>] -o <bundle-dir>
+schemify-interop pdk-scan        [--stdin] --root <dir> --entry <file> --dialect spice|hspice|spectre [--section S] [--lib L] | --remote-script | --protocol   (PDK scan below)
+schemify-interop pdk-map         --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o interop.map | --remote-script --vlib <lib>...   (PDK map below)
+schemify-interop pdk-models      --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (d: spice|hspice|spectre|vacask|xyce; PDK models below)
 schemify-interop ciel            <args>...      (ciel from PATH, else a private venv pinned to ciel 3.2.0 under Schemify's data directory, <data>/tools/ciel-3.2.0; needs python3; install output on stderr, ciel's exit status)
 ```
 
@@ -369,9 +373,15 @@ Every conversion lists its losses in the report. The main ones:
 - A Maestro view of several tests becomes one bench with a `test` record per test: its own
   var values, enable, config, outputs and code; device parameters become `param` lines and
   `calcVal` becomes `result()` (runs refuse it for now). Lost: run plans, reliability,
-  checks and asserts. Kept only in the stored setup, not editable in Schemify: spec weights
-  and tolerances, a test bound to another cell, per-test corner selections. Disabled vars
-  and outputs still export enabled.
+  checks and asserts. A test's corner selection and design cell cross (`test corner`,
+  `test design`). Kept only in the stored setup, not editable in Schemify, each a report
+  row: spec weights, tolerances, `info` and minimize/maximize goals, per-corner spec
+  overrides, an output's evaluation over corners, a test's own simulator, other maestro
+  views of the cell. Disabled vars and outputs still export enabled.
+- Maestro corner groups and a swept `temperature` keep their first point or model section;
+  analysis forms map onto Spectre through ADE's own defaults (`hb` tones and `sens` are
+  reported). Calculator functions without a Schemify form (`bandwidth`, `riseTime`, …) come
+  back as commented outputs; `.ic`, `.nodeset` and `.meas` lines stay code.
 - ADE L states (`SfyAdeLExport`, `SfyAdeLImport`) map onto the bench like a Maestro test:
   design, variables, temperature, analyses, model files and outputs (no corners or specs).
   An unedited bench gives the state back byte for byte; an edited one becomes a Maestro
@@ -382,7 +392,9 @@ Every conversion lists its losses in the report. The main ones:
   a job with its waveforms, values and spec verdicts, read exactly from the history's
   `.rdb`. Only the first test maps. Reported, not mapped: the other tests, values reduced
   across corners or sweeps, Monte Carlo statistics, and the `near` verdict (it comes across
-  as `fail`).
+  as `fail`). sp, stb, pss and noise totals and the operating point come across; noise
+  contributions, pac sidebands, stb margins and `dcOpInfo` device values are skipped lines,
+  and a pss harmonic axis is a plain sweep.
 - Layout views cross as GDS (`SfyLayoutExport`, `schemify-interop layout-export`/
   `layout-import`, `SfyLayoutImport`): `<cell>.<view>.gds` beside the cell for KLayout,
   with a generated `.lyp`/`.lyt`. An unchanged GDS gives the OA view back byte for byte; an
@@ -399,10 +411,22 @@ Every conversion lists its losses in the report. The main ones:
   justification, flags and offsets, bus widths, noConn names). What does not: a multi-point
   wire's segmentation (Virtuoso splits it into 2-point wires). Instance properties and
   textDisplays now survive the redraw too.
+- Schematics: what Virtuoso holds and Schemify has no record for is counted per kind
+  (`skipped`): shapes, textDisplays, user properties, non-rectangular pin figures (as their
+  box), unsaved edits. Not carried, each a row: multi-sheet designs (each sheet a pinless
+  sub-cell, nets across sheets not joined), SKILL PCell symbols (the default variant),
+  Constraint Manager constraints, a library's `libInit.il` and library CDF, OA views the
+  dump leaves out, text views other than Verilog-A/Verilog, design management. Virtuoso's
+  own connectivity rides in the dump, and any net the import draws differently is a row.
+- PDKs: HSPICE-D and auLvs simInfo, `opParamExprList`, `termMapping` and netlist
+  procedures stay Virtuoso's, one row per cell; an inherited connection that defaults to
+  another one gets the inner default net; a cell past 256 parameters keeps the netlisted
+  ones first.
 - xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers. From
   xschem: graphs, images and launchers, Tcl, bus taps, parametric bus widths, per-element
-  value lists (`?1 a,b,…`, kept for the way back to xschem), `lvs_ignore` and xschemrc
-  netlister settings; each is a report row.
+  value lists (`?1 a,b,…`, kept for the way back to xschem), `lvs_ignore`, xschemrc
+  netlister settings, CDL netlist text, module parameters and core devices in Verilog; each
+  is a report row. A bench copy (`X__top`) exports as its own file and is not merged back.
 
 ## How this is tested without Virtuoso
 

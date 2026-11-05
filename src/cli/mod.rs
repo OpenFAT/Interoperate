@@ -73,7 +73,7 @@ pub fn run(args: &[String]) -> u8 {
         // PDK-Manager's kit installs: ciel from PATH, else a pinned private copy.
         Some((cmd, rest)) if cmd == "ciel" => ciel(rest),
         _ => {
-            eprintln!("usage: schemify-interop xschem-import <args>...\n{JOB_USAGE}");
+            eprintln!("{JOB_USAGE}");
             2
         }
     }
