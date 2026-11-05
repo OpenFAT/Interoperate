@@ -283,9 +283,14 @@ pub(super) fn schematic_out(
                     }
                     continue;
                 }
+                // Eleven values per textDisplay, all on one line (a second line of one key
+                // is E024).
                 "vtd" => {
-                    if let Some(t) = text_display(c, a, r, at) {
-                        cv.tds.push(t);
+                    let vals: Vec<&str> = c.doc.attr_values(a).collect();
+                    for t in vals.chunks_exact(11) {
+                        if let Some(t) = text_display(t, r, at) {
+                            cv.tds.push(t);
+                        }
                     }
                     continue;
                 }
@@ -752,8 +757,8 @@ fn derived_digest(c: &Cell, rec: u32, master: &Cell) -> Option<String> {
 
 /// The textDisplay of instance ref `r` at `at` that attribute `a` (`vtd <assoc> <name>
 /// <layer> <purpose> <dx> <dy> <orient> <justify> <font> <height> <flags>`) keeps.
-fn text_display(c: &Cell, a: u32, r: u32, at: [i32; 2]) -> Option<TextDisplay> {
-    let v = |k: usize| c.doc.attr_value(a, k);
+fn text_display(v: &[&str], r: u32, at: [i32; 2]) -> Option<TextDisplay> {
+    let v = |k: usize| v.get(k).copied();
     let int = |k: usize| v(k)?.parse::<i32>().ok();
     let f: Vec<bool> = v(10)?.chars().map(|x| x == '1').collect();
     Some(TextDisplay {

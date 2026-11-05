@@ -532,26 +532,28 @@ pub(super) fn schematic_in(
         }
         // Its textDisplays, at their offset from the instance's origin (DBU, Virtuoso's
         // axes), so they follow a move.
+        // All on one `vtd` line, eleven values each (two lines of one key are E024).
+        let mut vtd: Vec<String> = Vec::new();
         for t in sv.tds.iter().filter(|t| t.owner == inst.r) {
             let (dx, dy) = (t.xy[0] - inst.xy[0], t.xy[1] - inst.xy[1]);
             let flags: String = t.flags.iter().map(|&f| if f { '1' } else { '0' }).collect();
-            push_attr(
-                doc,
-                "vtd",
-                &[
-                    &t.assoc,
-                    &t.name,
-                    &t.layer,
-                    &t.purpose,
-                    &dx.to_string(),
-                    &dy.to_string(),
-                    &t.orient,
-                    &t.justify,
-                    &t.font,
-                    &t.height.to_string(),
-                    &flags,
-                ],
-            );
+            vtd.extend([
+                t.assoc.clone(),
+                t.name.clone(),
+                t.layer.clone(),
+                t.purpose.clone(),
+                dx.to_string(),
+                dy.to_string(),
+                t.orient.clone(),
+                t.justify.clone(),
+                t.font.clone(),
+                t.height.to_string(),
+                flags,
+            ]);
+        }
+        if !vtd.is_empty() {
+            let v: Vec<&str> = vtd.iter().map(String::as_str).collect();
+            push_attr(doc, "vtd", &v);
         }
         if let Some(v) = vview {
             push_attr(doc, "vview", &[v]);

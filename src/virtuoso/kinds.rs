@@ -76,6 +76,12 @@ pub const KINDS: &[(&str, Scope)] = &[
     // each object kind the dumper left out (`skipped`)
     ("tnet", Scope::Object),
     ("skipped", Scope::Object),
+    // CDF attributes beyond paramLabelSet and the param flags (`cdfattr`, `paramattr`), a
+    // view the dump does not carry (`skipview`), a library's CDF and libInit.il (`libcdf`)
+    ("cdfattr", Scope::Cell),
+    ("paramattr", Scope::Cell),
+    ("skipview", Scope::Cell),
+    ("libcdf", Scope::File),
 ];
 
 /// The scope of record kind `tag`; `None` for a tag no row names.

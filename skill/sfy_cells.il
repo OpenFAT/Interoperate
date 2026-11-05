@@ -157,12 +157,21 @@
     (foreach e cells
       (unless (equal (car e) cur)
         (setq cur (car e))
-        (SfyPut port "lib" (list cur)))
+        (SfyPut port "lib" (list cur))
+        (when (equal role "design") (SfyDumpLibCdf port cur)))
       ;; One cell's SKILL error costs that cell (its records so far stay; the import
       ;; reports what does not fit), logged with its message, not the whole dump.
       (printf "schemify: dumping %s/%s\n" (car e) (cadr e))
       (unless (errset (SfyDumpCell port (car e) (cadr e) role (caddr e)) t)
         (SfyRefuse 0 (sprintf nil "%s/%s: SKILL error %s" (car e) (cadr e) (SfyErrMsg)))))))
+
+;; ("libcdf" params libInit) when library lib has a base library CDF (its parameter count)
+;; or a libInit.il (1): neither travels (gaps2 S10).
+(procedure (SfyDumpLibCdf port lib)
+  (let ((d (cdfGetBaseLibCDF (ddGetObj lib))) (dir (getSGq (ddGetObj lib) readPath)) (init nil))
+    (setq init (and (stringp dir) (isFile (strcat dir "/libInit.il"))))
+    (when (or d init)
+      (SfyPut port "libcdf" (list (if d (length (getSGq d parameters)) 0) (if init 1 0))))))
 
 ;; One cell: cell record, CDF, cellviews by view name, text views and config views (design
 ;; cells; sfy_cfg.il). A master missing from cds.lib (an unbound instance) is refused and
@@ -176,7 +185,7 @@
       (foreach v (or views (setof v0 (list "schematic" "symbol") (ddGetObj lib cell v0)))
         (SfyDumpCv port lib cell v))
       (when (equal role "design")
-        (SfyDumpTextViews port lib cell)
+        (SfyDumpTextViews port lib cell views)
         (when (fboundp 'SfyCfgDump) (SfyCfgDump port lib cell))))))
 
 ;; ---------------------------------------------------------------- CDF
@@ -190,12 +199,71 @@
                (cdfGetBaseCellCDF (ddGetObj lib cell)))))
     (when cdf
       (SfyPut port "cdf" (list (SfyText (list (SfyStrOr (getSGq cdf paramLabelSet))))))
+      (foreach a (SfyCdfAttrs cdf)
+        (SfyPut port "cdfattr" a))
       ;; A design cell's callbacks carry their code (sfy_cdfcb.il); a ref cell's never.
       (foreach p (getSGq cdf parameters)
         (SfyPut port "param" (append (SfyParamFields p)
-                               (and (equal role "design") (SfyCdfCbFields lib p)))))
+                               (and (equal role "design") (SfyCdfCbFields lib p))))
+        (foreach a (SfyParamAttrs p)
+          (SfyPut port "paramattr" (cons (getSGq p name) a))))
       (foreach s (SfySimInfoFields (getSGq cdf simInfo))
         (SfyPut port "siminfo" s)))))
+
+;; (name value) of each CDF-level attribute that is set, beyond paramLabelSet (spec 4.2
+;; cdfattr), values as text.
+(procedure (SfyCdfAttrs cdf)
+  (SfySetAttrs
+    (list (list "doneProc" (getSGq cdf doneProc)) (list "formInitProc" (getSGq cdf formInitProc))
+      (list "paramEvaluate" (getSGq cdf paramEvaluate)) (list "paramSimType" (getSGq cdf paramSimType))
+      (list "paramDisplayMode" (getSGq cdf paramDisplayMode))
+      (list "instDisplayMode" (getSGq cdf instDisplayMode)) (list "instNameType" (getSGq cdf instNameType))
+      (list "termDisplayMode" (getSGq cdf termDisplayMode)) (list "termSimType" (getSGq cdf termSimType))
+      (list "netNameType" (getSGq cdf netNameType)) (list "modelLabelSet" (getSGq cdf modelLabelSet))
+      (list "opPointLabelSet" (getSGq cdf opPointLabelSet))
+      (list "paramFieldWidth" (getSGq cdf paramFieldWidth))
+      (list "buttonFieldWidth" (getSGq cdf buttonFieldWidth))
+      (list "promptWidth" (getSGq cdf promptWidth)) (list "fieldHeight" (getSGq cdf fieldHeight))
+      (list "fieldWidth" (getSGq cdf fieldWidth)))
+    (list "")))
+
+;; The (name value) pairs whose value is set and not one of the defaults, values as text.
+(procedure (SfySetAttrs pairs defaults)
+  (let ((out nil))
+    (foreach a pairs
+      (when (and (cadr a) (not (member (SfyAtomStr (cadr a)) defaults)))
+        (setq out (cons (list (car a) (SfyAtomStr (cadr a))) out))))
+    (reverse out)))
+
+;; (name value) of a parameter's display, editable and use when set (a display of "nil" is
+;; the hidden flag of its param record).
+(procedure (SfyParamAttrs p)
+  (append
+    (SfySetAttrs (list (list "display" (getSGq p display))) (list "nil" ""))
+    (SfySetAttrs (list (list "editable" (getSGq p editable)) (list "use" (getSGq p use)))
+      (list ""))))
+
+;; Sets CDF attribute name of cdf to value (text; the widths are integers).
+(procedure (SfySetCdfAttr cdf name v)
+  (case name
+    ("doneProc" (setSGq cdf v doneProc)) ("formInitProc" (setSGq cdf v formInitProc))
+    ("paramEvaluate" (setSGq cdf v paramEvaluate)) ("paramSimType" (setSGq cdf v paramSimType))
+    ("paramDisplayMode" (setSGq cdf v paramDisplayMode))
+    ("instDisplayMode" (setSGq cdf v instDisplayMode)) ("instNameType" (setSGq cdf v instNameType))
+    ("termDisplayMode" (setSGq cdf v termDisplayMode)) ("termSimType" (setSGq cdf v termSimType))
+    ("netNameType" (setSGq cdf v netNameType)) ("modelLabelSet" (setSGq cdf v modelLabelSet))
+    ("opPointLabelSet" (setSGq cdf v opPointLabelSet))
+    ("paramFieldWidth" (setSGq cdf (atoi v) paramFieldWidth))
+    ("buttonFieldWidth" (setSGq cdf (atoi v) buttonFieldWidth))
+    ("promptWidth" (setSGq cdf (atoi v) promptWidth)) ("fieldHeight" (setSGq cdf (atoi v) fieldHeight))
+    ("fieldWidth" (setSGq cdf (atoi v) fieldWidth))
+    (t (SfyCount (strcat "skipped:cdfattr " name)))))
+
+;; Sets display, editable or use of CDF parameter p.
+(procedure (SfySetParamAttr p name v)
+  (case name
+    ("display" (setSGq p v display)) ("editable" (setSGq p v editable)) ("use" (setSGq p v use))
+    (t (SfyCount (strcat "skipped:paramattr " name)))))
 
 ;; A default value as text: booleans "t"/"nil", the rest through SfyAtomStr.
 (procedure (SfyDefStr ty v)
@@ -437,6 +505,17 @@
     (foreach nt (getSGq cv nets)
       (foreach p (getSGq nt prop)
         (SfySkip (strcat "net prop " (getSGq p name)))))
+    ;; A PCell (its default variant is what is dumped) and Constraint Manager groups.
+    (when (getSGq cv isParamCell)
+      (SfySkip "pcell code (dumped: its default variant)"))
+    ;; An instance of a PCell variant whose pins are not its supermaster's (the dumped
+    ;; symbol): live ICADVM20.1, np=3 gives p1 p2 p3 where the supermaster has p1 p2.
+    (foreach i insts
+      (when (and (getSGq (getSGq i master) superMaster)
+                 (nequal (sort (getSGq (getSGq (getSGq i master) terminals) name) 'alphalessp)
+                         (sort (getSGq (getSGq (getSGq (getSGq i master) superMaster) terminals) name)
+                           'alphalessp)))
+        (SfySkip (strcat "pcell variant pins of " (getSGq i name)))))
     (when (getSGq cv modifiedButNotSaved)
       (SfySkip "unsaved edits (dumped as open)"))
     (foreach e (sort sfySkips (lambda (a c) (alphalessp (car a) (car c))))
@@ -488,20 +567,43 @@
   (let ((p (car (setof x (getSGq f prop) (equal (getSGq x name) "netExpression")))))
     (and p (getSGq p value))))
 
-;; textview records for the veriloga.va / verilog.v masters of the cell's other views.
-(procedure (SfyDumpTextViews port lib cell)
-  (let ((f nil) (p nil) (segs nil) (line nil))
+;; The master file of view v of lib/cell (its master.tag's file line), or nil.
+(procedure (SfyMasterFile lib cell v)
+  (let ((f (ddGetObj lib cell v "master.tag")) (p nil) (line nil) (out nil))
+    (when (and f (setq p (infile (getSGq f readPath))))
+      (while (and (null out) (gets line p))
+        (setq line (car (parseString line "\n")))
+        (unless (or (null line) (equal (substring line 1 2) "--")) (setq out line)))
+      (close p))
+    out))
+
+;; textview records for the text masters of the cell's other views (veriloga.va,
+;; verilog.v, a spectre view's spectre.scs, verilog.vams ...), and a skipview record for
+;; each other OA cellview the dump does not carry (cmos_sch, schematic2: gaps2 S4). dumped:
+;; the views written as cv records; maestro and config views are read elsewhere.
+(procedure (SfyDumpTextViews port lib cell dumped)
+  (let ((f nil) (p nil) (segs nil) (line nil) (file nil))
     (foreach v (sort (getSGq (getSGq (ddGetObj lib cell) views) name) nil)
-      (foreach file (list "veriloga.va" "verilog.v")
-        (when (and (not (member v (list "schematic" "symbol"))) (setq f (ddGetObj lib cell v file)))
-          (setq p (infile (getSGq f readPath)))
-          (if (null p)
-            (SfyRefuse 0 (sprintf nil "cannot read %s/%s/%s/%s" lib cell v file))
-            (progn
-              (setq segs nil)
-              (while (gets line p) (setq segs (cons line segs)))
-              (close p)
-              (SfyPut port "textview" (list v file (SfyText (reverse segs)))))))))))
+      (setq file (or (car (setof x (list "veriloga.va" "verilog.v") (ddGetObj lib cell v x)))
+                     (SfyMasterFile lib cell v)))
+      (cond
+        ((or (member v (list "schematic" "symbol")) (member v dumped) (null file)) nil)
+        ((member file (list "maestro.sdb" "expand.cfg" "data.sdb")) nil)
+        ;; Constraint Manager keeps a cell's constraints in its constraint view (live
+        ;; ICADVM20.1: prop.cfg beside them; no constraint group on the schematic).
+        ((equal v "constraint")
+          (SfyPut port "skipview" (list v "Constraint Manager constraints")))
+        ((equal (substring file (max 1 (difference (strlen file) 2)) 3) ".oa")
+          (SfyPut port "skipview" (list v file)))
+        ((null (setq f (ddGetObj lib cell v file)))
+          (SfyPut port "skipview" (list v file)))
+        ((null (setq p (infile (getSGq f readPath))))
+          (SfyRefuse 0 (sprintf nil "cannot read %s/%s/%s/%s" lib cell v file)))
+        (t
+          (setq segs nil)
+          (while (gets line p) (setq segs (cons line segs)))
+          (close p)
+          (SfyPut port "textview" (list v file (SfyText (reverse segs)))))))))
 
 ;; ================================================================ import
 
@@ -589,7 +691,9 @@
                 (unless (member (arrayref cell "role") (list "design" "ref"))
                   (setq err "cell role is neither design nor ref"))
                 (setq cells (cons cell cells)))))
-          ((member tag (list "cdf" "param" "siminfo"))
+          ;; Report-only records (gaps2 S4, S10): nothing to load.
+          ((member tag (list "skipview" "libcdf")) (SfyCount (strcat "skipped:" tag)))
+          ((member tag (list "cdf" "param" "cdfattr" "paramattr" "siminfo"))
             (cond
               ((or (null cell) (arrayref cell "cvs") (arrayref cell "texts"))
                 (setq err (strcat tag " outside a cell's CDF section")))
@@ -678,7 +782,10 @@
     (when (and sfySym
                (not (exists sfyV (arrayref c "cvs") (equal (arrayref sfyV "type") "schematic"))))
       (foreach sfySim (reverse sfySims)
-        (if (and (ddGetObj (arrayref c "lib") (arrayref c "name") sfySim) (not sfyOverwrite))
+        (if (or (and (ddGetObj (arrayref c "lib") (arrayref c "name") sfySim) (not sfyOverwrite))
+                (exists sfyT (arrayref c "texts") (equal (nth 1 (cadr sfyT)) sfySim))
+                (and (ddGetObj (arrayref c "lib") (arrayref c "name") sfySim)
+                     (null (ddGetObj (arrayref c "lib") (arrayref c "name") sfySim "symbol.oa"))))
           (SfyCount "kept stop view")
           (progn
             (setarray sfySym "view" sfySim)
@@ -700,9 +807,16 @@
 
 (procedure (SfyLoadCdf c)
   (let ((tlib (arrayref c "lib")) (name (arrayref c "name")) (cellId nil) (old nil)
-        (cdf nil) (sim nil) (line (car (car (arrayref c "cdf")))))
+        (cdf nil) (sim nil) (line (car (car (arrayref c "cdf")))) (keep nil) (keepP nil)
+        (attrs nil) (pattrs nil) (q nil))
     (setq cellId (ddGetObj tlib name nil nil nil "a"))
     (when cellId (setq old (cdfGetBaseCellCDF cellId)))
+    ;; What the old CDF had beyond the records (a dump of a cell edited in Schemify carries
+    ;; no attributes): kept, so a load never deletes them (gaps2 S7).
+    (when old
+      (setq keep (SfyCdfAttrs old))
+      (setq keepP (mapcar (lambda (x) (cons (getSGq x name) (SfyParamAttrs x)))
+                    (getSGq old parameters))))
     (cond
       ((null cellId) (SfyRefuse line (sprintf nil "cannot create cell %s/%s" tlib name)))
       ((and old (not sfyOverwrite))
@@ -719,7 +833,23 @@
                   (when (nequal (SfyTextValue (cadr (cadr lr))) "")
                     (setSGq cdf (SfyTextValue (cadr (cadr lr))) paramLabelSet)))
                 ("param" (SfyLoadParam cdf lr))
+                ("cdfattr" (setq attrs (cons (cdr (cadr lr)) attrs)))
+                ("paramattr" (setq pattrs (cons (cdr (cadr lr)) pattrs)))
                 ("siminfo" (setq sim (cons (SfySimInfoValue (cadr lr)) sim)))))
+            (foreach a keep
+              (unless (assoc (car a) attrs) (setq attrs (cons a attrs)) (SfyCount "kept cdfattr")))
+            (foreach e keepP
+              (when (cdfFindParamByName cdf (car e))
+                (foreach a (cdr e)
+                  (unless (exists x pattrs (and (equal (car x) (car e)) (equal (cadr x) (car a))))
+                    (setq pattrs (cons (cons (car e) a) pattrs))
+                    (SfyCount "kept paramattr")))))
+            (foreach a (reverse attrs) (SfySetCdfAttr cdf (car a) (cadr a)))
+            (foreach a (reverse pattrs)
+              (setq q (cdfFindParamByName cdf (car a)))
+              (if q
+                (SfySetParamAttr q (cadr a) (caddr a))
+                (SfyRefuse line (sprintf nil "paramattr of unknown param %s" (car a)))))
             (when sim (setSGq cdf (cons nil (SfyFlatten (reverse sim))) simInfo))
             (if (cdfSaveCDF cdf)
               (SfyCount "cdf")

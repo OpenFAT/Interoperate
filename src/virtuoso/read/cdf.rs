@@ -28,6 +28,8 @@ pub struct CdfParam {
     /// The callback's code as the dumper read it from a design library (`inline` or
     /// `libInit.il`, and the forms as list text; sfy_cdfcb.il), never written back.
     pub source: Option<(String, String)>,
+    /// `(display|editable|use, expression)` set to other than the default (`paramattr`).
+    pub attrs: Vec<(String, String)>,
 }
 
 /// A simInfo value.
@@ -91,9 +93,22 @@ pub struct Cdf {
     pub params: Vec<CdfParam>,
     /// simInfo per simulator.
     pub siminfo: Vec<SimInfo>,
+    /// `(doneProc|formInitProc|paramEvaluate|…, value)` (`cdfattr`): carried back only
+    /// through the reverse stash (`vcdfrec`, §7.5).
+    pub attrs: Vec<(String, String)>,
 }
 
 impl Cdf {
+    /// The words cdsParam labels index: paramLabelSet while `paramDisplayMode` shows
+    /// instance parameters (`parameter`, or unset); none for `none` and for operating-point or
+    /// model results, which are simulation values, not params.
+    pub fn cds_param_set(&self) -> &str {
+        match self.attrs.iter().find(|a| a.0 == "paramDisplayMode") {
+            Some((_, m)) if m != "parameter" => "",
+            _ => &self.label_set,
+        }
+    }
+
     /// simInfo of `sim`.
     pub fn sim(&self, sim: &str) -> Option<&SimInfo> {
         self.siminfo.iter().find(|s| s.sim == sim)

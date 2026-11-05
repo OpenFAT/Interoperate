@@ -349,6 +349,36 @@ fn remaster(
     }
 }
 
+/// Rows for what a dump names but does not carry: views other than the cellviews and text
+/// views it holds (gaps2 S4), a library's CDF and its libInit.il (S10).
+fn report_left_out(d: &Dump, notes: &mut Notes) {
+    for c in &d.cells {
+        for (v, file) in &c.skipviews {
+            notes.review(
+                "format",
+                &format!("{}/{}", c.lib, c.name),
+                format!("view {v} ({file}) is not in the dump: not imported"),
+            );
+        }
+    }
+    for (lib, n, init) in &d.libcdfs {
+        if *n > 0 {
+            notes.review(
+                "callback",
+                lib,
+                format!("the library CDF ({n} params) is not carried"),
+            );
+        }
+        if *init {
+            notes.review(
+                "callback",
+                lib,
+                "libInit.il is not carried: a library without it lacks its procedures",
+            );
+        }
+    }
+}
+
 /// See [`super::import_targets`].
 pub fn targets(sfyx: &str) -> Result<Vec<String>, Vec<String>> {
     let recs = sfyx::read(sfyx).map_err(|e| vec![e.to_string()])?;
@@ -385,6 +415,7 @@ pub fn import(
             format!("`{}` on line {}", r.tag, r.line),
         );
     }
+    report_left_out(&d, &mut notes);
     let ctx = Ctx::new(&d, existing, map, opts, &mut notes);
     let fr = fresh(&ctx, &mut notes);
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();

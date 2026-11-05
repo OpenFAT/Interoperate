@@ -877,7 +877,7 @@ fn a_skill_error_costs_one_cellview_and_the_log_still_closes() {
     // Export: the same backstop ends the log with the message.
     run(
         &mut i,
-        "(procedure (SfyDumpTextViews port lib cell) (error \"bang\"))",
+        "(procedure (SfyDumpTextViews port lib cell dumped) (error \"bang\"))",
     );
     let ok = run(&mut i, DUMPS[0].1);
     let log = file(&i, "/t/inv.sfyx.log");

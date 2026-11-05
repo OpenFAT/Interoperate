@@ -356,3 +356,115 @@ fn what_the_import_cannot_carry_is_a_report_row() {
         "{r}"
     );
 }
+
+/// `fixtures/virtuoso/gaps_more.sfyx` (live `s_more`) imported into an empty project.
+fn import_more() -> (Files, String) {
+    let imp = virtuoso::import(
+        &fixture("gaps_more.sfyx"),
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .expect("the live dump imports");
+    (imp.files.into_iter().collect(), imp.notes.text())
+}
+
+#[test]
+fn views_libraries_pcells_constraints_and_unsaved_edits_are_report_rows() {
+    // S4 S10 S14 S19 S20, each a named row of the live dump.
+    let (files, r) = import_more();
+    let problems = interop::check_output(&files.into_iter().collect::<Vec<_>>());
+    assert!(problems.is_empty(), "{problems:#?}");
+    for want in [
+        "needs_review:format\tsfyprobe_s/old\tview cmos_sch (sch.oa) is not in the dump",
+        "needs_review:format\tsfyprobe_s/cg\tview constraint (Constraint Manager constraints)",
+        "needs_review:format\tsfyprobe_s/beh\ttext view spectre (spectre.scs) not imported: a new library gets the symbol",
+        "needs_review:format\tsfyprobe_s/beh\ttext view verilogams (verilog.vams) not imported",
+        "needs_review:callback\tsfyprobe_s\tthe library CDF (1 params) is not carried",
+        "needs_review:callback\tsfyprobe_s\tlibInit.il is not carried",
+        "dropped:display-only\tsfyprobe_s/pcs\tpcell code (dumped: its default variant)",
+        "dropped:display-only\tsfyprobe_s/pctop\tpcell variant pins of P0",
+        "dropped:display-only\tsfyprobe_s/dirty\tunsaved edits (dumped as open)",
+    ] {
+        assert!(r.contains(want), "{want}\n{r}");
+    }
+}
+
+#[test]
+fn cdf_attributes_travel_back_on_an_unchanged_cell_and_are_reported_on_an_edited_one() {
+    // S7: doneProc, formInitProc, paramEvaluate, the display modes and w's display,
+    // editable and use (live s_more blk) ride in vcdfrec.
+    let (files, _) = import_more();
+    let blk = String::from_utf8(files["sfyprobe_s/blk.shcomp"].clone()).unwrap();
+    assert!(
+        blk.contains("cdfattr") && blk.contains("paramattr"),
+        "{blk}"
+    );
+    let export = |files: &Files| {
+        let d = common::load_all(files);
+        let top = d.find("sfyprobe_s/blk.shcomp").expect("blk");
+        virtuoso::export(&d, &[top], &Mapping::default(), &ExportOptions::default())
+            .expect("exports")
+    };
+    let out = export(&files);
+    for want in [
+        r#"("cdfattr" "doneProc" "G_done")"#,
+        r#"("cdfattr" "paramDisplayMode" "value")"#,
+        r#"("paramattr" "w" "display" "cdfgData->mode->value==\"a\"")"#,
+        r#"("paramattr" "w" "editable" "nil")"#,
+    ] {
+        assert!(out.sfyx.contains(want), "{want}\n{}", out.sfyx);
+    }
+    // An edited interface (a new param): the CDF is derived, and the loss is a row.
+    let mut edited = files.clone();
+    let text = blk.replacen("\nparam ", "\nparam extra 1\nparam ", 1);
+    edited.insert("sfyprobe_s/blk.shcomp".into(), text.into_bytes());
+    let out = export(&edited);
+    assert!(
+        !out.sfyx.lines().any(|l| l.starts_with("(\"cdfattr\"")),
+        "{}",
+        out.sfyx
+    );
+    let r = out.notes.text();
+    assert!(
+        r.contains("interface edited: CDF doneProc formInitProc")
+            && r.contains("w.display w.editable w.use"),
+        "{r}"
+    );
+}
+
+#[test]
+fn several_text_displays_of_one_instance_are_one_vtd_line() {
+    // Two textDisplays on R1 used to be two `vtd` lines, E024 on load.
+    let mut text = fixture("gaps.sfyx");
+    let at = r#"("tnet" 1 "MINUS" "n_in")"#;
+    let k = text.find(at).expect("conn's tnet");
+    text.insert_str(
+        k,
+        "(\"td\" 1 \"prop\" \"r\" \"annotate\" \"drawing\" 10000 0 \"R0\" \"lowerLeft\" \"stick\" 10000 1 0 1 1 1)\n(\"td\" 1 \"prop\" \"m\" \"annotate\" \"drawing\" 10000 -10000 \"R0\" \"lowerLeft\" \"stick\" 10000 1 0 1 1 1)\n",
+    );
+    let imp = virtuoso::import(
+        &text,
+        &Files::new(),
+        &Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .expect("imports");
+    let files: Files = imp.files.into_iter().collect();
+    let problems = interop::check_output(&files.clone().into_iter().collect::<Vec<_>>());
+    assert!(problems.is_empty(), "{problems:#?}");
+    let conn = String::from_utf8(files["sfyprobe_s/conn.shbench"].clone()).unwrap();
+    assert_eq!(conn.matches("  vtd ").count(), 1, "{conn}");
+    let d = common::load_all(&files);
+    let top = d.find("sfyprobe_s/conn.shbench").expect("conn");
+    let out = virtuoso::export(&d, &[top], &Mapping::default(), &ExportOptions::default())
+        .expect("exports");
+    assert_eq!(out.sfyx.matches("(\"td\" ").count(), 2, "{}", out.sfyx);
+}
+
+#[test]
+fn cds_param_counts_value_only_words() {
+    // cdfuser ch. 5: a `-` word of paramLabelSet shows its value only, and is still a word.
+    let (_, r) = import();
+    assert!(!r.contains("symbol label `cdsParam(3)` dropped"), "{r}");
+}

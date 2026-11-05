@@ -303,6 +303,8 @@ pub struct DCell {
     pub configs: Vec<crate::virtuoso::config::ConfigView>,
     /// Line of the `cell` record.
     pub line: u32,
+    /// `(view, master file)` of each view the dump does not carry (`skipview`).
+    pub skipviews: Vec<(String, String)>,
 }
 
 impl DCell {
@@ -340,6 +342,8 @@ pub struct Dump {
     pub maestro: Vec<Vec<Record>>,
     /// Records outside any cellview with a tag this reader does not know.
     pub unknown: Vec<Record>,
+    /// `(library, its CDF's param count, has libInit.il)` (`libcdf`).
+    pub libcdfs: Vec<(String, u32, bool)>,
 }
 
 fn ints(r: &Record, v: &[Value], what: &str) -> Result<Vec<i32>, Error> {
@@ -437,7 +441,16 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 in_cell = true;
                 in_cdf = false;
             }
-            "cdf" | "param" | "siminfo" | "textview" | "config" | "cv" if !in_cell => {
+            "libcdf" => {
+                r.arity(2)?;
+                let l = lib.clone().ok_or_else(|| r.err("before any `lib`"))?;
+                let n = u32::try_from(r.int(0)?).map_err(|_| r.err("a negative count"))?;
+                d.libcdfs.push((l, n, r.int(1)? != 0));
+            }
+            "cdf" | "param" | "cdfattr" | "paramattr" | "siminfo" | "textview" | "skipview"
+            | "config" | "cv"
+                if !in_cell =>
+            {
                 return Err(r.err("outside a cell"));
             }
             "cdf" => {
@@ -452,7 +465,33 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 });
                 in_cdf = true;
             }
-            "param" | "siminfo" if !in_cdf => return Err(r.err("before the cell's `cdf`")),
+            "param" | "cdfattr" | "paramattr" | "siminfo" if !in_cdf => {
+                return Err(r.err("before the cell's `cdf`"));
+            }
+            "cdfattr" => {
+                r.arity(2)?;
+                let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
+                cdf.attrs.push((r.str(0)?.to_owned(), r.str(1)?.to_owned()));
+            }
+            "paramattr" => {
+                r.arity(3)?;
+                let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
+                let name = r.str(0)?;
+                let p = cdf
+                    .params
+                    .iter_mut()
+                    .find(|p| p.name == name)
+                    .ok_or_else(|| r.err(format!("paramattr of unknown param {name}")))?;
+                p.attrs.push((r.str(1)?.to_owned(), r.str(2)?.to_owned()));
+            }
+            "skipview" => {
+                r.arity(2)?;
+                d.cells
+                    .last_mut()
+                    .unwrap()
+                    .skipviews
+                    .push((r.str(0)?.to_owned(), r.str(1)?.to_owned()));
+            }
             "param" => {
                 // Eight fields, or ten in a design cell whose callback's code the dumper
                 // read (`from`, `code`; sfy_cdfcb.il).
@@ -476,6 +515,7 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                         10 => Some((r.str(8)?.to_owned(), r.text(9)?)),
                         _ => None,
                     },
+                    attrs: Vec::new(),
                 };
                 let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
                 if cdf.params.iter().any(|x| x.name == p.name) {

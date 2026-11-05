@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Lane S live check driver (gaps round 2): runs s_schematic on the Virtuoso host in its own
+# Lane S live check driver (gaps round 2): runs s_more, then s_schematic, on the Virtuoso host in its own
 # work directory (sfytest/checks-s, the library kept), netlists the kept cells with si
 # (spectre, and auCdl in CDS_Netlisting_Mode=Analog, the recipe of the research probes'
 # p_gapsnl.sh) under the run lock, deletes the library, and fetches the dump, the check's
@@ -22,7 +22,7 @@ mkdir -p "$tmp/il" "$tmp/si"
 ${CARGO:-cargo} run -q --release --features cli --bin schemify-interop --manifest-path "$repo/Cargo.toml" \
   -- install-skill "$tmp/il" >/dev/null
 ssh "$host" bash -s <<PREP
-mkdir -p $work/src $work/out && rm -f $work/out/s_schematic*
+mkdir -p $work/src $work/out && rm -f $work/out/s_schematic* $work/out/s_more*
 [ -f $work/cds.lib ] || cp sfytest/checks/cds.lib $work/cds.lib
 # The sheet borders (S5's multi-sheet schematic), beside analogLib's install.
 grep -q '^DEFINE US_8ths ' $work/cds.lib || sed -n 's|^DEFINE analogLib \(.*\)/artist/analogLib|DEFINE US_8ths \1/sheets/US_8ths|p' $work/cds.lib >> $work/cds.lib
@@ -31,12 +31,17 @@ scp -q "$here"/*.il "$here"/run.sh "$host:$work/src/"
 scp -q "$tmp/il/schemify.il" "$host:$work/schemify.il"
 drop() {
   ssh "$host" sh -s <<DROP
-rm -rf "\$HOME/$work/$lib" "\$HOME/$work/si"
-sed -i '/^DEFINE $lib /d' "\$HOME/$work/cds.lib"
+rm -rf "\$HOME/$work/$lib" "\$HOME/$work/${lib}2" "\$HOME/$work/si"
+sed -i '/^DEFINE $lib /d; /^DEFINE ${lib}2 /d' "\$HOME/$work/cds.lib"
 DROP
 }
 trap drop EXIT
 status=0
+# s_more first: run.sh drops the lane library when a check starts, so s_schematic's kept
+# library (for si below) must come last.
+ssh "$host" "env SFYCHECK_WORK=\$HOME/$work bash $work/src/run.sh s_more" \
+  >"$tmp/run_more.txt" 2>&1 || status=$?
+cat "$tmp/run_more.txt"
 ssh "$host" "env SFYCHECK_KEEP=1 SFYCHECK_WORK=\$HOME/$work bash $work/src/run.sh s_schematic" \
   >"$tmp/run.txt" 2>&1 || status=$?
 cat "$tmp/run.txt"
@@ -93,7 +98,8 @@ done; done
 ls "\$O"
 SI
 cat "$tmp/si.txt"
-scp -q "$host:$work/out/s_schematic.sfyx" "$host:$work/out/s_schematic.sfyx.log" "$host:$work/out/s_schematic.txt" "$tmp/" || status=1
+scp -q "$host:$work/out/s_schematic.sfyx" "$host:$work/out/s_schematic.sfyx.log" "$host:$work/out/s_schematic.txt" \
+  "$host:$work/out/s_more.sfyx" "$host:$work/out/s_more.sfyx.log" "$host:$work/out/s_more.txt" "$tmp/" || status=1
 scp -q "$host:$work/out/s_si/*" "$tmp/si/" || true
 echo "s_drive: files in $tmp"
 exit $status
