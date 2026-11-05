@@ -375,7 +375,8 @@ fn design_records(text: &str, from: &[&str], to: &str) -> Result<Vec<String>, St
     for (at, r) in located(&recs) {
         let keep = at.design || at.maestro;
         if !keep
-            || matches!(r.tag.as_str(), "sfyx" | "end" | "lib")
+            // What the dumper skipped (S6) is what no load restores.
+            || matches!(r.tag.as_str(), "sfyx" | "end" | "lib" | "skipped")
             || (r.tag == "prop" && r.str(1).is_ok_and(|n| n.starts_with("schemify")))
         {
             continue;
