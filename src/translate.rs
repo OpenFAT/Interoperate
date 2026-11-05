@@ -1176,7 +1176,18 @@ impl<'o> Tables<'o> {
         {
             Some(v) if v.contains("[hierarchy_config") => {
                 let sch_dir = dir.replace("/sym/", "/sch/");
-                self.index.get(&format!("{sch_dir}/{stem}.sch")).copied()
+                let found = self.index.get(&format!("{sch_dir}/{stem}.sch")).copied();
+                if found.is_none() {
+                    // The proc's other views (a configured pex or spice netlist) need Tcl.
+                    acc.item(
+                        sym.src,
+                        0,
+                        Class::Review(Reason::Tcl),
+                        0,
+                        format!("schematic={v}: no {sch_dir}/{stem}.sch (the proc's default)"),
+                    );
+                }
+                found
             }
             Some(v) if v.starts_with("tcleval(") => {
                 acc.item(

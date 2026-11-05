@@ -468,3 +468,53 @@ fn schematic_drawings_become_shapes() {
         .into_owned();
     assert!(sch.contains("\nL 4 0 0 10 10 {}"), "{sch}");
 }
+
+/// inv_xschem row X22: `schematic=tcleval([hierarchy_config @symname])` (IHP std cells)
+/// resolves to the proc's default, the same-named schematic in the sibling `sch` tree; with
+/// no such file, or with another proc, it is a `needs_review:tcl` row and the cell a leaf.
+#[test]
+fn hierarchy_config_takes_its_default_view_or_is_reviewed() {
+    let v = "v {xschem version=3.4.7 file_version=1.2}\n";
+    let sym = |cfg: &str| {
+        format!(
+            "{v}K {{type=subcircuit\nformat=\"@name @pinlist @symname\"\ntemplate=\"name=x1\"\nschematic=\"tcleval([{cfg} @symname])\"}}\nB 5 -42.5 -2.5 -37.5 2.5 {{name=A dir=in}}\nB 5 37.5 -2.5 42.5 2.5 {{name=Z dir=out}}\n"
+        )
+    };
+    let sch = format!(
+        "{v}C {{res.sym}} 0 0 0 0 {{name=R1}}\nC {{ipin.sym}} 0 -30 0 0 {{name=p1 lab=A}}\nC {{opin.sym}} 0 30 0 0 {{name=p2 lab=Z}}\n"
+    );
+    let mut files = fixture();
+    files.extend([
+        (
+            "x/cells/sym/xschem/c1.sym".to_owned(),
+            sym("hierarchy_config"),
+        ),
+        ("x/cells/sch/xschem/c1.sch".to_owned(), sch),
+        (
+            "x/cells/sym/xschem/c2.sym".to_owned(),
+            sym("hierarchy_config"),
+        ),
+        ("x/cells/sym/xschem/c3.sym".to_owned(), sym("my_config")),
+    ]);
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let paths: Vec<&str> = out.iter().map(|f| f.0.as_str()).collect();
+    assert!(paths.contains(&"cells/c1.shcomp"), "{paths:?}");
+    assert!(file(&out, "cells/c1.shcomp").contains("core:res"));
+    let t = report.text();
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:tcl\tcells/sym/xschem/c2.sym")
+                && l.contains("no ")
+                && l.contains("c2.sch (the proc's default)")
+        ),
+        "{t}"
+    );
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:tcl\tcells/sym/xschem/c3.sym")
+                && l.contains("my_config")
+        ),
+        "{t}"
+    );
+}
