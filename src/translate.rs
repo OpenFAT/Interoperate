@@ -2349,6 +2349,12 @@ impl<'o> Tables<'o> {
                 }),
                 Target::Core(_) => None,
             };
+            // A bare name with no file (`schematic=passgate_1`, golden gain_stage) is
+            // xschem's per-instance specialisation of the cell's own schematic: subckt
+            // `passgate_1` with the instance's values, `@modelp` included. Every Schemify
+            // instance is specialised so (netlist §6); only the subckt name differs.
+            let specialised = matches!(target, Target::Cell(c) if self.cells[c as usize].sch.is_some())
+                && !alt.contains(['/', '.', '[', '(']);
             match resolved {
                 Some(a) => target = Target::Cell(a),
                 None => acc.item(
@@ -2356,7 +2362,14 @@ impl<'o> Tables<'o> {
                     line,
                     Class::Review(Reason::Unsupported),
                     0,
-                    format!("schematic={alt}"),
+                    if specialised {
+                        format!(
+                            "schematic={alt} names no file: xschem's per-instance specialisation, \
+                             as every instance is netlisted here; its subckt is not named {alt}"
+                        )
+                    } else {
+                        format!("schematic={alt}")
+                    },
                 ),
             }
         }
@@ -2373,6 +2386,25 @@ impl<'o> Tables<'o> {
                 format!("x{line}")
             }
         };
+        // xschem netlists a repeated name twice (golden nand2: two `m2`); elab refuses it
+        // (E009), so the second gets `_2` (case aside, as SPICE reads names).
+        let low = |n: &str| n.to_ascii_lowercase();
+        let name = if out.inst_names.contains(&low(&name)) {
+            let taken: Vec<String> = out.inst_names.iter().cloned().collect();
+            let new = unique(&low(&name), taken.iter().map(String::as_str));
+            let new = format!("{name}{}", &new[name.len()..]);
+            acc.item(
+                fid,
+                line,
+                Class::Review(Reason::Name),
+                0,
+                format!("instance name {name} is used twice: renamed {new}"),
+            );
+            new
+        } else {
+            name
+        };
+        out.inst_names.insert(low(&name));
         let cellref = match target {
             Target::Core(m) => format!("core:{}", m.cell),
             Target::Cell(c) => {
@@ -2935,6 +2967,8 @@ struct SchOut {
     /// Model text for the schematic impl's `body` (component instances' device_model).
     body: Vec<String>,
     bbox: Option<[i32; 2]>,
+    /// Instance names so far, lowercased (a repeat is renamed).
+    inst_names: HashSet<String>,
 }
 
 impl SchOut {

@@ -698,3 +698,26 @@ fn an_edited_imported_subcell_is_written_not_lost() {
     let r = compare(&ours, &theirs, &CmpOptions::default());
     assert!(r.is_equal(), "{:#?}\n{ours}\n---\n{theirs}", r.diffs);
 }
+
+/// inv_xschem row 13: a schematic with `only_toplevel` text imports as `X.shcomp` and its
+/// bench copy `X__top.shbench`; exporting the copy says the single file is not rebuilt.
+#[test]
+fn a_bench_copy_exports_as_its_own_file_with_a_note() {
+    let (mut inputs, roots) = xschem_lib();
+    let sch = inputs.iter_mut().find(|f| f.0 == "x/lib/sub.sch").unwrap();
+    sch.1.extend_from_slice(
+        b"C {code_shown.sym} 0 -200 0 0 {name=STIM only_toplevel=true value=\"Vin A 0 1\"}\n",
+    );
+    let files = import(&inputs, &roots);
+    let top = "lib/sub__top.shbench";
+    let d = load_design(&files, top);
+    let x = export(&d, &[d.find(top).unwrap()]).unwrap();
+    assert!(x.files.iter().any(|f| f.0 == "lib/sub__top.sch"));
+    assert!(
+        x.notes.text().contains(
+            "needs_review:header\tlib/sub__top.shbench\tthe bench copy of lib/sub.sch is its own sub__top.sch"
+        ),
+        "{}",
+        x.notes.text()
+    );
+}

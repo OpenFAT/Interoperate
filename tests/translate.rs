@@ -407,3 +407,27 @@ fn value_lists_and_lvs_ignore_are_reviewed() {
     let vec = file(&out, "lib/vec.shbench");
     assert!(vec.contains("name R2,R1\n") && !vec.contains("?1"), "{vec}");
 }
+
+/// inv_xschem row 10: xschem netlists a repeated instance name twice (golden nand2), elab
+/// refuses it (E009): the second is renamed, with a `needs_review:name` row.
+#[test]
+fn a_repeated_instance_name_is_renamed() {
+    let mut files = fixture();
+    files.push((
+        "x/lib/dup.sch".into(),
+        "v {xschem version=3.4.7 file_version=1.2}\nC {res.sym} 0 0 0 0 {name=R5}\nC {res.sym} 100 0 0 0 {name=r5}\nC {res.sym} 200 0 0 0 {name=R5_2}\n".into(),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let dup = file(&out, "lib/dup.shbench");
+    for n in ["name R5\n", "name r5_2\n", "name R5_2_2\n"] {
+        assert!(dup.contains(n), "{n} in {dup}");
+    }
+    assert!(
+        report
+            .text()
+            .contains("instance name r5 is used twice: renamed r5_2"),
+        "{}",
+        report.text()
+    );
+}

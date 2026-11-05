@@ -228,6 +228,18 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
                 &c.path,
                 format!("imported without `{XFP}`: an edit since cannot be told, {p} is used"),
             ),
+            // ponytail: the bench copy is not merged back into its component's file.
+            Some(Target::Own(_)) if c.kind() == FileKind::Shbench && c.name.ends_with("__top") => {
+                notes.review(
+                    "header",
+                    &c.path,
+                    format!(
+                        "the bench copy of {p} is its own {}.sch: xschem's one file with \
+                         only_toplevel text is not rebuilt",
+                        c.name
+                    ),
+                );
+            }
             _ => {}
         }
     }
