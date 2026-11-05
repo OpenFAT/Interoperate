@@ -722,6 +722,17 @@ impl<'o> Tables<'o> {
         let tpl = &iface.template;
         let attrs = &iface.attrs;
         let fmt = attrs.get("format");
+        // Netlisters with no Schemify dialect (inv_xschem row 15): counted, not translated.
+        for key in [
+            "vhdl_format",
+            "tedax_format",
+            "verilog_sym_def",
+            "vhdl_sym_def",
+        ] {
+            if attrs.get(key).is_some_and(|v| !v.trim().is_empty()) && acc.active {
+                *acc.unused.entry(format!("symbol {key}")).or_insert(0) += 1;
+            }
+        }
         let mut reviews: Vec<Review> = Vec::new();
         let mut tokens: Vec<String> = Vec::new();
         let implicit = implicit_nets(iface);

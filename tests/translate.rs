@@ -373,7 +373,7 @@ fn value_lists_and_lvs_ignore_are_reviewed() {
     let v = "v {xschem version=3.4.7 file_version=1.2}\n";
     files.push((
         "x/lib/ign.sym".into(),
-        format!("{v}K {{type=primitive\nformat=\"@name @pinlist ign\"\ntemplate=\"name=x1 lvs_ignore=true\"}}\nB 5 -2.5 -2.5 2.5 2.5 {{name=a dir=inout}}\n"),
+        format!("{v}K {{type=primitive\nformat=\"@name @pinlist ign\"\ntemplate=\"name=x1 lvs_ignore=true\"\ntedax_format=\"device @name ign\"}}\nB 5 -2.5 -2.5 2.5 2.5 {{name=a dir=inout}}\n"),
     ));
     files.push((
         "x/lib/vec.sch".into(),
@@ -404,6 +404,8 @@ fn value_lists_and_lvs_ignore_are_reviewed() {
         row("needs_review:unsupported", "ign.sym", "lvs_ignore=true"),
         "{t}"
     );
+    // Row 15: a dialect Schemify has no impl for is counted.
+    assert!(t.contains("unused-attr\tsymbol tedax_format\t1\n"), "{t}");
     let vec = file(&out, "lib/vec.shbench");
     assert!(vec.contains("name R2,R1\n") && !vec.contains("?1"), "{vec}");
 }
