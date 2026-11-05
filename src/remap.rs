@@ -221,19 +221,23 @@ pub fn apply(g: &Geom, n: &Nets, todo: &[Remaster]) -> Edits {
             let Some((_, new_name)) = t.pins.iter().find(|(op, _)| *op == p) else {
                 continue;
             };
-            match &t.new_pins {
-                Some(pins) => {
-                    if let Some((_, local)) = pins.iter().find(|(nm, _)| nm == new_name) {
-                        let q = place(*local, g.inst_orient[k], base).unwrap_or(base);
-                        let to = stub_end(g, n, q, away(base, q));
-                        e.stubs.push((
-                            q,
-                            NewLabel {
-                                at: to,
-                                ..lab.clone()
-                            },
-                        ));
-                    }
+            // A new pin of known place gets a stub; one of unknown place (no geometry, or a
+            // pin the target draws nowhere: an inherited one, gaps2 P12) a loader request.
+            match t
+                .new_pins
+                .as_ref()
+                .and_then(|pins| pins.iter().find(|(nm, _)| nm == new_name))
+            {
+                Some((_, local)) => {
+                    let q = place(*local, g.inst_orient[k], base).unwrap_or(base);
+                    let to = stub_end(g, n, q, away(base, q));
+                    e.stubs.push((
+                        q,
+                        NewLabel {
+                            at: to,
+                            ..lab.clone()
+                        },
+                    ));
                 }
                 None => e.conns.push((k, new_name.clone(), lab.clone())),
             }

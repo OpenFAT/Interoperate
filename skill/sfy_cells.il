@@ -1225,9 +1225,39 @@
     (setq inst (SfyRef (nth 0 f) lr))
     (when inst
       (setq why (SfyStubAt sfyCv inst (nth 1 f) (nth 2 f)))
-      (if (stringp why)
-        (SfyRefuse (car lr) why)
-        (SfyCount "conn")))))
+      (cond
+        ((not (stringp why)) (SfyCount "conn"))
+        ((SfyConnNetSet inst (nth 1 f) (nth 2 f)) (SfyCount "conn as netSet"))
+        (t (SfyRefuse (car lr) why))))))
+
+;; A conn on a terminal the symbol draws no pin for (gaps2 P12): when the symbol or a
+;; netlisting view (spectre, auCdl) of the master has it as an inherited terminal, named
+;; term or by its net expression's property (a kit nfet's b [@lSup:%:VSS!], b or lSup), the
+;; instance's netSet override of that property carries the connection. t when it did.
+(procedure (SfyConnNetSet inst term net)
+  (let ((m (getSGq inst master)) (lib nil) (cell nil) (prop nil) (cv nil))
+    (setq lib (getSGq m libName))
+    (setq cell (getSGq m cellName))
+    (setq prop (SfyInhProp (getSGq m terminals) term))
+    (foreach v (list "spectre" "auCdl")
+      (unless (or prop (null (ddGetObj lib cell v)))
+        (setq cv (dbOpenCellViewByType lib cell v nil "r"))
+        (when cv
+          (setq prop (SfyInhProp (getSGq cv terminals) term))
+          (dbClose cv))))
+    (when prop
+      (dbReplaceProp inst prop "netSet" net)
+      t)))
+
+;; The property of the inherited terminal among terms named term or by that property.
+(procedure (SfyInhProp terms term)
+  (let ((out nil) (e nil) (p nil))
+    (foreach t0 terms
+      (setq e (SfyStrOr (dbGetTermNetExpr t0)))
+      (setq p (and (equal (substring e 1 2) "[@") (car (parseString (substring e 3) ":"))))
+      (when (and p (null out) (member term (list (getSGq t0 name) p)))
+        (setq out p)))
+    out))
 
 ;; Draws the stub + label for terminal term of instance inst in cellview cv: one grid step
 ;; (10 DBU of cv, 1/16 inch at the standard 160) from the terminal's real pin, away from the

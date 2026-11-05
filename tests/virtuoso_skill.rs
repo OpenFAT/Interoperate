@@ -958,3 +958,47 @@ fn a_stopping_view_terminal_dumps_and_progn_reads_back_as_a_list() {
     );
     assert!(bulk.truthy());
 }
+
+/// gaps2 P12: a `conn` on a terminal the symbol draws no pin for, inherited in the master's
+/// spectre view (`B`, `[@bsub:%:vss!]`), named by the terminal or by its property, sets the
+/// instance's netSet override instead of being refused.
+#[test]
+fn a_conn_on_an_inherited_terminal_sets_its_netset_override() {
+    let mut i = skill::virtuoso(&["analogLib", "basic", "pdk", "scratch"]);
+    i.load(BUILD).unwrap();
+    run(
+        &mut i,
+        r#"(let ((cv nil) (net nil) (term nil))
+             (SfyFixSymbol "pdk" "n3" (list (list "D" "inputOutput" 0 40)
+                                         (list "G" "input" -40 0) (list "S" "inputOutput" 0 -40)))
+             (setq cv (SfyFixOpen "pdk" "n3" "spectre" "schematicSymbol"))
+             (foreach n (list "D" "G" "S" "B")
+               (setq net (dbMakeNet cv n))
+               (setq term (dbCreateTerm net n "inputOutput"))
+               (when (equal n "B") (dbCreateTermNetExpr term "[@bsub:%:vss!]")))
+             (SfyFixSave cv))"#,
+    );
+    let text = "(\"sfyx\" 1 \"t\")\n(\"lib\" \"work\")\n(\"cell\" \"m\" \"design\")\n\
+                (\"cv\" \"schematic\" \"schematic\" 160)\n\
+                (\"inst\" 1 \"M0\" \"pdk\" \"n3\" \"symbol\" 0 0 \"R0\")\n\
+                (\"inst\" 2 \"M1\" \"pdk\" \"n3\" \"symbol\" 200 0 \"R0\")\n\
+                (\"conn\" 1 \"B\" \"VBB\")\n(\"conn\" 2 \"bsub\" \"VBB\")\n\
+                (\"conn\" 2 \"X\" \"VBB\")\n(\"end\")\n";
+    i.files.insert("/t/c.sfyx".into(), text.into());
+    run(&mut i, r#"(SfyImport "/t/c.sfyx" ?lib "scratch")"#);
+    let log = file(&i, "/t/c.sfyx.log");
+    assert!(log.contains("conn: no pin X on M1"), "{log}");
+    run(
+        &mut i,
+        r#"(SfyExport "/t/c2.sfyx" "scratch" (list "m") ?ref nil)"#,
+    );
+    let t = file(&i, "/t/c2.sfyx");
+    assert!(
+        t.contains("(\"prop\" 1 \"bsub\" \"netSet\" \"VBB\")"),
+        "{t}"
+    );
+    assert!(
+        t.contains("(\"prop\" 2 \"bsub\" \"netSet\" \"VBB\")"),
+        "{t}"
+    );
+}

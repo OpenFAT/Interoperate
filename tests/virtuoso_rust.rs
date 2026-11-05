@@ -1765,3 +1765,37 @@ fn live_p_terms() {
     }
     assert_eq!(fails, 0, "see the FAIL lines");
 }
+
+/// gaps2 P12: a 4-pin cell mapped onto a kit device whose bulk is an inherited pin of its
+/// mirror (`pin b bsub`): the drawn pins are placed by the mirror's geometry, the bulk is
+/// a `conn` request the loader turns into the instance's netSet override.
+#[test]
+fn a_pin_mapped_onto_an_inherited_terminal_is_a_loader_connection() {
+    let mut f = Files::new();
+    f.insert(
+        "schemify.project".into(),
+        b"schemify 1 project\n\nlib dev path dev\nlib demopdk path demopdk\n".to_vec(),
+    );
+    f.insert(
+        "dev/n4.shprim".into(),
+        b"schemify 1 shprim\n\npin d inout 10 40\npin g in -30 0\npin s inout 10 -40\npin b inout 30 0\n\nparam W 1\n\nimpl spice spice\n\nline 0 -30 0 30\n".to_vec(),
+    );
+    f.insert(
+        "demopdk/nch3_demo.shprim".into(),
+        b"schemify 1 shprim\n  provenance \"virtuoso demopdk/nch3_demo\"\n\npin D inout 10 40\npin G in -30 0\npin S inout 10 -40\npin bsub inout 0 0\n  inherit vss\n\nparam w 1\n\nimpl spice spice\n\nline 0 -30 0 30\n".to_vec(),
+    );
+    f.insert(
+        "tb.shbench".into(),
+        b"schemify 1 shbench\n\ninst aaaaaa dev:n4\n  at 0 0 R0\n  name M1\n\nwire bbbbbb 30 0 50 0\nlabel cccccc 50 0 R0 VBB\n".to_vec(),
+    );
+    let d = design(&f);
+    let tops = [d.find("tb.shbench").unwrap()];
+    let m = Mapping::parse(
+        "map dev:n4 virtuoso demopdk nch3_demo\n  pin d D\n  pin g G\n  pin s S\n  pin b bsub\n  param W w\n",
+    )
+    .unwrap();
+    let x = virtuoso::export(&d, &tops, &m, &ExportOptions::default()).unwrap();
+    // The three drawn pins land where n4's were (no request); the bulk is one.
+    assert_eq!(x.sfyx.matches("(\"conn\" ").count(), 1, "{}", x.sfyx);
+    assert!(x.sfyx.contains("\"bsub\" \"VBB\")"), "{}", x.sfyx);
+}
