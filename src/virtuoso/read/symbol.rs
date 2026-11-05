@@ -70,7 +70,7 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
     out
 }
 
-/// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `GND`, §3.3).
+/// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `0`, §3.3).
 pub(super) fn parse_netexpr(e: &str) -> Option<(String, String)> {
     let inner = e.trim().strip_prefix("[@")?.strip_suffix(']')?;
     let mut parts = inner.splitn(3, ':');
@@ -366,6 +366,7 @@ pub(super) fn build(
             });
         }
     }
+    cap_params(c, &mut params, &cell, notes);
     let mut pins: Vec<PinRow> = match (sym, sch) {
         (Some(sv), _) => pins_in(c, sv, notes),
         (None, Some(sv)) if kind == FileKind::Shcomp => derived_pins(sv),
@@ -769,4 +770,64 @@ pub(super) fn main_pin_fig<'a>(sv: &'a Cv, name: &str) -> Option<&'a PinFig> {
         .find(|f| net_from_virtuoso(&f.term).text == name && !alias_fig(f.r));
     debug_assert!(fig.is_none_or(|f| f.dir.is_empty()), "a symbol pin figure");
     fig
+}
+
+/// Params a Schemify cell holds at most (its doc table capacity: a load past it panics,
+/// `Params exceeds its capacity`; analogLib `port` has 421 CDF params, live).
+pub(super) const PARAMS_MAX: usize = 1 << 8;
+
+/// Cuts `params` to [`PARAMS_MAX`], in CDF order, keeping first those a netlist or label
+/// reads (any simulator's `instParameters`/`otherParameters`, `paramLabelSet`, a computed
+/// rule), then those with a default; the rest are reported `dropped:param` (an instance
+/// setting one keeps its override, as for any undeclared name).
+fn cap_params(c: &DCell, params: &mut Vec<ParamIn>, cell: &str, notes: &mut Notes) {
+    if params.len() <= PARAMS_MAX {
+        return;
+    }
+    let mut read: BTreeSet<&str> = BTreeSet::new();
+    if let Some(cdf) = &c.cdf {
+        for si in &cdf.siminfo {
+            for k in ["instParameters", "otherParameters"] {
+                if let Some(SimVal::List(l)) = si.get(k) {
+                    read.extend(l.iter().map(String::as_str));
+                }
+            }
+        }
+        read.extend(cdf.label_set.split_whitespace());
+    }
+    let rank = |p: &ParamIn| {
+        if read.contains(p.name.as_str()) || p.computed.is_some() {
+            0
+        } else if !p.default.is_empty() {
+            1
+        } else {
+            2
+        }
+    };
+    let mut order: Vec<usize> = (0..params.len()).collect();
+    order.sort_by_key(|&k| rank(&params[k]));
+    let mut keep = vec![false; params.len()];
+    for &k in &order[..PARAMS_MAX] {
+        keep[k] = true;
+    }
+    let mut k = 0;
+    let mut gone: Vec<String> = Vec::new();
+    params.retain(|p| {
+        k += 1;
+        if !keep[k - 1] {
+            gone.push(p.name.clone());
+        }
+        keep[k - 1]
+    });
+    assert_eq!(params.len(), PARAMS_MAX);
+    notes.dropped(
+        "param",
+        cell,
+        format!(
+            "{} CDF params past Schemify's {PARAMS_MAX} per cell (unread by any netlist, \
+             label or rule first): {}",
+            gone.len(),
+            gone.join(" ")
+        ),
+    );
 }

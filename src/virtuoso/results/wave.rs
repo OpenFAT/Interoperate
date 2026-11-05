@@ -183,8 +183,11 @@ fn plot(out: &mut Vec<u8>, analysis: &str, g: &[&Signal]) {
     // OCEAN may name a result `tran-tran` (its logFile entry): the analysis is the first word.
     let (title, scale, kind) = match analysis.split('-').next().unwrap_or("") {
         "tran" => ("Transient Analysis", "time", "time"),
-        "ac" | "noise" | "xf" | "sp" => ("AC Analysis", "frequency", "frequency"),
+        "ac" | "noise" | "xf" | "sp" | "stb" => ("AC Analysis", "frequency", "frequency"),
         "dc" => ("DC transfer characteristic", "sweep", "voltage"),
+        // The operating point (`dcOp`, one point per node voltage and terminal current):
+        // the plot run.md §4 reads `op` data and the OP annotation from.
+        "dcOp" => ("Operating Point", "sweep", "notype"),
         _ => ("", "sweep", "notype"),
     };
     let title = if title.is_empty() {
@@ -243,6 +246,10 @@ mod tests {
         let t = "# analysis dcOp\n# skipped dcOp /out\n# analysis tran\n# /out 1 points\n0 1\n";
         assert_eq!(parse(t).unwrap()[1].signals.len(), 1);
         assert_eq!(skipped(t), ["dcOp//out"]);
+        // The operating point (live a_res: v("/out") 0.5) is ngspice's "Operating Point" plot.
+        let op = parse("# analysis dcOp\n# /out 1 points V\n0 0.5\n").unwrap();
+        let r = String::from_utf8_lossy(&raw(&op)).into_owned();
+        assert!(r.contains("Plotname: Operating Point\n"), "{r}");
     }
 
     #[test]
@@ -253,5 +260,28 @@ mod tests {
         assert_eq!(text.matches("Plotname: Transient Analysis").count(), 2);
         assert!(text.contains("No. Variables: 3\nNo. Points: 2"));
         assert!(text.contains("No. Variables: 2\nNo. Points: 3"));
+    }
+
+    /// A live point (a_res: dc op, noise, stb, pss, pac) parses; its operating point is a
+    /// plot of its own; what has no waveform is listed.
+    #[test]
+    fn a_live_point_of_every_kind_parses() {
+        let t = include_str!("../../../tests/fixtures/virtuoso/a_res_point.txt");
+        let a = parse(t).unwrap();
+        let op = a.iter().find(|x| x.name == "dcOp").expect("dcOp");
+        let out = op.signals.iter().find(|s| s.name == "/out").expect("/out");
+        assert_eq!(out.re, [0.5], "the divider: ground is ground");
+        for k in ["stb", "pss_td", "pss_fd", "noise"] {
+            assert!(
+                a.iter().any(|x| x.name == k && !x.signals.is_empty()),
+                "{k}"
+            );
+        }
+        let sk = skipped(t);
+        assert!(
+            sk.iter().any(|x| x.starts_with("pac/"))
+                && sk.iter().any(|x| x.starts_with("dcOpInfo/"))
+        );
+        assert!(String::from_utf8_lossy(&raw(&a)).contains("Plotname: Operating Point"));
     }
 }

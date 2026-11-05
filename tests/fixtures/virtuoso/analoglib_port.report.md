@@ -1,0 +1,45 @@
+# Virtuoso import
+
+| Class | Rows |
+|---|---|
+| `dropped:param` | 1 |
+| `dropped:selection-box` | 1 |
+| `needs_review:callback` | 11 |
+| `needs_review:format` | 3 |
+| `needs_review:template` | 5 |
+
+## `dropped:param`
+
+- `analogLib/port`: 165 CDF params past Schemify's 256 per cell (unread by any netlist, label or rule first): vdc srcType va vaDBm fileName td theta per tr tf pw va2 vaDBm2 rolloff pwlbandwidth smallSig pacm pacDBm pacp acm acp xfm tempParam tc1 tc2 tnom noiseParam isnoisyNoiseModel noisetemp noiseEntryMethod noiseModelType noiseModelInterMethod noise_file_as_var noisefile FNpairs F1 N1 F2 N2 F3 N3 F4 N4 F5 N5 F6 N6 F7 N7 F8 N8 F9 N9 F10 N10 F11 N11 F12 N12 F13 N13 F14 N14 F15 N15 F16 N16 F17 N17 F18 N18 F19 N19 F20 N20 F21 N21 F22 N22 F23 N23 F24 N24 F25 N25 F26 N26 F27 N27 F28 N28 F29 N29 F30 N30 F31 N31 F32 N32 F33 N33 F34 N34 F35 N35 F36 N36 F37 N37 F38 N38 F39 N39 F40 N40 F41 N41 F42 N42 F43 N43 F44 N44 F45 N45 F46 N46 F47 N47 F48 N48 F49 N49 F50 N50 trigger triggerthreshold lfsrmode prbsFileBox prbsFile lfsrseed lfsrtaps rjrms rjseed nPeriodicJitter pjamp1 pjfreq1 pjtype1 pjamp2 pjfreq2 pjtype2 pjamp3 pjfreq3 pjtype3 m data rpttimes rptstart ref jitter seed taps rdup highz min_z_transition_width
+
+## `dropped:selection-box`
+
+- `analogLib/port`: 1 object(s)
+
+## `needs_review:callback`
+
+- `analogLib/port`: param FNpairs: callback not carried
+- `analogLib/port`: param fileName: callback not carried
+- `analogLib/port`: param hpShow: callback not carried
+- `analogLib/port`: param lowerthreshold: callback not carried
+- `analogLib/port`: param nPeriodicJitter: callback not carried
+- `analogLib/port`: param noisefile: callback not carried
+- `analogLib/port`: param pm: callback not carried
+- `analogLib/port`: param prbsFileBox: callback not carried
+- `analogLib/port`: param srcType: callback not carried
+- `analogLib/port`: param trigger: callback not carried
+- `analogLib/port`: param tvpairs: callback not carried
+
+## `needs_review:format`
+
+- `analogLib/port`: arc with an elliptic box drawn as a polygon
+- `analogLib/port`: arc with an elliptic box drawn as a polygon
+- `analogLib/port`: ellipse with an elliptic box drawn as a polygon
+
+## `needs_review:template`
+
+- `analogLib/port`: symbol label `cdsParam(1)` dropped
+- `analogLib/port`: symbol label `cdsParam(2)` dropped
+- `analogLib/port`: symbol label `cdsParam(3)` dropped
+- `analogLib/port`: symbol label `cdsTerm("MINUS")` dropped
+- `analogLib/port`: symbol label `cdsTerm("PLUS")` dropped
