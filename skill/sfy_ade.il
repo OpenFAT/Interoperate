@@ -272,7 +272,14 @@
     ;; ICADVM20.1, GF22FDX pdk.cdsinit: SfySelfTest's second dump lacked it).
     (setq vl nil)
     (foreach kv (car (errset (maeGetSimOption test ?session sess)))
+      ;; An analysis severity at "None" is no setting: a test the loader creates answers
+      ;; acSeverity ... tranSeverity "None", one restored from its files no such keys (live
+      ;; ICADVM20.1, SfySelfTest of the kit's rclive_tb).
       (when (and (listp kv) (stringp (car kv)) (nequal (car kv) "temp")
+                 (not (and (equal (SfyAtomStr (cadr kv)) "None")
+                           (geqp (strlen (car kv)) 8)
+                           (equal (substring (car kv) (difference (strlen (car kv)) 7) 8)
+                                  "Severity")))
                  (not (and (nequal (SfyAtomStr (cadr kv)) "")
                            (equal (SfyAtomStr (cadr kv))
                                   (SfyAtomStr (car (errset (envGetVal "spectre.opts" (car kv)))))))))
