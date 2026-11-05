@@ -16,7 +16,8 @@
 //!
 //! ```text
 //! converted <n> file(s)           exit 0 or 1; on exit 2 `not written` instead
-//! diag <relpath> <code> <count>   per file, per SpiceRack diagnostic code (never the cards)
+//! diag <relpath> <code> <count> [<word>...]   per file, per SpiceRack diagnostic code; a
+//!                                 refusal (`W`) adds its statements' first words (never the cards)
 //! end
 //! ```
 //!
@@ -117,13 +118,28 @@ fn convert(
     let (mut refused, mut outside) = (false, String::new());
     for (i, file) in kit.files().iter().enumerate() {
         let shown = rel(&file.path);
+        // The first word of each refused statement (W codes): what to translate by hand,
+        // never the cards (live GF22FDX: 32 files refused W0001, by keyword).
+        let lex = spicerack::syntax::lexicon::of(kit.dialect()).expect("a dialect with a reader");
+        let toks = spicerack::syntax::tokenize(&file.text, lex);
+        let word = |t: u32| -> String {
+            let at = toks.start(t.min(toks.len().saturating_sub(1) as u32)) as usize;
+            let line_start = file.text[..at].rfind('\n').map_or(0, |i| i + 1);
+            file.text[line_start..]
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .chars()
+                .take_while(|c| c.is_ascii_alphanumeric() || "._".contains(*c))
+                .collect()
+        };
         let codes = match file.role {
             Role::Unread(LoadError::Refused) => {
                 refused = true;
                 outside += &format!("{shown}: outside the root, refused\n");
-                vec![Code::R0007]
+                vec![(Code::R0007, String::new())]
             }
-            Role::Unread(LoadError::NotFound) => vec![Code::R0006],
+            Role::Unread(LoadError::NotFound) => vec![(Code::R0006, String::new())],
             Role::VerilogA => {
                 done.push((&file.path, file.text.clone()));
                 Vec::new()
@@ -132,25 +148,34 @@ fn convert(
                 match render::render_kit(&kit, FileId(i as u32), &shown, to) {
                     Ok(w) => {
                         done.push((&file.path, w.text));
-                        codes(&w.notes)
+                        codes(&w.notes, &word)
                     }
                     Err(d) => {
                         refused = true;
-                        codes(&d)
+                        codes(&d, &word)
                     }
                 }
             }
         };
-        let mut counts: BTreeMap<Code, usize> = BTreeMap::new();
+        let mut counts: BTreeMap<Code, (usize, Vec<String>)> = BTreeMap::new();
         // An unread include is reported at its own path, not again on its includer's statement.
         let own = matches!(file.role, Role::Unread(_));
-        for c in codes {
+        for (c, w) in codes {
             if own || !matches!(c, Code::R0006 | Code::R0007) {
-                *counts.entry(c).or_default() += 1;
+                let e = counts.entry(c).or_default();
+                e.0 += 1;
+                if !w.is_empty() && !e.1.contains(&w) {
+                    e.1.push(w);
+                }
             }
         }
-        for (c, n) in counts {
-            report += &format!("diag {shown} {c:?} {n}\n");
+        for (c, (n, words)) in counts {
+            let words = if words.is_empty() {
+                String::new()
+            } else {
+                format!(" {}", words.join(" "))
+            };
+            report += &format!("diag {shown} {c:?} {n}{words}\n");
         }
     }
     if refused {
@@ -173,6 +198,17 @@ fn convert(
     )
 }
 
-fn codes(d: &Diags) -> Vec<Code> {
-    d.diags.iter().map(|d| d.code).collect()
+/// Each diagnostic's code, with its statement's first word when it is a refusal (`W`).
+fn codes(d: &Diags, word: &dyn Fn(u32) -> String) -> Vec<(Code, String)> {
+    d.diags
+        .iter()
+        .map(|d| {
+            let w = if format!("{:?}", d.code).starts_with('W') {
+                word(d.token)
+            } else {
+                String::new()
+            };
+            (d.code, w)
+        })
+        .collect()
 }

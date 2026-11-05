@@ -1,0 +1,5 @@
+`include "disciplines.vams"
+module mon_va (v1, v2);
+inout v1, v2;
+electrical v1, v2;
+endmodule
