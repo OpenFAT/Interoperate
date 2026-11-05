@@ -406,6 +406,15 @@ fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// `lvs_ignore` (instance or symbol): xschem leaves the device out of the LVS netlist
+/// while its `lvs_ignore` variable is set; Schemify's `ignore` is every dialect's.
+fn lvs_ignore_note(v: &str) -> String {
+    format!(
+        "lvs_ignore={}: no CDL-only ignore in Schemify; netlisted in CDL as in SPICE",
+        v.trim()
+    )
+}
+
 fn truthy(v: &str) -> Option<bool> {
     match v.trim().to_ascii_lowercase().as_str() {
         "true" | "on" | "yes" | "1" => Some(true),
@@ -793,6 +802,9 @@ impl<'o> Tables<'o> {
             .split_whitespace()
             .collect();
         let keys: Vec<String> = (0..tpl.len()).map(|i| tpl.key(i).to_owned()).collect();
+        if let Some(v) = tpl.get("lvs_ignore").filter(|v| truthy(v) != Some(false)) {
+            reviews.push(review(Reason::Unsupported, lvs_ignore_note(v)));
+        }
         let mut params: Vec<ParamOut> = Vec::new();
         let mut dropped_keys: Vec<String> = Vec::new();
         for i in 0..tpl.len() {
@@ -1860,7 +1872,19 @@ impl<'o> Tables<'o> {
             doc.push_field(lang);
             text.iter().for_each(|l| doc.push_verbatim(l));
         }
-        (path, write(&doc).into_bytes())
+        // The fingerprint of the file as written (parsed back, so it is the one export
+        // recomputes from the loaded file): `xschem_out::XFP`.
+        let written = write(&doc);
+        let back =
+            schemify_format::parse(written.as_bytes()).expect("the import writes valid files");
+        let mut out = Document::new(back.kind());
+        crate::design::copy_header(&mut out, &back, &[]);
+        out.push_attr(crate::xschem_out::XFP);
+        out.push_value(&crate::xschem_out::fingerprint(&back));
+        for r in 1..back.record_count() {
+            out.copy_record(&back, r);
+        }
+        (path, write(&out).into_bytes())
     }
 
     /// The impls a cell gets, default first: `(name, lang, formats, ignore)`.
@@ -2389,6 +2413,15 @@ impl<'o> Tables<'o> {
                 doc.push_value("true");
             }
             _ => {}
+        }
+        if let Some(v) = props.get("lvs_ignore").filter(|v| truthy(v) != Some(false)) {
+            acc.item(
+                fid,
+                line,
+                Class::Review(Reason::Unsupported),
+                0,
+                lvs_ignore_note(v),
+            );
         }
         let iface = self.iface_of(target);
         let map = match target {
@@ -3105,6 +3138,18 @@ fn override_text(
     let fail = |reason| review(reason, t);
     if t.contains("tcleval(") {
         return Err(fail(Reason::Tcl));
+    }
+    // xschem's per-element list on an iterated instance (`C="?1 1p,'1p/2',…"`, golden
+    // sar_adc: `xb6 … C=1p`): an override is one value for every element (format.md).
+    // ponytail: reviewed, not split; needs a per-element override in the core (core.md).
+    if t.strip_prefix('?')
+        .and_then(|r| r.split_once(char::is_whitespace))
+        .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+    {
+        return Err(review(
+            Reason::Expression,
+            format!("{t} (a per-element value list: Schemify has one value per instance)"),
+        ));
     }
     match kind {
         Kind::Number => {

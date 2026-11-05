@@ -364,3 +364,46 @@ B 5 37.5 -2.542.5 2.5 {name=Y dir=out}
     let (out, _) = run(&fixture());
     assert!(out.iter().any(|f| f.0 == "lib/nand.shprim"));
 }
+
+/// inv_xschem rows 6 and 17: a per-element value list on an iterated instance and
+/// `lvs_ignore` (instance and symbol) cross as `needs_review` rows, never verbatim or silent.
+#[test]
+fn value_lists_and_lvs_ignore_are_reviewed() {
+    let mut files = fixture();
+    let v = "v {xschem version=3.4.7 file_version=1.2}\n";
+    files.push((
+        "x/lib/ign.sym".into(),
+        format!("{v}K {{type=primitive\nformat=\"@name @pinlist ign\"\ntemplate=\"name=x1 lvs_ignore=true\"}}\nB 5 -2.5 -2.5 2.5 2.5 {{name=a dir=inout}}\n"),
+    ));
+    files.push((
+        "x/lib/vec.sch".into(),
+        format!("{v}C {{res.sym}} 0 0 0 0 {{name=R[2..1] value=\"?1 1k,'1k/2'\" lvs_ignore=short}}\nC {{ign.sym}} 100 0 0 0 {{name=x9}}\n"),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let t = report.text();
+    let row = |class: &str, file: &str, detail: &str| {
+        t.lines().any(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            f.len() == 5 && f[0] == class && f[1].ends_with(file) && f[4].contains(detail)
+        })
+    };
+    assert!(
+        row(
+            "needs_review:expression",
+            "vec.sch",
+            "per-element value list"
+        ),
+        "{t}"
+    );
+    assert!(
+        row("needs_review:unsupported", "vec.sch", "lvs_ignore=short"),
+        "{t}"
+    );
+    assert!(
+        row("needs_review:unsupported", "ign.sym", "lvs_ignore=true"),
+        "{t}"
+    );
+    let vec = file(&out, "lib/vec.shbench");
+    assert!(vec.contains("name R2,R1\n") && !vec.contains("?1"), "{vec}");
+}

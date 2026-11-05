@@ -71,6 +71,57 @@ enum Target {
     Original(String),
 }
 
+/// Header attribute of a cell imported from xschem: [`fingerprint`] of the file as the
+/// import wrote it. While it matches, export references the original xschem file; after an
+/// edit the cell is written as its own (an edit to an imported sub-cell is never lost).
+pub const XFP: &str = "xfp";
+
+/// FNV-1a 64 of every header attribute but [`XFP`] and every record of `doc` (attribute
+/// lines sorted, rank-3 records sorted: the writer's order is not meaning).
+pub fn fingerprint(doc: &schemify_format::Document<'_>) -> String {
+    let rank3 = |k| {
+        use RecordKind as K;
+        matches!(
+            k,
+            K::Inst | K::Wire | K::Label | K::Port | K::Noconn | K::Text | K::Shape
+        )
+    };
+    let line = |key: &str, vals: &mut dyn Iterator<Item = &str>| {
+        let mut l = format!("  {key}");
+        vals.for_each(|v| {
+            l.push(' ');
+            l.push_str(v);
+        });
+        l + "\n"
+    };
+    let (mut head, mut ordered, mut sorted) = (Vec::new(), String::new(), Vec::new());
+    for a in doc.attrs(0).filter(|&a| doc.attr_key(a) != XFP) {
+        head.push(line(doc.attr_key(a), &mut doc.attr_values(a)));
+    }
+    head.sort();
+    for r in 1..doc.record_count() {
+        let mut t = line(doc.record_word(r), &mut doc.fields(r));
+        let mut attrs: Vec<String> = doc
+            .attrs(r)
+            .map(|a| line(doc.attr_key(a), &mut doc.attr_values(a)))
+            .collect();
+        attrs.sort();
+        t.push_str(&attrs.concat());
+        for v in doc.verbatim(r) {
+            t.push_str("  | ");
+            t.push_str(v);
+            t.push('\n');
+        }
+        if rank3(doc.record_kind(r)) {
+            sorted.push(t);
+        } else {
+            ordered.push_str(&t);
+        }
+    }
+    sorted.sort();
+    crate::merge::digest(&(head.concat() + &ordered + &sorted.concat()))
+}
+
 /// Exports cells `tops` (indices into `d.cells`) and every cell they instantiate as
 /// xschem files.
 ///
@@ -113,6 +164,30 @@ pub fn export(d: &Design, tops: &[usize]) -> Result<XschemExport, Vec<String>> {
         .map(|ci| live[ci].then(|| target_of(d, ci, tops.contains(&ci), &root_dir)))
         .collect();
     let mut notes = Notes::default();
+    for (ci, t) in targets.iter().enumerate() {
+        let c = &d.cells[ci];
+        let Some(p) = c
+            .header("provenance")
+            .and_then(|p| p.strip_prefix("xschem "))
+        else {
+            continue;
+        };
+        match t {
+            Some(Target::Own(_)) if !tops.contains(&ci) && c.header(XFP).is_some() => {
+                notes.review(
+                    "header",
+                    &c.path,
+                    format!("edited since its xschem import: written as its own cell, not {p}"),
+                );
+            }
+            Some(Target::Original(_)) if c.header(XFP).is_none() => notes.review(
+                "header",
+                &c.path,
+                format!("imported without `{XFP}`: an edit since cannot be told, {p} is used"),
+            ),
+            _ => {}
+        }
+    }
     let mut files = Vec::new();
     let mut dirs = BTreeSet::new();
     let mut globals = BTreeSet::new();
@@ -187,6 +262,8 @@ fn target_of(d: &Design, ci: usize, top: bool, root_dir: &str) -> Target {
         && (p.ends_with(".sch")
             || p.rsplit('/').next().and_then(|f| f.rsplit_once('.')).map(|(s, _)| s)
                 == Some(&c.name))
+        // Edited since the import: written as its own cell (a note in `export`).
+        && c.header(XFP).is_none_or(|fp| fp == fingerprint(&c.doc))
     {
         // The importer records the reference as resolved over its search roots; files of
         // older imports say `<lib>/<file>`, and `devices` is on xschem's default path.
