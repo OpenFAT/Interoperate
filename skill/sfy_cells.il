@@ -29,8 +29,7 @@
                 (progn
                   (setq design (SfyDesignClosure lib (or cells (SfyCellNames lib))))
                   (when ref (setq refs (SfyRefMasters lib design)))
-                  (SfyDumpFile path refs
-                    (mapcar (lambda (c) (list lib c nil)) design)
+                  (SfyDumpFile path refs (SfyDesignViews lib design)
                     (and maestro lib) design))
                 t)
         (SfyRefuse 0 (sprintf nil "SKILL error %s" (SfyErrMsg)))))
@@ -98,8 +97,30 @@
           (dbClose cv))))
     (sort seen nil)))
 
+;; (lib cell views) of each design cell: its schematic and symbol, plus every other view
+;; (symbol_alt, ...) an instance in lib is placed through (its pins place that instance).
+(procedure (SfyDesignViews lib design)
+  (let ((tab (makeTable "sfyDesignViews" nil)) (cv nil) (v nil) (k nil))
+    (foreach c design
+      (when (ddGetObj lib c "schematic")
+        (setq cv (dbOpenCellViewByType lib c "schematic" nil "r"))
+        (when cv
+          (foreach i (getSGq cv instances)
+            (setq k (getSGq i cellName))
+            (setq v (getSGq i viewName))
+            (when (and (equal (getSGq i libName) lib) (not (member v (list "schematic" "symbol")))
+                       (not (member v (arrayref tab k))))
+              (setarray tab k (cons v (arrayref tab k)))))
+          (dbClose cv))))
+    (mapcar (lambda (c)
+              (list lib c (sort (append (setof v0 (list "schematic" "symbol") (ddGetObj lib c v0))
+                                  (arrayref tab c))
+                            nil)))
+      design)))
+
 ;; (lib cell views) of every master outside lib that the design schematics instantiate
-;; (schematic pins excluded), sorted by (lib cell); views sorted.
+;; (schematic pins excluded), sorted by (lib cell); views sorted, with the symbol view
+;; whenever the cell has one (the mirror's own symbol).
 (procedure (SfyRefMasters lib design)
   (let ((tab (makeTable "sfyRefMasters" nil)) (keys nil) (cv nil) (k nil) (e nil) (v nil))
     (foreach c design
@@ -118,7 +139,12 @@
                 (setq e (list (car e) (cadr e) (cons v (caddr e)))))
               (setarray tab k e)))
           (dbClose cv))))
-    (mapcar (lambda (x) (list (car x) (cadr x) (sort (caddr x) nil)))
+    (mapcar (lambda (x)
+              (list (car x) (cadr x)
+                (sort (if (or (member "symbol" (caddr x)) (null (ddGetObj (car x) (cadr x) "symbol")))
+                        (caddr x)
+                        (cons "symbol" (caddr x)))
+                  nil)))
       (mapcar 'cadr
         (SfySortByKey
           (mapcar (lambda (k0) (list (list (car (arrayref tab k0)) (cadr (arrayref tab k0)))
@@ -289,9 +315,19 @@
     (SfyPut port tag (cons n (caddr e))))
   n)
 
-;; One cellview in spec 4.2 order: cv, term, pinfig, inst, spin, wire, label, shape, td, prop.
+;; Counts one object of kind the dump leaves out, in the log and in the cellview's skipped
+;; records (sfySkips, let-bound by SfyDumpCvBody).
+(procedure (SfySkip kind)
+  (let ((e (assoc kind sfySkips)))
+    (SfyCount (strcat "skipped:" kind))
+    (setq sfySkips (cons (list kind (add1 (if e (cadr e) 0)))
+                     (setof x sfySkips (nequal (car x) kind))))))
+
+;; One cellview in spec 4.2 order: cv, term, pinfig, inst, spin, wire, label, shape, td, prop,
+;; then (schematics) tnet, Virtuoso's own instance terminal -> net table, and skipped, the
+;; count of each kind of object left out.
 (procedure (SfyDumpCvBody port cv view)
-  (let ((upi 160000) (refs (makeTable "sfyRefs" nil)) (n 0)
+  (let ((upi 160000) (refs (makeTable "sfyRefs" nil)) (n 0) (sfySkips nil)
         (pinfigs nil) (insts nil) (spins nil) (wires nil) (labels nil) (shapes nil)
         (tds nil) (ot nil) (par nil) (b nil))
     (SfyPut port "cv" (list view (getSGq cv cellViewType) upi))
@@ -307,10 +343,10 @@
           ;; GUESS(G15): solder dots (dot or ellipse on wire drawing) are not dumped.
           (if (member ot (list "line" "path"))
             (setq wires (cons f wires))
-            (SfyCount (strcat "skipped:" ot))))
+            (SfySkip ot)))
         ((member ot (list "line" "rect" "polygon" "ellipse" "arc" "path"))
           (setq shapes (cons f shapes)))
-        (t (SfyCount (strcat "skipped:" ot)))))
+        (t (SfySkip ot))))
     (unless (equal (getSGq cv cellViewType) "schematic")
       (foreach e (SfySortByKey (mapcar (lambda (t0) (list (getSGq t0 name) t0)) (getSGq cv terminals)))
         (SfyPut port "term"
@@ -382,7 +418,19 @@
     (SfyDumpTds port tds refs upi)
     ;; append takes exactly two lists in Virtuoso (a live IC23/ICADVM20 run signalled on six).
     (SfyDumpProps port cv refs
-      (append pinfigs (append insts (append spins (append wires (append labels shapes))))))))
+      (append pinfigs (append insts (append spins (append wires (append labels shapes))))))
+    (when (equal (getSGq cv cellViewType) "schematic")
+      (setq b nil)
+      (foreach i insts
+        (foreach it (getSGq i instTerms)
+          (when (getSGq it net)
+            (setq b (cons (list (list (arrayref refs i) (getSGq it name)) nil
+                            (list (arrayref refs i) (getSGq it name) (getSGq (getSGq it net) name)))
+                      b)))))
+      (foreach e (SfySortByKey b)
+        (SfyPut port "tnet" (caddr e))))
+    (foreach e (sort sfySkips (lambda (a c) (alphalessp (car a) (car c))))
+      (SfyPut port "skipped" e))))
 
 ;; A property's value as dumped (spec 4.2 prop), or nil for a type the dump skips.
 (procedure (SfyPropValue p)
@@ -397,6 +445,12 @@
       ("netSet" (and (stringp v) v))
       (t nil))))
 
+;; Cellview properties Virtuoso keeps for itself (schCheck's and the extractor's stamps):
+;; neither dumped nor counted as skipped.
+(procedure (SfyCvBookkeeping)
+  (list "lastSchematicExtraction" "instance#" "net#" "schGeometryLastUpdated"
+    "connectivityLastUpdated" "schXtrVersion" "schGeometryVersion" "pin#"))
+
 ;; prop records of every dumped object and of the cellview (ref 0; only properties named
 ;; schemify*, the rest being Virtuoso's bookkeeping), sorted by (ref name).
 (procedure (SfyDumpProps port cv refs objs)
@@ -406,10 +460,12 @@
       (foreach p (getSGq o prop)
         (setq v (SfyPropValue p))
         (cond
-          ((and (zerop r) (nequal (substring (getSGq p name) 1 8) "schemify")) nil)
+          ((and (zerop r) (nequal (substring (getSGq p name) 1 8) "schemify"))
+            (unless (member (getSGq p name) (SfyCvBookkeeping))
+              (SfySkip (strcat "cvprop " (getSGq p name)))))
           ;; Read into its label's text (SfyNetExprOf), not a property of its own.
           ((equal (getSGq p name) "netExpression") nil)
-          ((null v) (SfyCount (strcat "skipped:prop " (getSGq p valueType))))
+          ((null v) (SfySkip (strcat "prop " (getSGq p valueType))))
           (t (setq entries (cons (list (list r (getSGq p name)) nil
                                    (list r (getSGq p name) (getSGq p valueType) v))
                              entries))))))

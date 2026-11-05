@@ -204,7 +204,9 @@ pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn>
                 "bool",
                 ael::bool_from_cdf(&p.def).unwrap_or("false").to_owned(),
             ),
-            "radio" | "cyclic" => ("choice", ael::literal_to_template(&p.def)),
+            // analogLib's unset choice is a blank (`region " "`): empty, as Virtuoso writes no
+            // value for it (gaps2 E1).
+            "radio" | "cyclic" => ("choice", ael::literal_to_template(p.def.trim())),
             _ => {
                 let numeric = p.flags.iter().any(|f| f == "parseAsNumber");
                 match own_default(&p.def, &names).filter(|_| numeric) {
@@ -219,7 +221,8 @@ pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn>
             default,
             unit: ael::unit_from_cdf(&p.units),
             doc: (!p.prompt.is_empty() && p.prompt != p.name).then(|| p.prompt.clone()),
-            choices: p.choices.clone(),
+            // The blank choice is the empty one (its default above).
+            choices: p.choices.iter().map(|c| c.trim().to_owned()).collect(),
             computed: rules.iter().find(|r| r.0 == p.name).map(|r| r.1.clone()),
         });
     }
@@ -763,6 +766,49 @@ fn sim_order(si: &SimInfo, pins: &[PinRow]) -> Vec<String> {
     } else {
         ordinary.iter().map(|p| p.name.clone()).collect()
     }
+}
+
+/// `t` with each ` k={c}` of a string or choice param `c` in the optional form
+/// ([`optional_param`](crate::virtuoso::write::optional_param)): Virtuoso writes no `k=` for
+/// an empty value (live ICADVM20.1, gaps2 E1: `M0 (nD nG nS 0) nmos`, never `region= `,
+/// `m=`). A template that does not split into holes is kept as is.
+pub(super) fn optional_strings(t: &str, params: &[ParamIn]) -> String {
+    let Some(items) = crate::virtuoso::write::template_items(t) else {
+        return t.to_owned();
+    };
+    let text = |lit: &str| lit.replace('{', "{{").replace('}', "}}");
+    let mut out = String::new();
+    let mut k = 0;
+    while k < items.len() {
+        let (hole, s) = &items[k];
+        if *hole {
+            out.push_str(&format!("{{{s}}}"));
+            k += 1;
+            continue;
+        }
+        let next = items.get(k + 1).filter(|(h, c)| {
+            *h && params
+                .iter()
+                .any(|p| p.name == *c && matches!(p.kind.as_str(), "string" | "choice"))
+        });
+        // The literal's last word, ` key=`, before a string hole.
+        let key = s
+            .strip_suffix('=')
+            .and_then(|x| x.rsplit_once(' '))
+            .filter(|(_, key)| !key.is_empty() && !key.contains(char::is_whitespace));
+        match (next, key) {
+            (Some((_, c)), Some((head, key))) => {
+                out.push_str(&text(head));
+                out.push_str(&crate::virtuoso::write::optional_param(key, c));
+                k += 2;
+            }
+            _ => {
+                out.push_str(&text(s));
+                k += 1;
+            }
+        }
+    }
+    out
 }
 
 pub(super) fn spectre_format(

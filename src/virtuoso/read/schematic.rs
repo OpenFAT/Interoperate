@@ -67,6 +67,10 @@ pub(super) fn schematic_in(
         .map(|d| d.params.iter().map(|p| p.name.clone()).collect())
         .unwrap_or_default();
     let bench = kind == FileKind::Shbench;
+    // Pin figures of the instances as Virtuoso draws them (placed box, its centre), and the
+    // labels that join a pin of another view to the symbol's (S3).
+    let mut figs: Vec<([i32; 4], [i32; 2])> = Vec::new();
+    let mut joins: Vec<Join> = Vec::new();
     // Instances.
     for inst in &sv.insts {
         tally.out += 1;
@@ -97,7 +101,35 @@ pub(super) fn schematic_in(
             }
             continue;
         }
-        if devices::is_global_symbol(&inst.lib, &inst.cell) {
+        // A master with no pins (a sheet border, a title block) draws nothing Schemify keeps.
+        if let Some(j) = ctx.find(&inst.lib, &inst.cell)
+            && !ctx.targets[j].write
+            && !ctx.dump.cells[j].is_global_symbol()
+            && ctx.dump.cells[j]
+                .symbol()
+                .is_some_and(|s| s.terms.is_empty())
+        {
+            notes.dropped(
+                "display-only",
+                &cell,
+                format!("{}: {}/{} has no pins", inst.name, inst.lib, inst.cell),
+            );
+            continue;
+        }
+        // A multi-sheet index (S5): its sheets are cells of their own in Virtuoso, which
+        // netlists them as one level; here each is a pinless sub-cell.
+        if inst.view == "msymbol" {
+            notes.review(
+                "name",
+                &cell,
+                format!(
+                    "{}: sheet {}/{} of a multi-sheet schematic is a sub-cell: nets it shares \
+                     with other sheets by name are not joined",
+                    inst.name, inst.lib, inst.cell
+                ),
+            );
+        }
+        if ctx.global_symbol(&inst.lib, &inst.cell) || prop(inst.r, "schemifyNet").is_some() {
             // A global label at the symbol's pin point.
             let gi = ctx
                 .find(&inst.lib, &inst.cell)
@@ -106,7 +138,7 @@ pub(super) fn schematic_in(
                 Some(p) => (
                     crate::design::place(p.at, o, at).unwrap_or(at),
                     ctx.find(&inst.lib, &inst.cell)
-                        .and_then(|g| ctx.dump.cells[g].cv("symbol"))
+                        .and_then(|g| ctx.dump.cells[g].symbol())
                         .and_then(|s| s.terms.first())
                         .map_or_else(|| format!("{}!", inst.cell), |t| t.name.clone()),
                 ),
@@ -141,6 +173,10 @@ pub(super) fn schematic_in(
             }
             if inst.lib != "analogLib" {
                 push_attr(doc, "vlib", &[&inst.lib]);
+            }
+            // A supply symbol not named after its net (a kit's or a user's `myvdd`, S11).
+            if inst.cell != net.trim_end_matches('!') {
+                push_attr(doc, "vcell", &[&inst.cell]);
             }
             continue;
         }
@@ -216,6 +252,17 @@ pub(super) fn schematic_in(
             push_attr(doc, "ignore", &["true"]);
         }
         let iface = m.iface.clone().unwrap_or_default();
+        let vview = view_pins(
+            ctx,
+            sv,
+            inst,
+            (o, at),
+            &iface,
+            &cell,
+            notes,
+            &mut figs,
+            &mut joins,
+        );
         let row = m.row.map(|r| &ctx.map.maps[r]);
         let dev = m.alib.map(|(d, _)| &devices::DEVICES[d]);
         // Sources: the waveform params become the `value` text (§6.6).
@@ -462,8 +509,15 @@ pub(super) fn schematic_in(
         for [p, v, d] in cached {
             push_attr(doc, "cached", &[p, v, d]);
         }
-        for p in vprops {
-            push_attr(doc, "vprop", &[&p.name, &p.ty, &p.value]);
+        // One `vprop` line, its values in (name, type, value) triples: an instance attribute
+        // is an override, and a second line of one key is E024 (live: a sheet instance of a
+        // multi-sheet index has five).
+        if !vprops.is_empty() {
+            let vals: Vec<&str> = vprops
+                .iter()
+                .flat_map(|p| [p.name.as_str(), p.ty.as_str(), p.value.as_str()])
+                .collect();
+            push_attr(doc, "vprop", &vals);
         }
         // Its textDisplays, at their offset from the instance's origin (DBU, Virtuoso's
         // axes), so they follow a move.
@@ -487,6 +541,9 @@ pub(super) fn schematic_in(
                     &flags,
                 ],
             );
+        }
+        if let Some(v) = vview {
+            push_attr(doc, "vview", &[v]);
         }
     }
     // Schematic pins.
@@ -543,6 +600,8 @@ pub(super) fn schematic_in(
     }
     // Wires: segments, stubs removed.
     let mut wire_pts: BTreeMap<u32, Vec<[i32; 2]>> = BTreeMap::new();
+    let mut ends: Vec<[i32; 2]> = Vec::new();
+    let mut segs: Vec<[i32; 4]> = Vec::new();
     let all_pts: Vec<DumpWire<'_>> = sv
         .wires
         .iter()
@@ -593,6 +652,8 @@ pub(super) fn schematic_in(
             if seg[0] == seg[1] {
                 continue;
             }
+            ends.extend([seg[0], seg[1]]);
+            segs.push([seg[0][0], seg[0][1], seg[1][0], seg[1][1]]);
             let id = ids.next(if first { id_of(w.r) } else { None }, &reserved);
             first = false;
             let xy = [seg[0][0], seg[0][1], seg[1][0], seg[1][1]];
@@ -602,6 +663,66 @@ pub(super) fn schematic_in(
                 doc.push_value_coord(width);
             }
         }
+    }
+    // Virtuoso puts a wire on a pin when the wire ends anywhere on the pin's figure, edge and
+    // corner included, or runs through it off its centre, and joins two pins whose figures
+    // overlap (live ICADVM20.1, S1). Schemify joins exact points, so a stub (`vjoin`: export
+    // leaves it out) takes each such point to the pin's centre.
+    // ponytail: O(points × pin figures); a wire through a figure is matched when it is
+    // axis-parallel, a diagonal one is left to the connectivity oracle.
+    let on =
+        |b: &[i32; 4], p: [i32; 2]| (b[0]..=b[2]).contains(&p[0]) && (b[1]..=b[3]).contains(&p[1]);
+    let mut stubbed: BTreeSet<([i32; 2], [i32; 2])> = BTreeSet::new();
+    for (b, c) in &figs {
+        for e in &ends {
+            if on(b, *e) && e != c {
+                stubbed.insert((*e, *c));
+            }
+        }
+        for w in &segs {
+            let (xs, ys) = (
+                w[0].min(w[2])..=w[0].max(w[2]),
+                w[1].min(w[3])..=w[1].max(w[3]),
+            );
+            let p = if w[1] == w[3] && xs.contains(&c[0]) {
+                [c[0], w[1]]
+            } else if w[0] == w[2] && ys.contains(&c[1]) {
+                [w[0], c[1]]
+            } else {
+                continue;
+            };
+            if on(b, p) && p != *c {
+                stubbed.insert((p, *c));
+            }
+        }
+    }
+    for (i, (b, c)) in figs.iter().enumerate() {
+        for (d, e) in &figs[i + 1..] {
+            let overlap = b[0] < d[2] && d[0] < b[2] && b[1] < d[3] && d[1] < b[3];
+            if overlap && c != e {
+                stubbed.insert((*c, *e));
+            }
+        }
+    }
+    for (p, q) in &stubbed {
+        let corner = [q[0], p[1]];
+        for (a, z) in [(*p, corner), (corner, *q)] {
+            if a != z {
+                let id = ids.next(None, &reserved);
+                crate::remap::push_wire(doc, &id, [a[0], a[1], z[0], z[1]], false);
+                push_attr(doc, "vjoin", &["true"]);
+            }
+        }
+    }
+    if !stubbed.is_empty() {
+        notes.add(
+            "rounding",
+            &cell,
+            format!(
+                "{} point(s) Virtuoso joins on a pin figure off its centre: stubs to the pin",
+                stubbed.len()
+            ),
+        );
     }
     // Labels.
     let mut dropped_alias = 0;
@@ -717,6 +838,16 @@ pub(super) fn schematic_in(
             format!("{dropped_alias} wire alias label(s)"),
         );
     }
+    joins.sort();
+    joins.dedup();
+    for (at, net, global) in &joins {
+        let id = ids.next(None, &reserved);
+        push_anchored(doc, RecordKind::Label, &id, *at, Orient::R0, net);
+        if *global {
+            push_attr(doc, "global", &["true"]);
+        }
+        push_attr(doc, "vjoin", &["true"]);
+    }
     // Shapes.
     let shapes: Vec<&Shape> = sv.shapes.iter().collect();
     let merged = merge_arcs(&shapes);
@@ -779,6 +910,132 @@ pub(super) fn schematic_in(
         "{cell} schematic: count conservation"
     );
     st
+}
+
+/// A label joining a pin of a view other than the symbol to the symbol's (S3): point, net
+/// (Schemify syntax), global.
+pub(super) type Join = ([i32; 2], String, bool);
+
+/// The pin figures of `inst` (orientation and origin `place`, Schemify units) in the view
+/// it is placed through, into `figs`. When that view is not the one its master's Schemify
+/// symbol came from (`symbol_alt`, `symbol_xform`, …), each of its pins that lies elsewhere
+/// than the symbol's gets a label pair in `joins`, at both points, named by Virtuoso's own
+/// net of that terminal (`tnet`). Returns the view to keep on the instance (`vview`).
+#[allow(clippy::too_many_arguments)]
+fn view_pins<'a>(
+    ctx: &Ctx<'_>,
+    sv: &Cv,
+    inst: &'a Inst,
+    place: (Orient, [i32; 2]),
+    iface: &Iface,
+    cell: &str,
+    notes: &mut Notes,
+    figs: &mut Vec<([i32; 4], [i32; 2])>,
+    joins: &mut Vec<Join>,
+) -> Option<&'a str> {
+    let (o, at) = place;
+    let put = |p: [i32; 2]| crate::design::place(p, o, at).unwrap_or(at);
+    let Some(c) = ctx.find(&inst.lib, &inst.cell).map(|j| &ctx.dump.cells[j]) else {
+        // A master outside the dump (core, a mapped kit cell): its view goes back as it came.
+        return (inst.view != "symbol").then_some(inst.view.as_str());
+    };
+    let main = c.symbol().map(|s| s.view.as_str());
+    // A view without terminals of its own (analogLib's `symbol_xform`, live ICADVM20.1) shows
+    // the symbol's: Virtuoso connects its instances at the symbol's pins.
+    let own = c
+        .cv(&inst.view)
+        .filter(|v| v.vtype == "schematicSymbol" && !v.terms.is_empty());
+    let Some(vcv) = own.or_else(|| c.cv(&inst.view).and(c.symbol())) else {
+        if main.is_some_and(|m| m != inst.view) {
+            notes.review(
+                "name",
+                cell,
+                format!(
+                    "{}: view {}/{}/{} is not in the dump: the pins of {} assumed",
+                    inst.name,
+                    inst.lib,
+                    inst.cell,
+                    inst.view,
+                    main.unwrap_or("symbol")
+                ),
+            );
+            return Some(&inst.view);
+        }
+        return None;
+    };
+    let mut scratch = Notes::default();
+    for f in &vcv.pinfigs {
+        let b = box_in(&f.b, vcv.upi, "pin", cell, &mut scratch);
+        let ctr = centre(f.b, vcv.upi, "pin", cell, &mut scratch);
+        let (p, q) = (put([b[0], b[1]]), put([b[2], b[3]]));
+        figs.push((profile::norm_box(p, q), put(ctr)));
+    }
+    if Some(inst.view.as_str()) == main {
+        return None;
+    }
+    if own.is_none() {
+        return Some(&inst.view);
+    }
+    let alt = pins_in(c, vcv, &mut scratch);
+    let mut odd: Vec<&str> = alt
+        .iter()
+        .filter(|a| !iface.pins.iter().any(|p| p.name == a.name))
+        .map(|a| a.name.as_str())
+        .collect();
+    let mut joined = 0;
+    for p in iface.pins.iter().filter(|p| p.inherit.is_none()) {
+        let Some(a) = alt.iter().find(|a| a.name == p.name) else {
+            odd.push(&p.name);
+            continue;
+        };
+        if a.at == p.at {
+            continue;
+        }
+        match sv
+            .tnets
+            .iter()
+            .find(|t| t.r == inst.r && net_from_virtuoso(&t.term).text == p.name)
+        {
+            Some(t) => {
+                let n = net_from_virtuoso(&t.net);
+                joins.push((put(a.at), n.text.clone(), n.global));
+                joins.push((put(p.at), n.text, n.global));
+                joined += 1;
+            }
+            None => notes.review(
+                "name",
+                cell,
+                format!(
+                    "{}: pin {} of view {} lies elsewhere than the symbol's, and the dump has                      no Virtuoso net for it",
+                    inst.name, p.name, inst.view
+                ),
+            ),
+        }
+    }
+    if !odd.is_empty() {
+        notes.review(
+            "name",
+            cell,
+            format!(
+                "{}: pins {} are not in both {} and {} of {}/{}",
+                inst.name,
+                odd.join(" "),
+                inst.view,
+                main.unwrap_or("symbol"),
+                inst.lib,
+                inst.cell
+            ),
+        );
+    }
+    notes.add(
+        "remapped",
+        cell,
+        format!(
+            "{}: {}/{}/{} placed as {}/{} ({joined} pin(s) joined by labels)",
+            inst.name, inst.lib, inst.cell, inst.view, inst.lib, inst.cell
+        ),
+    );
+    Some(&inst.view)
 }
 
 /// A dumped wire for [`rejoin_split_wires`]: (ref, points, its schemifyId when valid).

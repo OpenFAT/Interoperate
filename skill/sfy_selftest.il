@@ -79,10 +79,10 @@
 ;; stash, which Virtuoso may move to the other piece of a wire it splits and joins again
 ;; (live ICADVM20.1 run). Also without a maestro view's own setup (maesdb, maestate,
 ;; maefile): its XML names the library, and Virtuoso adds placeholders to it on a restore
-;; (spec 9.7, 9.11).
+;; (spec 9.7, 9.11); and without the skipped counts, which name what no load restores.
 (procedure (SfySelfKeep recs)
   (setof r recs
-    (not (or (member (car (cadr r)) (list "maesdb" "maestate" "maefile"))
+    (not (or (member (car (cadr r)) (list "maesdb" "maestate" "maefile" "skipped"))
              (and (equal (car (cadr r)) "prop")
                   (stringp (nth 2 (cadr r)))
                   (geqp (strlen (nth 2 (cadr r))) 8)

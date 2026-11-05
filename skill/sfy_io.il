@@ -178,7 +178,7 @@
     '(("sfyx" "is") ("lib" "s") ("cell" "ss") ("cdf" "x") ("param" "sssssllx")
       ("siminfo" "sl") ("cv" "ssi") ("prop" "isss") ("inst" "issssiis") ("wire" "ili")
       ("label" "iisiisssisss") ("spin" "isssssiis") ("term" "sss") ("pinfig" "isiiii")
-      ("shape" "isssli") ("td" "issssiisssiiiiii") ("conn" "iss") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
+      ("shape" "isssli") ("td" "issssiisssiiiiii") ("conn" "iss") ("tnet" "iss") ("skipped" "si") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
       ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("testvar" "ss")
       ("testenable" "i") ("parameter" "sss") ("varenable" "si") ("outenable" "si")

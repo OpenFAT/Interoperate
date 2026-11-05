@@ -163,15 +163,34 @@ impl<'a> Ctx<'a> {
         if t.slib == "core" || consumed(&c.lib, &c.name) {
             return t;
         }
-        let sym = c.cv("symbol").is_some();
+        if c.is_global_symbol() {
+            notes.add(
+                "remapped",
+                &format!("{}/{}", c.lib, c.name),
+                format!(
+                    "supply symbol ({}): its instances become global labels",
+                    c.symbol().map_or("", |s| s.terms[0].name.as_str())
+                ),
+            );
+            return t;
+        }
+        let sym = c.symbol().is_some();
         let sch = c.cv("schematic");
-        t.kind = if !c.design {
+        t.kind = if !c.design && c.symbol().is_some_and(|s| s.terms.is_empty()) {
+            // A kit's or Cadence's pinless symbol (a sheet border) is no device either.
+            notes.dropped(
+                "display-only",
+                &format!("{}/{}", c.lib, c.name),
+                "a symbol without pins is not imported".to_owned(),
+            );
+            None
+        } else if !c.design {
             Some(FileKind::Shprim)
         } else if self.benches.contains(&(c.lib.clone(), c.name.clone())) {
             Some(FileKind::Shbench)
         } else if sym && sch.is_some() {
             Some(FileKind::Shcomp)
-        } else if c.cv("symbol").is_some_and(|s| s.terms.is_empty()) {
+        } else if c.symbol().is_some_and(|s| s.terms.is_empty()) {
             // A symbol without terminals (a title block, a graphic) is no device.
             notes.dropped(
                 "display-only",
@@ -199,6 +218,15 @@ impl<'a> Ctx<'a> {
         t
     }
 
+    /// True when instances of `lib/cell` are global labels: analogLib's and basic's supply
+    /// symbols, and any dump cell [`DCell::is_global_symbol`] (S11).
+    pub(super) fn global_symbol(&self, lib: &str, cell: &str) -> bool {
+        devices::is_global_symbol(lib, cell)
+            || self
+                .find(lib, cell)
+                .is_some_and(|k| self.dump.cells[k].is_global_symbol())
+    }
+
     /// The dump index of `lib/cell`.
     pub(super) fn find(&self, lib: &str, cell: &str) -> Option<usize> {
         self.dump
@@ -210,7 +238,7 @@ impl<'a> Ctx<'a> {
     fn iface_of_dump(&self, k: usize) -> Option<Iface> {
         let c = &self.dump.cells[k];
         let mut i = Iface::default();
-        if let Some(sym) = c.cv("symbol") {
+        if let Some(sym) = c.symbol() {
             i.pins = pins_in(c, sym, &mut Notes::default());
             for p in &i.pins {
                 if p.inherit.is_some() {

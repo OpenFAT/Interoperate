@@ -265,8 +265,12 @@ fn export_dumps_the_expected_objects() {
         ),
         "{t}"
     );
+    // A user cellview property is counted as skipped (S6); Virtuoso's own stamps are not.
     assert!(
-        !t.contains("author") && !t.contains("lastSchematicExtraction") && !t.contains("instance#")
+        t.contains("(\"skipped\" \"cvprop author\" 1)")
+            && !t.contains("lastSchematicExtraction")
+            && !t.contains("instance#"),
+        "{t}"
     );
     assert!(
         t.contains("\"spin\" ")
@@ -350,10 +354,17 @@ fn imported_goldens_dump_back_identically() {
             &mut i,
             &format!(r#"(SfyExport "/t/out.sfyx" "scratch" (list "{cell}"))"#),
         );
+        // What the dumper skipped (S6) is what no load restores: not compared.
+        let kept = |t: &str| -> String {
+            t.lines()
+                .filter(|l| !l.starts_with("(\"skipped\""))
+                .map(|l| format!("{l}\n"))
+                .collect()
+        };
         let back = file(&i, "/t/out.sfyx");
         assert_eq!(
-            back,
-            golden_text.replace("\"work\"", "\"scratch\""),
+            kept(&back),
+            kept(&golden_text.replace("\"work\"", "\"scratch\"")),
             "{name} round trip"
         );
     }
