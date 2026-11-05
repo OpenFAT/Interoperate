@@ -1515,10 +1515,12 @@ const IMPLICIT_DUMP: &str = r#"("sfyx" 1 "test")
 ("cell" "nch3_demo" "ref")
 ("cdf" "")
 ("param" "model" "string" "demo_nch" "Model" "" ("storeDefault") () "")
-("param" "w" "string" "300n" "Width" "lengthMetric" ("parseAsNumber" "parseAsCEL") () "")
+("param" "w" "string" "300n" "Width" "lengthMetric" ("parseAsNumber" "parseAsCEL") () "demoCB('w)")
+("param" "l" "string" "30n" "Length" "lengthMetric" ("parseAsNumber" "parseAsCEL") () "demoCB('l)")
 ("param" "bn" "string" "S" "Bulk node" "" ("parseAsCEL") () "")
 ("siminfo" "auCdl" (("instParameters" ("w")) ("modelName" "NDEMO") ("namePrefix" "M") ("netlistProcedure" "ansCdlCompPrim") ("termOrder" ("D" "G" "S" "progn(bn)"))))
-("siminfo" "spectre" (("instParameters" ("w")) ("otherParameters" ("model")) ("termOrder" ("D" "G" "S" "B"))))
+("siminfo" "hspiceD" (("instParameters" ("w")) ("termOrder" ("D" "G" "S" "B"))))
+("siminfo" "spectre" (("instParameters" ("w")) ("opParamExprList" ("(\"id\" \"OP(mappedRoot(\\\".m0\\\") \\\"id\\\")\")")) ("otherParameters" ("model")) ("termMapping" (("D" ":1") ("G" ":2"))) ("termOrder" ("D" "G" "S" "B"))))
 ("cv" "symbol" "schematicSymbol" 160)
 ("term" "B" "inputOutput" "[@bsub:%:vss!]")
 ("term" "D" "inputOutput" "")
@@ -1529,7 +1531,7 @@ const IMPLICIT_DUMP: &str = r#"("sfyx" 1 "test")
 ("pinfig" 3 "S" 8 -42 12 -38)
 ("cell" "res3_demo" "ref")
 ("cdf" "")
-("param" "r" "string" "2k" "R" "resistance" ("parseAsNumber" "parseAsCEL") () "")
+("param" "r" "string" "2k" "R" "resistance" ("parseAsNumber" "parseAsCEL") () "demoCB('r)")
 ("param" "rsub" "netSet" "[@lsup:%:vss!]" "Bulk" "" ("storeDefault") () "")
 ("siminfo" "auCdl" (("instParameters" ("r")) ("modelName" "RDEMO") ("namePrefix" "R") ("netlistProcedure" "ansCdlCompPrim") ("termOrder" ("in" "out"))))
 ("siminfo" "spectre" (("componentName" "resistor") ("instParameters" ("r")) ("termOrder" ("in" "out" "sx"))))
@@ -1602,6 +1604,16 @@ fn stopping_view_terminals_become_inherited_pins_in_both_formats() {
         ),
         "{text}"
     );
+    // What simInfo the formats leave, one row per cell; the kit's callbacks one row per
+    // (library, function) (gaps2 S9, P14, P13).
+    for want in [
+        "needs_review:format\tdemopdk/nch3_demo\tsimInfo not carried: hspiceD (all); spectre opParamExprList termMapping\n",
+        "needs_review:callback\tdemopdk\tdemoCB: callbacks of 3 params in 2 cells not carried (e.g. nch3_demo param w: demoCB('w))\n",
+    ] {
+        assert!(text.contains(want), "{want}\n{text}");
+    }
+    assert_eq!(text.matches("needs_review:callback").count(), 1, "{text}");
+    assert!(!text.contains("res3_demo\tsimInfo"), "{text}");
     loads(&imp.files);
     let spectre = netlist_in(
         &imp.files,

@@ -257,6 +257,7 @@ pub fn import(
     }
     let ctx = Ctx::new(&d, existing, map, opts, &mut notes);
     let fr = fresh(&ctx, &mut notes);
+    group_kit_callbacks(&mut notes);
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut new_libs: BTreeMap<String, String> = BTreeMap::new();
     let manifest = existing

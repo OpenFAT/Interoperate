@@ -172,6 +172,47 @@ pub(super) struct ParamIn {
     pub(super) computed: Option<String>,
 }
 
+/// The detail of a reference cell's callback row before `group_kit_callbacks`.
+const KIT_CALLBACK: &str = "callback not carried: ";
+
+/// A kit's callback rows, one per param of every reference cell (15066 for GF22FDX), as
+/// one row per (library, callback function): how many params of how many cells, the first
+/// as an example (gaps2 P13). A design cell's rows stay as they are.
+pub(super) fn group_kit_callbacks(notes: &mut Notes) {
+    // (lib, function) → (params, cells, example)
+    let mut g: BTreeMap<(String, String), (usize, BTreeSet<String>, String)> = BTreeMap::new();
+    notes.rows.retain(|r| {
+        let ref_row = r.class == "needs_review:callback" && r.cell.contains('/');
+        let Some((param, cb)) = r.detail.split_once(": ").filter(|_| ref_row) else {
+            return true;
+        };
+        let Some(cb) = cb
+            .strip_prefix(KIT_CALLBACK)
+            .filter(|_| param.starts_with("param "))
+        else {
+            return true;
+        };
+        let (lib, cell) = r.cell.split_once('/').expect("lib/cell");
+        let fun = cb.split(['(', ' ']).next().unwrap_or(cb).to_owned();
+        let e = g
+            .entry((lib.to_owned(), fun))
+            .or_insert_with(|| (0, BTreeSet::new(), format!("{cell} {param}: {cb}")));
+        e.0 += 1;
+        e.1.insert(cell.to_owned());
+        false
+    });
+    for ((lib, fun), (n, cells, first)) in g {
+        notes.review(
+            "callback",
+            &lib,
+            format!(
+                "{fun}: callbacks of {n} params in {} cells not carried (e.g. {first})",
+                cells.len()
+            ),
+        );
+    }
+}
+
 /// The §6.3 import table over a cell's CDF.
 pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn> {
     let cell = format!("{}/{}", c.lib, c.name);
@@ -183,7 +224,7 @@ pub(super) fn params_in(c: &DCell, cdf: &Cdf, notes: &mut Notes) -> Vec<ParamIn>
             notes.review(
                 "callback",
                 &cell,
-                format!("param {}: callback not carried", p.name),
+                format!("param {}: {KIT_CALLBACK}{}", p.name, p.callback.trim()),
             );
         }
         let (kind, default) = match p.ty.as_str() {
@@ -831,6 +872,48 @@ fn sim_pins(
         return fallback;
     }
     holes.join(" ")
+}
+
+/// What a cell's simInfo holds that its formats do not carry, as one report line (gaps2
+/// S9, P14): spectre and auCdl keys outside the ones the formats read (a netlist
+/// procedure, string/enum parameter lists, terminal mappings and operating-point
+/// expressions for results, …) and every other simulator's simInfo (hspiceD, auLvs, ams).
+pub(super) fn siminfo_not_carried(cdf: &Cdf) -> Option<String> {
+    // ponytail: one row per cell, keys only; a kit has hundreds of cells with the same few.
+    let read = |sim: &str, k: &str, v: &SimVal| {
+        let empty = match v {
+            SimVal::Str(s) => s.is_empty() || s == "nil",
+            SimVal::List(l) => l.is_empty(),
+            SimVal::Pairs(p) => p.is_empty(),
+        };
+        empty
+            || matches!(
+                k,
+                "termOrder" | "instParameters" | "propMapping" | "componentName"
+            )
+            || (k == "otherParameters"
+                && matches!(v, SimVal::List(l) if l.iter().all(|x| x == "model")))
+            || (sim == "auCdl" && matches!(k, "namePrefix" | "modelName"))
+            || (sim == "auCdl" && k == "netlistProcedure")
+    };
+    let mut out = Vec::new();
+    for si in &cdf.siminfo {
+        match si.sim.as_str() {
+            "spectre" | "auCdl" => {
+                let keys: Vec<&str> = si
+                    .fields
+                    .iter()
+                    .filter(|(k, v)| !read(&si.sim, k, v))
+                    .map(|(k, _)| k.as_str())
+                    .collect();
+                if !keys.is_empty() {
+                    out.push(format!("{} {}", si.sim, keys.join(" ")));
+                }
+            }
+            other => out.push(format!("{other} (all)")),
+        }
+    }
+    (!out.is_empty()).then(|| format!("simInfo not carried: {}", out.join("; ")))
 }
 
 pub(super) fn spectre_format(

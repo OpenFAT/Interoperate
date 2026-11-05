@@ -453,6 +453,9 @@ pub(super) fn build(
                 if let Some(si) = cdf.sim("auCdl") {
                     formats.push(("cdl".to_owned(), cdl_format(c, si, &params, &pins, notes)));
                 }
+                if let Some(why) = siminfo_not_carried(cdf) {
+                    notes.review("format", &cell, why);
+                }
             }
             let spice = ctx
                 .map
