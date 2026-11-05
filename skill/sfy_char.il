@@ -110,7 +110,7 @@
 ;; With names (?inputs) those are the inputs and nothing is probed.
 (procedure (SfyCharDiscover cv m cdf outs names)
   (let ((cands nil) (c nil) (base nil) (r nil) (changed nil) (status nil) (set nil)
-        (probes nil) (k 0))
+        (probes nil) (took nil) (ctx nil) (vals nil) (base2 nil))
     (foreach q (getSGq cdf parameters)
       (when (or (and (stringp (getSGq q callback)) (greaterp (strlen (getSGq q callback)) 0))
                 (member (getSGq q name) outs) (member (getSGq q name) names))
@@ -127,21 +127,52 @@
           (setq changed nil)
           (setq status nil)
           (setq set nil)
+          (setq took nil)
           (foreach v (SfyCharNudges c)
             (setq r (SfyCharMeasure cv m (list c) outs (list v)))
             (unless set (setq set (car (car r))))
             (when (or (null status) (equal (cadr r) "ok")) (setq status (cadr r)))
             (when (equal (cadr r) "ok")
-              (setq k 0)
-              (foreach n outs
-                (when (and (nequal n (car c)) (nequal (nth k (caddr r)) (nth k base))
-                           (not (member n changed)))
-                  (setq changed (cons n changed)))
-                (setq k (add1 k)))))
+              (when (SfyCharTook c r) (setq took t))
+              (setq changed (SfyCharMoved c nil outs (caddr r) base changed))))
+          ;; Every nudge put back by the callbacks (a finger count the default width
+          ;; cannot split: live GF22FDX nfet, nf 2 at w 80n reads back 1; gaps2 P2):
+          ;; again with the other declared numbers at ten times their defaults.
+          (setq ctx (setof x cands (and (nequal x c) (equal (cadr x) "num")
+                                        (member (car x) (SfyCharLabels cdf)))))
+          (when (and (not took) (null changed) ctx)
+            (setq vals (mapcar (lambda (x) (times 10 (caddr x))) ctx))
+            (setq base2 (SfyCharMeasure cv m ctx outs vals))
+            (when (equal (cadr base2) "ok")
+              (foreach v (SfyCharNudges c)
+                (setq r (SfyCharMeasure cv m (append ctx (list c)) outs (append vals (list v))))
+                (when (equal (cadr r) "ok")
+                  (setq status "ok")
+                  (setq changed (SfyCharMoved c ctx outs (caddr r) (caddr base2) changed))))))
           ;; In netlisted order, as one nudge would list them.
           (setq changed (setof n outs (member n changed)))
           (setq probes (cons (list (car c) (cadr c) set status changed) probes)))
         (SfyCharPick cands (reverse probes) (SfyCharLabels cdf))))))
+
+;; changed with the netlisted params (outs) whose values (got) differ from base, other
+;; than c and the inputs ctx set.
+(procedure (SfyCharMoved c ctx outs got base changed)
+  (let ((k 0))
+    (foreach n outs
+      (when (and (nequal n (car c)) (not (assoc n ctx)) (nequal (nth k got) (nth k base))
+                 (not (member n changed)))
+        (setq changed (cons n changed)))
+      (setq k (add1 k)))
+    changed))
+
+;; True when measurement r kept candidate c off its default: the value read back (r's
+;; only input) is not the default's.
+(procedure (SfyCharTook c r)
+  (let ((b (car (cadddr r))) (d (SfyCharText c (caddr c))))
+    (if (and (SfyCharNum b) (SfyCharNum d))
+      (greaterp (abs (difference (SfyCharNum b) (SfyCharNum d)))
+                (times 1e-6 (abs (SfyCharNum d))))
+      (nequal b d))))
 
 ;; The CDF's paramLabelSet names (a leading "-" stripped): the PDK's own declared sizing
 ;; parameters.

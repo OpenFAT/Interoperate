@@ -67,6 +67,11 @@ fn inputs_and_derived_params_are_found_by_experiment() {
     assert_eq!(names(&chaos.inputs), ["pp", "qq"]);
     assert_eq!(chaos.kinds, [Kind::Num, Kind::Count]);
     assert_eq!(chaos.derived(), ["zz"]);
+    // A count every nudge of which the callbacks put back at the default width is probed
+    // again at a wider one (gaps2 P2: GF22FDX nfet's nf at w 80n).
+    let fing = &characterize(&["fing"], "")[0];
+    assert_eq!(names(&fing.inputs), ["w", "nf"]);
+    assert_eq!(fing.derived(), ["ad"]);
     // ?inputs overrides discovery.
     let named = characterize(&["zeta"], "?inputs (list \"kappa\")");
     assert_eq!(names(&named[0].inputs), ["kappa"]);
