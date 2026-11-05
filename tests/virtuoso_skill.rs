@@ -911,3 +911,50 @@ fn a_negative_arc_and_a_symbol_pin_instance_load_and_dump_back() {
         assert!(back.contains(rec), "{rec} not in\n{back}");
     }
 }
+
+/// A primitive whose bulk lives only in its spectre stopping view (gaps2 S8, P1; the shape
+/// of analogLib nmos, live ICADVM20.1 p_probe): the dump gives the symbol that terminal
+/// as a pinless term with its net expression, and auCdl's `progn(bn)` reads back as the
+/// list it was, not a symbol of that name.
+#[test]
+fn a_stopping_view_terminal_dumps_and_progn_reads_back_as_a_list() {
+    let mut i = fixtures();
+    run(
+        &mut i,
+        r#"(let ((cv nil) (net nil) (term nil) (cdf nil))
+             (SfyFixSymbol "pdk" "n3" (list (list "D" "inputOutput" 0 40)
+                                         (list "G" "input" -40 0) (list "S" "inputOutput" 0 -40)))
+             (setq cv (SfyFixOpen "pdk" "n3" "spectre" "schematicSymbol"))
+             (foreach n (list "D" "G" "S" "B")
+               (setq net (dbMakeNet cv n))
+               (setq term (dbCreateTerm net n "inputOutput"))
+               (when (equal n "B") (dbCreateTermNetExpr term "[@bsub:%:vss!]")))
+             (SfyFixSave cv)
+             (setq cdf (SfyFixCdf "pdk" "n3"))
+             (cdfCreateParam cdf ?name "bn" ?type "string" ?defValue "S" ?prompt "Bulk")
+             (setSGq cdf (list nil 'spectre (list nil 'termOrder '(D G S B))
+                               'auCdl (list nil 'termOrder '(D G S (progn bn))))
+               simInfo)
+             (cdfSaveCDF cdf))"#,
+    );
+    run(&mut i, DUMPS[5].1);
+    let t = file(&i, "/t/pdk.sfyx");
+    let n3 = t.split("(\"cell\" \"n3\"").nth(1).unwrap();
+    let n3 = n3.split("(\"cell\"").next().unwrap();
+    assert!(
+        n3.contains("(\"term\" \"B\" \"inputOutput\" \"[@bsub:%:vss!]\")"),
+        "{n3}"
+    );
+    assert_eq!(n3.matches("(\"term\"").count(), 4, "{n3}");
+    assert!(!n3.contains("(\"pinfig\" 4 \"B\""), "{n3}");
+    // (auCdl (nil termOrder (D G S (progn bn)))): the fourth entry the list (progn bn). The
+    // dump spells it as %L prints it, `progn(bn)` on ICADVM20.1, which its linereadstring
+    // reads (p_terms live check); the mock's reader takes only the prefix form.
+    let bulk = run(
+        &mut i,
+        r#"(let ((b (nth 3 (caddr (cadr (SfySimInfoValue
+                   '("siminfo" "auCdl" (("termOrder" ("D" "G" "S" "(progn bn)"))))))))))
+             (and (listp b) (eq (car b) 'progn) (eq (cadr b) 'bn)))"#,
+    );
+    assert!(bulk.truthy());
+}

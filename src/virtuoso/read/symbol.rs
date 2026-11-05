@@ -25,6 +25,7 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
     let mut out = Vec::new();
     for t in terms {
         let net = net_from_virtuoso(&t.name);
+        let name = term_pin(sym, t);
         if net.review {
             notes.review(
                 "name",
@@ -33,7 +34,8 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
             );
         }
         let dir = profile::dir_from_virtuoso(&t.dir);
-        let inherit = parse_netexpr(&t.netexpr).map(|(_, d)| d);
+        let inherit =
+            parse_netexpr(&t.netexpr).map(|(prop, d)| netset_default(c, &prop, notes).unwrap_or(d));
         let figs: Vec<&PinFig> = sym.pinfigs.iter().filter(|f| f.term == t.name).collect();
         let main = figs
             .iter()
@@ -43,7 +45,7 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
             centre(f.b, sym.upi, &format!("pin {}", t.name), &cell, notes)
         });
         out.push(PinRow {
-            name: net.text.clone(),
+            name: name.clone(),
             dir: dir.into(),
             at,
             inherit,
@@ -55,19 +57,61 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
                 continue;
             }
             n += 1;
-            let name = sym
+            let alias = sym
                 .prop(f.r, "schemifyPin")
-                .map_or(format!("{}_{n}", net.text), str::to_owned);
+                .map_or(format!("{name}_{n}"), str::to_owned);
             out.push(PinRow {
-                name,
+                name: alias,
                 dir: dir.into(),
                 at: centre(f.b, sym.upi, &format!("pin {}", t.name), &cell, notes),
                 inherit: None,
-                alias: Some(net.text.clone()),
+                alias: Some(name.clone()),
             });
         }
     }
     out
+}
+
+/// The Schemify pin of symbol terminal `t`: a pinless inherited one (a stopping view's,
+/// SfyStopTerms) is named by its net expression's property (GF22-style nfet `b`
+/// `[@lSup:%:VSS!]` → `lSup`), the name instances set and export writes back (§6.2), unless
+/// another terminal has that name; any other by its own name.
+pub(super) fn term_pin(sym: &Cv, t: &Term) -> String {
+    let pinless = !sym.pinfigs.iter().any(|f| f.term == t.name);
+    match parse_netexpr(&t.netexpr) {
+        // ponytail: a drawn inherited terminal keeps its name (its instances' property must
+        // then be spelled like it); two inheriting one property would give two pins of one
+        // name.
+        Some((p, _)) if pinless && !sym.terms.iter().any(|x| x.name == p) => {
+            net_from_virtuoso(&p).text
+        }
+        _ => net_from_virtuoso(&t.name).text,
+    }
+}
+
+/// The default net of inherited property `prop` from a netSet CDF param of that name,
+/// which every instance stores (storeDefault). A default that is itself a net expression
+/// (a GF22-style resistor's `resbulk` `[@lSup:%:VSS!]`: the bulk follows lSup) gives its
+/// default net, reported: Schemify's `inherit` has no chained connection.
+fn netset_default(c: &DCell, prop: &str, notes: &mut Notes) -> Option<String> {
+    let p = c
+        .cdf
+        .as_ref()?
+        .params
+        .iter()
+        .find(|p| p.ty == "netSet" && p.name == prop && !p.def.trim().is_empty())?;
+    if let Some((q, d)) = parse_netexpr(&p.def) {
+        notes.review(
+            "inherit",
+            &format!("{}/{}", c.lib, c.name),
+            format!(
+                "{prop} defaults to the inherited {q} ({}): the default net {d} only",
+                p.def
+            ),
+        );
+        return Some(d);
+    }
+    parse_netexpr(&format!("[@{prop}:%:{}]", p.def.trim())).map(|x| x.1)
 }
 
 /// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `GND`, §3.3).
@@ -401,7 +445,10 @@ pub(super) fn build(
             let mut formats = Vec::new();
             if let Some(cdf) = &c.cdf {
                 if let Some(si) = cdf.sim("spectre") {
-                    formats.push(("spectre".to_owned(), spectre_format(c, si, &params, &pins)));
+                    formats.push((
+                        "spectre".to_owned(),
+                        spectre_format(c, si, &params, &pins, notes),
+                    ));
                 }
                 if let Some(si) = cdf.sim("auCdl") {
                     formats.push(("cdl".to_owned(), cdl_format(c, si, &params, &pins, notes)));

@@ -226,6 +226,35 @@
 
 ;; ---------------------------------------------------------------- cellviews
 
+;; A term record's fields: name, direction, net expression.
+(procedure (SfyTermFields t0)
+  (list (getSGq t0 name) (getSGq t0 direction) (SfyStrOr (dbGetTermNetExpr t0))))
+
+;; The terminals a netlister takes from its stopping view that the symbol lacks, as
+;; (name fields) (gaps2 S8, P1; live ICADVM20.1, p_probe): a spectre or auCdl termOrder
+;; entry naming a terminal with a net expression in the cell's view of that simulator's
+;; name (GF22-style nfet b [@lSup:%:VSS!], analogLib nmos B [@bulk_n:%:gnd!]). They dump
+;; as pinless terms of the symbol, so import makes them inherited pins.
+(procedure (SfyStopTerms cv)
+  (let ((lib (getSGq cv libName)) (cell (getSGq cv cellName)) (cdf nil) (sims nil) (sv nil)
+        (have nil) (out nil))
+    (setq cdf (cdfGetCellCDF (ddGetObj lib cell)))
+    (setq sims (and cdf (SfySimInfoFields (getSGq cdf simInfo))))
+    (setq have (mapcar (lambda (x) (getSGq x name)) (getSGq cv terminals)))
+    (foreach sim (list "spectre" "auCdl")
+      (setq sv (and (assoc sim sims) (ddGetObj lib cell sim)
+                    (dbOpenCellViewByType lib cell sim nil "r")))
+      (when sv
+        (foreach nm (let ((o (cadr (assoc "termOrder" (cadr (assoc sim sims)))))) (and (listp o) o))
+          (when (and (stringp nm) (not (member nm have)))
+            (foreach t0 (getSGq sv terminals)
+              (when (and (equal (getSGq t0 name) nm)
+                         (nequal (SfyStrOr (dbGetTermNetExpr t0)) ""))
+                (setq have (cons nm have))
+                (setq out (cons (list nm (SfyTermFields t0)) out))))))
+        (dbClose sv)))
+    out))
+
 (procedure (SfyDumpCv port lib cell view)
   (let ((cv (dbOpenCellViewByType lib cell view nil "r")))
     (if (null cv)
@@ -312,9 +341,12 @@
           (setq shapes (cons f shapes)))
         (t (SfyCount (strcat "skipped:" ot)))))
     (unless (equal (getSGq cv cellViewType) "schematic")
-      (foreach e (SfySortByKey (mapcar (lambda (t0) (list (getSGq t0 name) t0)) (getSGq cv terminals)))
-        (SfyPut port "term"
-          (list (car e) (getSGq (cadr e) direction) (SfyStrOr (dbGetTermNetExpr (cadr e)))))))
+      (foreach e (SfySortByKey
+                   (append
+                     (mapcar (lambda (t0) (list (getSGq t0 name) (SfyTermFields t0)))
+                       (getSGq cv terminals))
+                     (and (equal view "symbol") (SfyStopTerms cv))))
+        (SfyPut port "term" (cadr e))))
     ;; A schematic's pin figure (a pin drawn as a bare shape; Cadence's sample library has
     ;; them) carries its terminal's direction: a schematic dumps no terms.
     (setq n (SfyEmit port "pinfig"
@@ -667,9 +699,15 @@
 
 ;; A simInfo field value back: netlistProcedure as a symbol, other strings as strings,
 ;; pairs as a property list of symbols (strings starting with "(" stay strings), other
-;; lists as symbols.
+;; lists element by element (SfySimElem).
 (procedure (SfySimSym s)
   (if (equal (substring s 1 1) "(") s (stringToSymbol s)))
+
+;; A list element back: one SfySimValue wrote in print form (termOrder's progn(bn), an
+;; opParamExprList entry; gaps2 S8) read back as that list, a name as a symbol.
+(procedure (SfySimElem s)
+  (let ((r (and (nequal (parseString s "(") (list s)) (errset (linereadstring s) nil))))
+    (if r (car (car r)) (stringToSymbol s))))
 
 (procedure (SfySimInfoValue rec)
   ;; ("siminfo" simulator fields) -> (simulatorSymbol (nil key value ...))
@@ -682,7 +720,7 @@
           ((stringp v) (if (equal (car f) "netlistProcedure") (stringToSymbol v) v))
           ((null v) nil)
           ((listp (car v)) (cons nil (SfyFlatten (mapcar (lambda (p) (list (SfySimSym (car p)) (SfySimSym (cadr p)))) v))))
-          (t (mapcar 'SfySimSym v)))
+          (t (mapcar 'SfySimElem v)))
         out)))
     (list (stringToSymbol (cadr rec)) (cons nil (reverse out)))))
 

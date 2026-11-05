@@ -82,7 +82,7 @@ proptest! {
         let names: Vec<String> = pins.iter().map(|p| net_from_virtuoso(p).text).collect();
         let rows: Vec<PinRow> = names.iter().map(|p| pin(p)).collect();
         let params: Vec<ParamIn> = ps.iter().map(|x| param(&x.1, x.2)).collect();
-        let t = spectre_format(&DCell::default(), &si, &params, &rows);
+        let t = spectre_format(&DCell::default(), &si, &params, &rows, &mut Notes::default());
         let kinds: Vec<(String, String)> =
             params.iter().map(|p| (p.name.clone(), p.kind.clone())).collect();
         prop_assert_eq!(spectre_siminfo(&t, &names, &kinds), Some(si), "via {}", t);
