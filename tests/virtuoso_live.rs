@@ -379,6 +379,12 @@ fn design_records(text: &str, from: &[&str], to: &str) -> Result<Vec<String>, St
             // (skipview, libcdf: report rows, never loaded), are what no load restores.
             || matches!(r.tag.as_str(), "sfyx" | "end" | "lib" | "skipped" | "skipview" | "libcdf")
             || (r.tag == "prop" && r.str(1).is_ok_and(|n| n.starts_with("schemify")))
+            // A text view import does not carry (a verilogams view: "text view … not
+            // imported", read/symbol.rs) comes back from no export.
+            || (r.tag == "textview"
+                && !r
+                    .str(0)
+                    .is_ok_and(|v| matches!(v, "veriloga" | "functional" | "verilog")))
         {
             continue;
         }

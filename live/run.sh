@@ -161,7 +161,10 @@ preserveALL = 't
 setEQUIV = ""
 incFILE = ""
 EOF
-    (cd "$d" && timeout 600 si -batch -command "$command" > "$nl/$key.log" 2>&1 </dev/null)
+    # auCdl refuses to start unless CDS_Netlisting_Mode is Analog ("environment variable
+    # 'CDS_Netlisting_Mode' is not set", exit 255; a kit's setup sets it, a bare one not).
+    (cd "$d" && CDS_Netlisting_Mode="${CDS_Netlisting_Mode:-Analog}" \
+      timeout 600 si -batch -command "$command" > "$nl/$key.log" 2>&1 </dev/null)
     echo "$?" > "$nl/$key.status"
     for l in "$d"/*.log; do [[ -f "$l" ]] && { echo "== $(basename "$l")"; cat "$l"; } >> "$nl/$key.log"; done
     local f
