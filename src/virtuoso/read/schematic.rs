@@ -611,6 +611,31 @@ pub(super) fn schematic_in(
             doc.push_value_coord(b[3] - b[1]);
         }
     }
+    // Stubs go: export's label stubs (`schemifyStub 1`, §6.2) always, the loader's `conn`
+    // stubs (`schemifyStub conn`, §6.4) when this import re-masters their instance back (a
+    // map row, analogLib → core). A `conn` stub ending on a pin of an instance that stays on
+    // its Virtuoso master (an import without the map: the kit cell's mirror) is that pin's
+    // connection and stays.
+    let mut kept_pins: BTreeSet<[i32; 2]> = BTreeSet::new();
+    for inst in &sv.insts {
+        let m = ctx.master(&inst.lib, &inst.cell);
+        if m.row.is_some() || m.alib.is_some() || devices::is_global_symbol(&inst.lib, &inst.cell) {
+            continue;
+        }
+        let at = pt(inst.xy, upi, "instance", &cell, &mut Notes::default());
+        let o = orient_in(&inst.orient);
+        for p in m.iface.iter().flat_map(|i| &i.pins) {
+            kept_pins.extend(crate::design::place(p.at, o, at));
+        }
+    }
+    let is_stub = |w: &Wire| match prop(w.r, "schemifyStub") {
+        None => false,
+        Some("conn") => !w
+            .pts
+            .iter()
+            .any(|p| kept_pins.contains(&pt(*p, upi, "wire", &cell, &mut Notes::default()))),
+        Some(_) => true,
+    };
     // Wires: segments, stubs removed.
     let mut wire_pts: BTreeMap<u32, Vec<[i32; 2]>> = BTreeMap::new();
     let mut ends: Vec<[i32; 2]> = Vec::new();
@@ -618,7 +643,7 @@ pub(super) fn schematic_in(
     let all_pts: Vec<DumpWire<'_>> = sv
         .wires
         .iter()
-        .filter(|w| prop(w.r, "schemifyStub").is_none())
+        .filter(|w| !is_stub(w))
         .map(|w| {
             let pts = w
                 .pts
@@ -654,7 +679,7 @@ pub(super) fn schematic_in(
             .map(|p| pt(*p, upi, "wire", &cell, notes))
             .collect();
         wire_pts.insert(w.r, pts.clone());
-        if prop(w.r, "schemifyStub").is_some() || absorbed.contains(&w.r) {
+        if is_stub(w) || absorbed.contains(&w.r) {
             continue;
         }
         let pts = rejoined.get(&w.r).cloned().unwrap_or(pts);
@@ -746,7 +771,12 @@ pub(super) fn schematic_in(
         // re-mastered instance's own pins meet the drawn wires again, and the stub's net name
         // would be a second name for that net (E003 on a live analogLib round trip).
         // A label with an id is the user's (one on a bare pin travels on a stub too): kept.
-        if l.parent != 0 && prop(l.parent, "schemifyStub").is_some() && id_of(l.r).is_none() {
+        let stub = sv
+            .wires
+            .iter()
+            .find(|w| w.r == l.parent)
+            .is_some_and(is_stub);
+        if l.parent != 0 && stub && id_of(l.r).is_none() {
             dropped_stub += 1;
             tally.out -= 1;
             tally.reported += 1;

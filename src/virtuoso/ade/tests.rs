@@ -11,7 +11,7 @@ fn tests() -> impl Strategy<Value = Test> {
             "a[a-z]{0,2}",
             (
                 any::<bool>(),
-                prop::collection::btree_map(name, "[a-z0-9.]{0,3}", 0..3),
+                prop::collection::btree_map(name, "[a-z0-9.]{1,3}", 0..3),
             ),
             0..3,
         ),
@@ -67,6 +67,14 @@ fn tests() -> impl Strategy<Value = Test> {
                 params: vec![("I0/I1/w".into(), "1u".into(), scope(0))],
                 var_enable: vec![("x".into(), corners.len().is_multiple_of(3))],
                 out_enable: vec![("o".into(), false)],
+                sim_opts: vec![("reltol".into(), "1e-5".into())],
+                corner_runs: corners
+                    .first()
+                    .map(|c| (c.clone(), false))
+                    .into_iter()
+                    .collect(),
+                design: Some(("lib".into(), "other".into())),
+                notes: vec![("output".into(), "a note".into())],
             }
         })
 }
@@ -171,6 +179,20 @@ fn multi_argument_outputs_read_back_from_maestro() {
         (r#"value(VDC("/out") 1m)"#, "at(v(out), 1m)"),
         (r#"OP("/X1/M2" "gm")"#, r#"op("X1/M2", "gm")"#),
         (r#"2*value(VT("/a") 1m - 1u)"#, "2*at(v(a), 1m - 1u)"),
+        // settle's own settlingTime form, and delay with every keyword.
+        (
+            r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t 100*0.01/abs(value(VT("/out") ymax(xval(VT("/out"))))-value(VT("/out") ymin(xval(VT("/out"))))))"#,
+            "settle(v(out), 10m)",
+        ),
+        // As ICADVM20.1 prints it back (live a_probe dump).
+        (
+            r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t ((100 * 0.01) / abs((value(VT("/out") ymax(xval(VT("/out")))) - value(VT("/out") ymin(xval(VT("/out"))))))))"#,
+            "settle(v(out), 10m)",
+        ),
+        (
+            r#"delay(?wf1 VT("/in") ?value1 0.5 ?edge1 "rising" ?nth1 1 ?wf2 VT("/out") ?value2 0.5 ?edge2 "either" ?nth2 2)"#,
+            "cross(v(out), 500m, 0, 2)-cross(v(in), 500m, 1, 1)",
+        ),
     ] {
         assert_eq!(out_from_ade(ade).as_deref(), Some(calc), "{ade}");
     }
@@ -248,7 +270,7 @@ fn calculator_outputs_map_to_ade_functions() {
         (
             "1000*ymin(1/max(deriv(log10(abs(i(VMDN)))),1m))",
             "S",
-            r#"1000*ymin(1/((deriv(log10(abs(IS("/VMDN/p")))))+(1m)+abs((deriv(log10(abs(IS("/VMDN/p")))))-(1m)))/2)"#,
+            r#"1000*ymin(1/((deriv(log10(abs(IS("/VMDN/p"))))+1m+abs(deriv(log10(abs(IS("/VMDN/p"))))-1m))/2))"#,
         ),
         (
             "abs(im(i(VMDN)))/(2*pi*x())",
@@ -271,14 +293,21 @@ fn calculator_outputs_map_to_ade_functions() {
         (
             "settle(v(out),10u)-20n",
             "T",
-            r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t 100*(10u)/abs(value(VT("/out") ymax(xval(VT("/out"))))-value(VT("/out") ymin(xval(VT("/out"))))))-20n"#,
+            r#"settlingTime(VT("/out") ymin(xval(VT("/out"))) t ymax(xval(VT("/out"))) t 100*10u/abs(value(VT("/out") ymax(xval(VT("/out"))))-value(VT("/out") ymin(xval(VT("/out"))))))-20n"#,
         ),
         (
             "min(v(a), v(b), 1)",
             "T",
-            r#"((((VT("/a"))+(VT("/b"))-abs((VT("/a"))-(VT("/b"))))/2)+(1)-abs((((VT("/a"))+(VT("/b"))-abs((VT("/a"))-(VT("/b"))))/2)-(1)))/2"#,
+            r#"((((VT("/a")+VT("/b")-abs(VT("/a")-VT("/b")))/2)+1-abs(((VT("/a")+VT("/b")-abs(VT("/a")-VT("/b")))/2)-1))/2)"#,
         ),
-        ("pow(v(a), 2)", "T", r#"(VT("/a"))**(2)"#),
+        ("pow(v(a), 2)", "T", r#"VT("/a")**2"#),
+        // SKILL reads `(x)` as a call of x (live OCEAN): no group around one operand.
+        ("2*(v(a))+(1)", "T", r#"2*VT("/a")+1"#),
+        (
+            "delay(v(in), 0.5, v(out), 0.5)",
+            "T",
+            r#"(cross(VT("/out") 0.5 1 "either")-cross(VT("/in") 0.5 1 "either"))"#,
+        ),
         // op(): the bench path, or an explicit device inside a subcircuit.
         (r#"op("M7","gm")"#, "F", r#"OP("/M7" "gm")"#),
         (r#"op("/XDUT/M1","id")"#, "F", r#"OP("/DUT/M1" "id")"#),
@@ -303,7 +332,7 @@ fn calculator_outputs_map_to_ade_functions() {
         r#"op("M1", "")"#,
         r#"op("M1//x", "gm")"#,
         "at(v(a))",
-        "delay(v(a), 0.5, v(b), 0.5)",
+        "delay(v(a), 0.5, v(b))",
         "unknown_var * 2",
     ] {
         assert_eq!(tr(e, "T"), None, "{e}");

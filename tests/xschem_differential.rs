@@ -656,3 +656,191 @@ fn xschem_differential() {
     std::fs::write(outdir.join("TABLE.md"), &table).unwrap();
     eprintln!("{}\n{table}", lines.join("\n"));
 }
+
+/// A Verilog netlist as a set of statements: `//` comments dropped, white space collapsed,
+/// split at `;`, sorted; each module header (ANSI `module m #(parameter p = v) (dir [wire]
+/// a, …);` or non-ANSI `module m (a, …); dir a;`) becomes `module m`, `parameter p = v` and
+/// `port dir a` statements, so the two header styles compare equal. ponytail: textual
+/// below the header (net names and instance spellings count); a Verilog comparator in
+/// spicecmp if this bites.
+fn verilog_statements(text: &str) -> Vec<String> {
+    let body: String = text
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    // An escaped identifier compares by its name (`\0 ` and xschem's bare `0`, which is no
+    // Verilog identifier: golden ainv).
+    let norm = |s: &str| {
+        s.split_whitespace()
+            .map(|w| w.strip_prefix('\\').unwrap_or(w))
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    let mut v: Vec<String> = Vec::new();
+    let mut rest = body.as_str();
+    while let Some(m) = rest.find("module ") {
+        if m > 0 && !rest[..m].ends_with(char::is_whitespace) {
+            // `endmodule`: text before it is statements
+            let (a, b) = rest.split_at(m + 7);
+            v.extend(a.split(';').map(norm));
+            rest = b;
+            continue;
+        }
+        v.extend(rest[..m].split(';').map(norm));
+        let Some(end) = rest[m..].find(';').map(|e| m + e) else {
+            break;
+        };
+        let head = &rest[m + 7..end];
+        rest = &rest[end + 1..];
+        let full = head.trim_start();
+        let name_end = full
+            .find(|c: char| c == '(' || c == '#' || c.is_whitespace())
+            .unwrap_or(full.len());
+        let (name, tail) = full.split_at(name_end);
+        v.push(format!("module {name}"));
+        // Parameters: `#( parameter p = v, … )`.
+        let t = tail.trim_start();
+        let ports_part = if let Some(after) = t.strip_prefix('#') {
+            let open = after.find('(').unwrap_or(0);
+            let mut depth = 0;
+            let mut close = after.len();
+            for (k, ch) in after.char_indices().skip(open) {
+                match ch {
+                    '(' => depth += 1,
+                    ')' => {
+                        depth -= 1;
+                        if depth == 0 {
+                            close = k;
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            for p in after[open + 1..close].split(',') {
+                let p = norm(p.trim().trim_start_matches("parameter").trim());
+                if !p.is_empty() {
+                    v.push(format!(
+                        "parameter {}",
+                        p.replace(" = ", "=").replace(' ', "")
+                    ));
+                }
+            }
+            &after[close + 1..]
+        } else {
+            t
+        };
+        let ports = ports_part
+            .trim()
+            .trim_start_matches('(')
+            .trim_end_matches(')');
+        for p in ports.split(',').map(norm).filter(|p| !p.is_empty()) {
+            let w: Vec<&str> = p.split(' ').filter(|w| *w != "wire").collect();
+            if w.len() >= 2 {
+                v.push(format!("port {} {}", w[0], w[1..].join(" ")));
+            }
+            // a bare name: its direction is a statement below
+        }
+    }
+    v.extend(rest.split(';').map(norm));
+    let mut v: Vec<String> = v
+        .into_iter()
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            // Non-ANSI declarations `input A` read like ANSI ports.
+            let w: Vec<&str> = s.split(' ').collect();
+            match w[..] {
+                [d @ ("input" | "output" | "inout"), ref names @ ..] if !names.is_empty() => {
+                    let names: Vec<&str> = names.iter().copied().filter(|n| *n != "wire").collect();
+                    format!("port {d} {}", names.join(" "))
+                }
+                _ => s,
+            }
+        })
+        .collect();
+    v.sort();
+    v
+}
+
+/// inv_xschem row X15: the Verilog netlist (`Dialect::Verilog`) of every bench with a
+/// golden `<name>.v` (golden.sh's verilog mode: the logic and Verilog co-sim benches)
+/// against xschem's. Writes `netlist-out/VERILOG.txt` (`<bench> verilog agree|differ|…`)
+/// and `<bench>.v`; reports, never fails: the counts are the record (RATCHET.md).
+#[test]
+fn xschem_verilog_differential() {
+    let Some(cache) = std::env::var_os("SCHEMIFY_CORPUS").map(PathBuf::from) else {
+        eprintln!("SCHEMIFY_CORPUS unset: verilog differential skipped");
+        return;
+    };
+    let cache = std::fs::canonicalize(&cache).expect("corpus cache exists");
+    let list =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"))
+            .unwrap();
+    let outdir = cache.join("netlist-out");
+    std::fs::create_dir_all(&outdir).unwrap();
+    let mut lines = Vec::new();
+    for g in groups(&cache) {
+        let mine: Vec<(&str, &str)> = list
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter_map(|l| {
+                let mut w = l.split_whitespace();
+                Some((w.next()?, w.next()?, w.next()?))
+            })
+            .filter(|b| b.1 == g.name && cache.join(format!("golden/{}.v", b.0)).is_file())
+            .map(|b| (b.0, b.2))
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let out = import(&g);
+        let (project, handles) = load(&out);
+        for (name, path) in mine {
+            let Some(cell) = bench_cell(&handles, path, false) else {
+                lines.push(format!("{name} verilog failed-to-import"));
+                continue;
+            };
+            let e = elaborate(
+                &project,
+                handles[&cell],
+                &request(Dialect::Verilog),
+                &mut no_funcs,
+            );
+            let blocking: Vec<String> = e
+                .violations
+                .rows
+                .iter()
+                .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
+                .map(|v| format!("{} {}", v.code.as_str(), v.detail))
+                .collect();
+            let text = emit(&e, Dialect::Verilog).text;
+            std::fs::write(outdir.join(format!("{name}.v")), &text).unwrap();
+            let golden = std::fs::read_to_string(cache.join(format!("golden/{name}.v"))).unwrap();
+            let (a, b) = (verilog_statements(&golden), verilog_statements(&text));
+            if !blocking.is_empty() {
+                lines.push(format!(
+                    "{name} verilog failed-to-elaborate: {}",
+                    blocking[0]
+                ));
+            } else if a == b {
+                lines.push(format!("{name} verilog agree"));
+            } else {
+                let only = |x: &[String], y: &[String]| {
+                    x.iter()
+                        .filter(|s| !y.contains(s))
+                        .cloned()
+                        .collect::<Vec<_>>()
+                        .join(" | ")
+                };
+                lines.push(format!(
+                    "{name} verilog differ: golden only: {} ;; ours only: {}",
+                    only(&a, &b),
+                    only(&b, &a)
+                ));
+            }
+        }
+    }
+    std::fs::write(outdir.join("VERILOG.txt"), lines.join("\n") + "\n").unwrap();
+    eprintln!("{}", lines.join("\n"));
+}

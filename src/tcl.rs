@@ -54,6 +54,41 @@ pub fn pdk_vars(xschemrc: &str) -> Vec<(String, String)> {
     out
 }
 
+/// xschemrc variables that change what xschem's netlister writes (inv_xschem row 18).
+const NETLIST_SETTINGS: &[&str] = &[
+    "top_subckt",
+    "spiceprefix",
+    "flat_netlist",
+    "bus_replacement_char",
+    "lvs_netlist",
+    "lvs_ignore",
+    "netlist_type",
+    "split_files",
+    "verilog_2001",
+    "hspice_netlist",
+    "spectre_netlist",
+    "xschem_netlist_type",
+];
+
+/// `(line, text)` of every `set <var> …` in `xschemrc` that sets one of xschem's netlister
+/// settings: the import does not apply them, so each is a report row.
+///
+/// ```
+/// let v = interop::tcl::netlist_settings("set top_subckt 1\nset PDK sky130A\n");
+/// assert_eq!(v, [(1, "set top_subckt 1".to_string())]);
+/// ```
+pub fn netlist_settings(xschemrc: &str) -> Vec<(u32, String)> {
+    xschemrc
+        .lines()
+        .enumerate()
+        .filter(|(_, l)| {
+            let mut w = l.split_whitespace();
+            w.next() == Some("set") && w.next().is_some_and(|n| NETLIST_SETTINGS.contains(&n))
+        })
+        .map(|(i, l)| (i as u32 + 1, l.trim().to_owned()))
+        .collect()
+}
+
 /// Rewrites `$X`, `$::X`, `${X}` to `${X}`, refusing names `known` rejects.
 fn braced_vars(text: &str, known: impl Fn(&str) -> bool) -> Result<String, String> {
     let b = text.as_bytes();

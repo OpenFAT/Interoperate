@@ -214,11 +214,13 @@ fn check_expressions(
                 let scope = |i: &str| is_param(i) || vars.iter().any(|v| v == i);
                 for a in d.attrs(r) {
                     let key = d.attr_key(a);
-                    // Interop's own attributes (§7.5), not overrides.
+                    // Interop's own attributes (§7.5, `xsprop` the kept xschem value), not
+                    // overrides.
                     if matches!(
                         key,
                         "at" | "name" | "ignore" | "inherit" | "vview" | "vprop" | "vtd"
-                    ) {
+                    ) || key == crate::xschem_out::XSPROP
+                    {
                         continue;
                     }
                     let v = d.attr_value(a, 0).unwrap_or("");

@@ -767,7 +767,8 @@
             (setq ade (cons lr ade)))
           ((member tag (list "var" "analysis" "corner" "model" "output" "spec" "defn" "maesdb"
                              "maestate" "testvar" "testenable" "parameter" "varenable"
-                             "outenable" "maefile"))
+                             "outenable" "maefile" "simoption" "cornerrun" "testdesign"
+                             "maenote"))
             (if inAde (setq ade (cons lr ade)) (setq err (strcat tag " outside a maestro test"))))
           ((null cv) (setq err (strcat tag " outside a cellview")))
           (t (setarray cv "recs" (cons lr (arrayref cv "recs"))))))
@@ -1415,7 +1416,7 @@
         (quotient (plus (yCoord (lowerLeft b)) (yCoord (upperRight b))) 2.0)))
 
 ;; ("conn" ref term net): a one-step stub from the terminal's real pin, away from the
-;; instance, labelled with the net (spec 6.4); the stub carries schemifyStub "1".
+;; instance, labelled with the net (spec 6.4); the stub carries schemifyStub "conn".
 (procedure (SfyLoadConn lr)
   (let ((f (cdr (cadr lr))) (inst nil) (why nil))
     (setq inst (SfyRef (nth 0 f) lr))
@@ -1457,7 +1458,8 @@
 
 ;; Draws the stub + label for terminal term of instance inst in cellview cv: one grid step
 ;; (10 DBU of cv, 1/16 inch at the standard 160) from the terminal's real pin, away from the
-;; instance's centre, the wire marked schemifyStub "1", the label glued at its far end.
+;; instance's centre, the wire marked schemifyStub "conn" (export's own label stubs carry
+;; "1"), the label glued at its far end.
 ;; Returns t, or a string saying what failed.
 (procedure (SfyStubAt cv inst term net)
   (prog (t0 fig p c dx dy q step w dbu)
@@ -1487,7 +1489,7 @@
     (setq w (car (schCreateWire cv "draw" "full" (list p q) (quotient 1.0 dbu) (quotient 1.0 dbu) 0.0)))
     (unless w
       (return (sprintf nil "conn: stub wire for %s.%s failed" (getSGq inst name) term)))
-    (unless (and (dbReplaceProp w "schemifyStub" "string" "1")
+    (unless (and (dbReplaceProp w "schemifyStub" "string" "conn")
                  (schCreateWireLabel cv w q net "lowerLeft" "R0" "stick" step nil))
       (return (sprintf nil "conn: label %s failed" net)))
     (return t)))

@@ -2390,6 +2390,70 @@ fn live_step() {
     }
 }
 
+/// Lane A (gaps round 2): the Spectre netlists Schemify makes of a maestro dump imported
+/// into a fresh project (`<dump>.proj`): `SFY_A_DUMP` the `.sfyx` (absolute), `SFY_A_CELL`
+/// the bench file it gives, `SFY_A_OUT` a directory that gets `<test>.scs` per `test`
+/// record, the bench with only that test's code blocks (Schemify runs have no test
+/// dimension yet, run.md §2). Run by `live/checks/a_drive.sh`, which runs Spectre on them
+/// on the Virtuoso host.
+#[test]
+#[ignore = "run by live/checks/a_drive.sh"]
+fn a_dump_netlist() {
+    let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
+    let dump = PathBuf::from(var("SFY_A_DUMP"));
+    let (cell, out) = (var("SFY_A_CELL"), PathBuf::from(var("SFY_A_OUT")));
+    let proj = dump.with_extension("proj");
+    let _ = std::fs::remove_dir_all(&proj);
+    write(&proj.join("schemify.project"), "schemify 1 project\n");
+    let files = import_into(&proj, &dump, ImportOptions::default())
+        .unwrap_or_else(|e| panic!("import: {}", e.join("; ")));
+    for (p, b) in files {
+        write(&proj.join(p), b);
+    }
+    // Top-level records and their indented lines, by the record's first two words.
+    let bench = read(&proj.join(&cell)).expect("the bench");
+    let mut blocks: Vec<(String, String)> = Vec::new();
+    for l in bench.lines() {
+        match blocks.last_mut() {
+            Some(b) if l.starts_with(' ') => b.1.push_str(&format!("{l}\n")),
+            _ => {
+                let key: Vec<&str> = l.split_whitespace().take(2).collect();
+                blocks.push((key.join(" "), format!("{l}\n")));
+            }
+        }
+    }
+    let tests: Vec<(String, Vec<String>)> = blocks
+        .iter()
+        .filter(|b| b.0.starts_with("test "))
+        .map(|b| {
+            let codes =
+                b.1.lines()
+                    .filter_map(|l| l.trim().strip_prefix("code "))
+                    .flat_map(|c| c.split_whitespace().map(str::to_owned))
+                    .collect();
+            (b.0[5..].to_owned(), codes)
+        })
+        .collect();
+    assert!(!tests.is_empty(), "{cell}: no test records");
+    for (t, codes) in &tests {
+        let text: String = blocks
+            .iter()
+            .filter(|b| !b.0.starts_with("test "))
+            .filter(|b| {
+                b.0.strip_prefix("code ")
+                    .is_none_or(|c| codes.iter().any(|x| x == c))
+            })
+            .map(|b| b.1.as_str())
+            .collect();
+        let mut files = read_tree(&proj);
+        files.insert(cell.clone(), text.into_bytes());
+        match netlist_of(&files, &cell, schemify_elab::Dialect::Spectre) {
+            Ok(nl) => write(&out.join(format!("{t}.scs")), nl),
+            Err(e) => write(&out.join(format!("{t}.err")), e),
+        }
+    }
+}
+
 /// Every procedure the generated sessions and sfy_live.il call reads in the SKILL subset.
 #[test]
 fn sfy_live_reads_in_the_subset() {

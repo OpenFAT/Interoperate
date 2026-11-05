@@ -364,3 +364,195 @@ B 5 37.5 -2.542.5 2.5 {name=Y dir=out}
     let (out, _) = run(&fixture());
     assert!(out.iter().any(|f| f.0 == "lib/nand.shprim"));
 }
+
+/// inv_xschem rows 6 and 17: a per-element value list on an iterated instance and
+/// `lvs_ignore` (instance and symbol) cross as `needs_review` rows, never verbatim or silent.
+#[test]
+fn value_lists_and_lvs_ignore_are_reviewed() {
+    let mut files = fixture();
+    let v = "v {xschem version=3.4.7 file_version=1.2}\n";
+    files.push((
+        "x/lib/ign.sym".into(),
+        format!("{v}K {{type=primitive\nformat=\"@name @pinlist ign\"\ntemplate=\"name=x1 lvs_ignore=true\"\ntedax_format=\"device @name ign\"}}\nB 5 -2.5 -2.5 2.5 2.5 {{name=a dir=inout}}\n"),
+    ));
+    files.push((
+        "x/lib/vec.sch".into(),
+        format!("{v}C {{res.sym}} 0 0 0 0 {{name=R[2..1] value=\"?1 1k,'1k/2'\" lvs_ignore=short}}\nC {{ign.sym}} 100 0 0 0 {{name=x9}}\n"),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let t = report.text();
+    let row = |class: &str, file: &str, detail: &str| {
+        t.lines().any(|l| {
+            let f: Vec<&str> = l.split('\t').collect();
+            f.len() == 5 && f[0] == class && f[1].ends_with(file) && f[4].contains(detail)
+        })
+    };
+    assert!(
+        row(
+            "needs_review:expression",
+            "vec.sch",
+            "per-element value list"
+        ),
+        "{t}"
+    );
+    assert!(
+        row("needs_review:unsupported", "vec.sch", "lvs_ignore=short"),
+        "{t}"
+    );
+    assert!(
+        row("needs_review:unsupported", "ign.sym", "lvs_ignore=true"),
+        "{t}"
+    );
+    // Row 15: a dialect Schemify has no impl for is counted.
+    assert!(t.contains("unused-attr\tsymbol tedax_format\t1\n"), "{t}");
+    let vec = file(&out, "lib/vec.shbench");
+    // The elements keep the default; the list rides in `xsprop` and goes back to xschem.
+    assert!(
+        vec.contains("name R2,R1\n  xsprop value \"?1 1k,'1k/2'\"\n") && !vec.contains("  value "),
+        "{vec}"
+    );
+    let files: interop::design::Files = out.into_iter().collect();
+    let d = interop::design::load_closed(&files, &["lib/vec.shbench"]).unwrap();
+    let x = interop::xschem_out::export(&d, &[d.find("lib/vec.shbench").unwrap()]).unwrap();
+    let sch = String::from_utf8_lossy(&x.files.iter().find(|f| f.0 == "lib/vec.sch").unwrap().1)
+        .into_owned();
+    assert!(sch.contains("{name=R2,R1 value=\"?1 1k,'1k/2'\""), "{sch}");
+}
+
+/// inv_xschem row 10: xschem netlists a repeated instance name twice (golden nand2), elab
+/// refuses it (E009): the second is renamed, with a `needs_review:name` row.
+#[test]
+fn a_repeated_instance_name_is_renamed() {
+    let mut files = fixture();
+    files.push((
+        "x/lib/dup.sch".into(),
+        "v {xschem version=3.4.7 file_version=1.2}\nC {res.sym} 0 0 0 0 {name=R5}\nC {res.sym} 100 0 0 0 {name=r5}\nC {res.sym} 200 0 0 0 {name=R5_2}\n".into(),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let dup = file(&out, "lib/dup.shbench");
+    for n in ["name R5\n", "name r5_2\n", "name R5_2_2\n"] {
+        assert!(dup.contains(n), "{n} in {dup}");
+    }
+    assert!(
+        report
+            .text()
+            .contains("instance name r5 is used twice: renamed r5_2"),
+        "{}",
+        report.text()
+    );
+}
+
+/// inv_xschem row 14: schematic drawings become rank-3 `shape` records (and go back out
+/// through the xschem export); a graph box stays a `dropped:schematic-graphic` row.
+#[test]
+fn schematic_drawings_become_shapes() {
+    let (out, report) = run(&fixture());
+    let inv = file(&out, "lib/inv.shcomp");
+    assert!(
+        inv.lines()
+            .any(|l| l.starts_with("shape ") && l.ends_with(" line 0 0 10 10")),
+        "{inv}"
+    );
+    let t = report.text();
+    assert!(
+        t.lines().any(|l| l
+            .starts_with("dropped:schematic-graphic\tlib/tb.sch\t0\t1\t1 L/B/P/A records (graphs")),
+        "{t}"
+    );
+    let files: interop::design::Files = out.into_iter().collect();
+    let d = interop::design::load_closed(&files, &["lib/inv.shcomp"]).unwrap();
+    let x = interop::xschem_out::export(&d, &[d.find("lib/inv.shcomp").unwrap()]).unwrap();
+    let sch = String::from_utf8_lossy(&x.files.iter().find(|f| f.0 == "lib/inv.sch").unwrap().1)
+        .into_owned();
+    assert!(sch.contains("\nL 4 0 0 10 10 {}"), "{sch}");
+}
+
+/// inv_xschem row X22: `schematic=tcleval([hierarchy_config @symname])` (IHP std cells)
+/// resolves to the proc's default, the same-named schematic in the sibling `sch` tree; with
+/// no such file, or with another proc, it is a `needs_review:tcl` row and the cell a leaf.
+#[test]
+fn hierarchy_config_takes_its_default_view_or_is_reviewed() {
+    let v = "v {xschem version=3.4.7 file_version=1.2}\n";
+    let sym = |cfg: &str| {
+        format!(
+            "{v}K {{type=subcircuit\nformat=\"@name @pinlist @symname\"\ntemplate=\"name=x1\"\nschematic=\"tcleval([{cfg} @symname])\"}}\nB 5 -42.5 -2.5 -37.5 2.5 {{name=A dir=in}}\nB 5 37.5 -2.5 42.5 2.5 {{name=Z dir=out}}\n"
+        )
+    };
+    let sch = format!(
+        "{v}C {{res.sym}} 0 0 0 0 {{name=R1}}\nC {{ipin.sym}} 0 -30 0 0 {{name=p1 lab=A}}\nC {{opin.sym}} 0 30 0 0 {{name=p2 lab=Z}}\n"
+    );
+    let mut files = fixture();
+    files.extend([
+        (
+            "x/cells/sym/xschem/c1.sym".to_owned(),
+            sym("hierarchy_config"),
+        ),
+        ("x/cells/sch/xschem/c1.sch".to_owned(), sch),
+        (
+            "x/cells/sym/xschem/c2.sym".to_owned(),
+            sym("hierarchy_config"),
+        ),
+        ("x/cells/sym/xschem/c3.sym".to_owned(), sym("my_config")),
+    ]);
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let paths: Vec<&str> = out.iter().map(|f| f.0.as_str()).collect();
+    assert!(paths.contains(&"cells/c1.shcomp"), "{paths:?}");
+    assert!(file(&out, "cells/c1.shcomp").contains("core:res"));
+    let t = report.text();
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:tcl\tcells/sym/xschem/c2.sym")
+                && l.contains("no ")
+                && l.contains("c2.sch (the proc's default)")
+        ),
+        "{t}"
+    );
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:tcl\tcells/sym/xschem/c3.sym")
+                && l.contains("my_config")
+        ),
+        "{t}"
+    );
+}
+
+/// inv_xschem row X15: a schematic's `V {}` Verilog text is the cell's `code … verilog`
+/// (xschem writes it in the module body); a `devices/` symbol mapped to core loses its
+/// `verilog_format` with a review row (core cells have no Verilog format).
+#[test]
+fn verilog_text_is_code_and_a_core_device_verilog_format_is_reviewed() {
+    let mut files = fixture();
+    let res = files
+        .iter_mut()
+        .find(|f| f.0 == "x/devices/res.sym")
+        .unwrap();
+    res.1 = res.1.replace(
+        "template=",
+        "verilog_format=\"tran @name (@@P\\\\\\\\, @@M\\\\\\\\);\"\ntemplate=",
+    );
+    files.push((
+        "x/lib/vl.sch".into(),
+        "v {xschem version=3.4.7 file_version=1.2}\nV {assign #del Y=~A;\n$display(\"x\");}\nC {ipin.sym} 0 0 0 0 {name=p1 lab=A}\nC {opin.sym} 100 0 0 0 {name=p2 lab=Y}\n".into(),
+    ));
+    let (out, report) = run(&files);
+    report.assert_conservation();
+    let vl = file(&out, "lib/vl.shcomp");
+    assert!(
+        vl.contains(
+            "code schematic_verilog verilog\n  | assign #del Y=~A;\n  | $$display(\"x\");\n"
+        ),
+        "{vl}"
+    );
+    let t = report.text();
+    assert!(
+        t.lines().any(
+            |l| l.starts_with("needs_review:unsupported\tdevices/res.sym")
+                && l.contains("core:res has no Verilog format")
+        ),
+        "{t}"
+    );
+    assert!(!t.contains("other-netlister-text\tlib/vl.sch"), "{t}");
+}

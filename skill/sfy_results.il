@@ -123,9 +123,14 @@
                 (unless (SfyResIsWave w)
                   (setq kind "I")
                   (setq w (car (errset (i o)))))
-                (when (SfyResIsWave w)
-                  (SfyResWave port o w kind)
-                  (setq any t)))))
+                (if (SfyResIsWave w)
+                  (progn
+                    (SfyResWave port o w kind)
+                    (setq any t))
+                  ;; A dcOp value, an operating-point parameter, a noise summary: no
+                  ;; waveform, named so the import reports it (inventory row 20).
+                  (when (member r (list "dcOp" "dcOpInfo" "noise"))
+                    (fprintf port "# skipped %s %s\n" r o))))))
           (close port))))
     any))
 

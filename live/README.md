@@ -155,3 +155,6 @@ writes it. `checks/run.sh <check>` runs one on the Virtuoso host under the share
 the lane's own scratch library `sfyprobe_<lane>`, created for the run and deleted after it;
 its header has the setup and the exit codes. A lane with a driver runs it from here with
 `SFY_HOST=<host> checks/l<N>_drive.sh` (`SFY_HOST`, the host's ssh name, is required).
+`checks/x_drive.sh` (lane X) runs xschem → Schemify → Virtuoso with interop.map
+re-mastering onto a made-up sky130-shaped kit cell, si's spectre netlist against Schemify's,
+and the way back to a real xschem netlist (in `~/sfytest/checks-x`, its own work directory).

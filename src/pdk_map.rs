@@ -9,7 +9,10 @@
 //! position (termOrder is the netlist's port order); each param name both have gets a
 //! `param` row (case aside again; the scan's name first). Ties go, in order, to the cell
 //! whose symbol's terminals are its termOrder's (a 4-terminal symbol over a 3-terminal one
-//! with the body inherited), the library given first, the cell name first.
+//! with the body inherited), the library given first, the cell name first. A cell imported
+//! from xschem also matches by the device its `format spice` calls (`sky130_fd_pr__{model}`,
+//! the model default substituted), and its `W`/`L` rows get `scale 1e-6` when D14 reads
+//! their defaults as micrometres (sky130's `L=0.15`; Virtuoso CDFs are in metres).
 //!
 //! Dump, between the `sfyx` header and `end`, one record per Virtuoso cell:
 //!
@@ -90,6 +93,12 @@ pub struct Scanned {
     pub pins: Vec<String>,
     /// Parameter names.
     pub params: Vec<String>,
+    /// `W`/`L` params (any case) whose default D14 reads as micrometres (sky130's `L=0.15`
+    /// under `.option scale=1e-6`): their rows get `scale 1e-6` (Virtuoso is in metres).
+    pub micro: Vec<String>,
+    /// The device the netlist calls when it is not `name`: an xschem import's `format spice`
+    /// word holding `{model}`, the model default substituted (`sky130_fd_pr__nfet_01v8`).
+    pub netlist_name: Option<String>,
 }
 
 /// One Virtuoso cell of the dump.
@@ -136,14 +145,37 @@ pub fn scanned(name: &str, bytes: &[u8]) -> Result<Scanned, String> {
         name: name.to_owned(),
         ..Scanned::default()
     };
+    let mut model = None;
+    let mut format = None;
     for r in 0..doc.record_count() {
-        let field = || doc.field(r, 0).unwrap_or_default().to_owned();
+        let field = |i| doc.field(r, i).unwrap_or_default().to_owned();
         match doc.record_kind(r) {
-            RecordKind::Pin => s.pins.push(field()),
-            RecordKind::Param => s.params.push(field()),
+            RecordKind::Pin => s.pins.push(field(0)),
+            RecordKind::Param => {
+                let (n, d) = (field(0), field(1));
+                if matches!(n.as_str(), "w" | "W" | "l" | "L") && crate::limits::is_micro(&d) {
+                    s.micro.push(n.clone());
+                }
+                if n == "model" {
+                    model = Some(d);
+                }
+                s.params.push(n);
+            }
+            RecordKind::Impl if format.is_none() => {
+                format = doc
+                    .attrs(r)
+                    .find(|&a| doc.attr_key(a) == "format" && doc.attr_value(a, 0) == Some("spice"))
+                    .and_then(|a| doc.attr_value(a, 1))
+                    .map(str::to_owned);
+            }
             _ => {}
         }
     }
+    s.netlist_name = format.zip(model).and_then(|(f, m)| {
+        let w = f.split_whitespace().find(|w| w.contains("{model}"))?;
+        let n = w.replace("{model}", &m);
+        (!n.contains(['{', '}']) && n != s.name).then_some(n)
+    });
     Ok(s)
 }
 
@@ -208,7 +240,12 @@ pub fn map(lib: &str, scan: &[Scanned], kit: &[Vcell]) -> Result<(String, Notes)
         let cellref = format!("{lib}:{}", s.name);
         let cands: Vec<&Vcell> = kit
             .iter()
-            .filter(|k| k.model.eq_ignore_ascii_case(&s.name))
+            .filter(|k| {
+                k.model.eq_ignore_ascii_case(&s.name)
+                    || s.netlist_name
+                        .as_ref()
+                        .is_some_and(|n| k.model.eq_ignore_ascii_case(n))
+            })
             .collect();
         let mut fit: Vec<&Vcell> = cands
             .iter()
@@ -298,10 +335,29 @@ pub fn map(lib: &str, scan: &[Scanned], kit: &[Vcell]) -> Result<(String, Notes)
                 .iter()
                 .find(|v| *v == p)
                 .or_else(|| best.params.iter().find(|v| v.eq_ignore_ascii_case(p)));
+            // Matched through the netlist name, the two `model` values differ by the
+            // cell's prefix (`nfet_01v8` against `sky130_fd_pr__nfet_01v8`): never crossed.
+            let by_netlist_name = !best.model.eq_ignore_ascii_case(&s.name);
             match v {
+                Some(_) if p == "model" && by_netlist_name => {
+                    text.push_str("  drop model\n");
+                    why.push_str(&format!(
+                        "; by its netlist name {}: model dropped",
+                        best.model
+                    ));
+                }
+                Some(v) if s.micro.contains(p) => {
+                    text.push_str(&format!("  param {} {} scale 1e-6\n", word(p), word(v)));
+                }
                 Some(v) => text.push_str(&format!("  param {} {}\n", word(p), word(v))),
                 None => unshared.push(p.as_str()),
             }
+        }
+        if !s.micro.is_empty() {
+            why.push_str(&format!(
+                "; {} in micrometres (D14: a plain default of 1e-3 or more): scale 1e-6",
+                s.micro.join(" ")
+            ));
         }
         if !unshared.is_empty() {
             why.push_str(&format!("; not in its CDF: {}", unshared.join(" ")));
@@ -334,6 +390,7 @@ mod tests {
             name: name.into(),
             pins: pins.iter().map(|p| p.to_string()).collect(),
             params: params.iter().map(|p| p.to_string()).collect(),
+            ..Scanned::default()
         }
     }
 
@@ -411,6 +468,31 @@ mod tests {
              needs_review:unmapped\tk:pbar\tpin-count mismatch: 4 pins; termOrder: a/pbar has 3\n\
              needs_review:unmapped\tk:qux\tno candidate: no Virtuoso cell's CDF model is qux\n"
         );
+    }
+
+    /// inv_xschem row 3: an xschem-imported sky130 device (µm W/L, `sky130_fd_pr__{model}`)
+    /// maps onto a kit cell whose model is the SPICE name, with W/L scaled to metres.
+    #[test]
+    fn an_xschem_sky130_cell_matches_by_netlist_name_and_scales_micrometres() {
+        let nfet = "schemify 1 shprim\n  provenance \"xschem sky130_fd_pr/nfet_01v8.sym\"\n\npin D inout 20 -30\npin G in -20 0\npin S inout 20 30\npin B in 20 0\n\nparam W 1\nparam L 0.15\nparam nf 1\nparam model nfet_01v8\n  kind string\n\nimpl spice spice\n  format spice \"X{name} {pins} sky130_fd_pr__{model} L={L} W={W} nf={nf}\"\n";
+        let s = scanned("nfet_01v8", nfet.as_bytes()).unwrap();
+        assert_eq!(s.micro, ["W", "L"]);
+        assert_eq!(s.netlist_name.as_deref(), Some("sky130_fd_pr__nfet_01v8"));
+        let mut k = vc("s8", "nfet_01v8", "sky130_fd_pr__nfet_01v8", &DGSB, &DGSB);
+        k.params = ["w", "l", "nf", "m"].map(String::from).to_vec();
+        let (text, notes) = map("sky130_fd_pr", &[s], &[k]).unwrap();
+        assert_eq!(
+            text,
+            "map sky130_fd_pr:nfet_01v8 virtuoso s8 nfet_01v8\n  pin D D\n  pin G G\n  pin S S\n  pin B B\n  param W w scale 1e-6\n  param L l scale 1e-6\n  param nf nf\n"
+        );
+        assert!(
+            notes.text().contains("W L in micrometres"),
+            "{}",
+            notes.text()
+        );
+        // A metre default (gf180 `0.28u`) is not scaled.
+        let gf = nfet.replace("param L 0.15", "param L 0.28u");
+        assert_eq!(scanned("n", gf.as_bytes()).unwrap().micro, ["W"]);
     }
 
     #[test]

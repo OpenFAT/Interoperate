@@ -1,0 +1,16 @@
+xs-cosim-ccap verilog failed-to-elaborate
+xs-cosim-sar_adc verilog failed-to-elaborate
+xs-cosim-tb_sar_adc verilog failed-to-elaborate
+xs-cosim-tgate verilog failed-to-elaborate
+xs-logic-bf verilog differ
+xs-logic-eo verilog differ
+xs-logic-ff verilog differ
+xs-logic-iv verilog differ
+xs-logic-latch verilog differ
+xs-logic-mux21 verilog differ
+xs-logic-ram_tb verilog failed-to-elaborate
+xs-logic-ram verilog differ
+xs-logic-sync_reg verilog differ
+xs-logic-testbench verilog failed-to-elaborate
+xs-logic-test_mos_verilog verilog failed-to-elaborate
+xs-logic-test_ngspice verilog failed-to-elaborate

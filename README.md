@@ -242,7 +242,9 @@ differ in shape (spec §6.4, §8.2).
 
 `schemify-interop xschem-export <project> top.shbench -o xs/` writes `xs/<lib>/<cell>.sym|.sch`
 and an `xschemrc` fragment. Core devices land on xschem's own `devices/*.sym`, and cells first
-imported from xschem point back at their original symbols. The test suite netlists the export
+imported from xschem point back at their original symbols while unedited (header `xfp`, the
+fingerprint of the import); one edited in Schemify is written as its own cell, with a report
+row. The test suite netlists the export
 with a real xschem and compares it with Schemify's netlist.
 
 The import runs in the editor (File ▸ **Import from xschem…**) or headless:
@@ -397,7 +399,10 @@ Every conversion lists its losses in the report. The main ones:
   justification, flags and offsets, bus widths, noConn names). What does not: a multi-point
   wire's segmentation (Virtuoso splits it into 2-point wires). Instance properties and
   textDisplays now survive the redraw too.
-- xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers.
+- xschem: non-default corners, sweeps, outputs, specs, optimizer records, waivers. From
+  xschem: graphs, images and launchers, Tcl, bus taps, parametric bus widths, per-element
+  value lists (`?1 a,b,…`, kept for the way back to xschem), `lvs_ignore` and xschemrc
+  netlister settings; each is a report row.
 
 ## How this is tested without Virtuoso
 
@@ -445,7 +450,7 @@ fixtures in `tests/fixtures/schemify/`.
 | `./build.sh` | rebuilds `interop.wasm` (reproducible; commit it with the change) |
 | `SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli --test guest --test xschem_export` | the built guest through Schemify's host, the export netlisted by real xschem |
 | `corpus/fetch.sh && corpus/golden.sh` then `SCHEMIFY_CORPUS=corpus/.cache cargo test --release --test xschem_differential -- --nocapture` | the xschem differential ([corpus/README.md](corpus/README.md)) |
-| `NETLIST=none corpus/import_all.sh DIR && corpus/roundtrip.sh DIR` | the corpus through xschem → Schemify → xschem, re-netlisted by real xschem and compared with the goldens (checks the export) |
+| `NETLIST=none corpus/import_all.sh DIR && corpus/roundtrip.sh DIR` | the corpus through xschem → Schemify → xschem, re-netlisted by real xschem and compared with the goldens (checks the export; nightly ratchets its agree count, RATCHET.md) |
 | `determinism/run.sh <schemify-interop command> <out>` | the import every platform must write byte for byte |
 | `cd fuzz && cargo +nightly fuzz run xschem_read` | the fuzzers (`fuzz/seeds.sh` seeds them) |
 

@@ -65,7 +65,30 @@ jobs:
           SCHEMIFY_CORPUS=$CACHE
           cargo test --release --test xschem_differential -- --nocapture
       - name: ratchet (RATCHET.md)
-        run: corpus/ratchet.sh corpus/.cache/netlist-out/TABLE.md
+        run: |
+          corpus/ratchet.sh corpus/.cache/netlist-out/TABLE.md
+          corpus/rows.sh corpus/.cache/netlist-out/RESULTS.txt corpus/RATCHET.rows
+      # Verilog netlists of the logic and co-sim benches (golden.sh's verilog mode).
+      - name: verilog differential (VERILOG.rows)
+        if: ${{ !cancelled() }}
+        run: |
+          SCHEMIFY_CORPUS=$CACHE cargo test --release --test xschem_differential -- \
+            --exact xschem_verilog_differential --nocapture
+          corpus/rows.sh corpus/.cache/netlist-out/VERILOG.txt corpus/VERILOG.rows
+      # xschem → Schemify → xschem over every bench, netlisted by the same pinned xschem
+      # (about 5 minutes): its agree count may only go up (RATCHET.md "Export round trip"),
+      # and no row may move to a worse category (ROUNDTRIP.rows).
+      - name: export round trip (corpus/roundtrip.sh)
+        if: ${{ !cancelled() }}
+        run: |
+          NETLIST=none corpus/import_all.sh "$RUNNER_TEMP/rt"
+          corpus/roundtrip.sh "$RUNNER_TEMP/rt"
+          cp "$RUNNER_TEMP/rt/roundtrip/RESULTS.txt" corpus/.cache/roundtrip-RESULTS.txt
+          now=$(grep -c ' agree$' "$RUNNER_TEMP/rt/roundtrip/RESULTS.txt")
+          rec=$(sed -n 's/^Export round trip agree: \*\*\([0-9]*\)\*\*.*/\1/p' corpus/RATCHET.md)
+          echo "export round trip agree: $now (recorded $rec)"
+          test "$now" -ge "$rec"
+          corpus/rows.sh "$RUNNER_TEMP/rt/roundtrip/RESULTS.txt" corpus/ROUNDTRIP.rows
       # golden.sh points PDK_ROOT at $CACHE/pdk with only the xschem libraries; the model
       # files open_pdks generates come from volare's prebuilt release, linked in beside them.
       - name: sky130 models (volare)
@@ -95,6 +118,7 @@ jobs:
             corpus/.cache/golden/REPORT.txt
             corpus/.cache/netlist-out/TABLE.md
             corpus/.cache/netlist-out/RESULTS.txt
+            corpus/.cache/roundtrip-RESULTS.txt
           if-no-files-found: ignore
 
   # cargo-fuzz on both harnesses, starting from the checked-in corpus. The corpus carries over

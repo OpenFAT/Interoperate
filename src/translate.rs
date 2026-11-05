@@ -406,6 +406,15 @@ fn collapse_ws(s: &str) -> String {
     s.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// `lvs_ignore` (instance or symbol): xschem leaves the device out of the LVS netlist
+/// while its `lvs_ignore` variable is set; Schemify's `ignore` is every dialect's.
+fn lvs_ignore_note(v: &str) -> String {
+    format!(
+        "lvs_ignore={}: no CDL-only ignore in Schemify; netlisted in CDL as in SPICE",
+        v.trim()
+    )
+}
+
 fn truthy(v: &str) -> Option<bool> {
     match v.trim().to_ascii_lowercase().as_str() {
         "true" | "on" | "yes" | "1" => Some(true),
@@ -666,6 +675,27 @@ impl<'o> Tables<'o> {
                 continue;
             }
             if let Some(map) = self.core_map(s) {
+                // xschem's Verilog netlist writes such a device by its `verilog_format`
+                // (`res.sym`: `tran @name (@@P, @@M);`); a core cell has no Verilog format,
+                // so Verilog elaboration refuses it (E013): a core need (gaps2/core_X.md).
+                if let Some(v) = self.syms[s]
+                    .iface
+                    .attrs
+                    .get("verilog_format")
+                    .filter(|v| !v.trim().is_empty())
+                {
+                    let line = self.k_line(s);
+                    acc.item(
+                        self.syms[s].src,
+                        line,
+                        Class::Review(Reason::Unsupported),
+                        0,
+                        format!(
+                            "verilog_format={v}: core:{} has no Verilog format",
+                            map.cell
+                        ),
+                    );
+                }
                 self.targets[s] = Some(Target::Core(map));
                 continue;
             }
@@ -713,6 +743,17 @@ impl<'o> Tables<'o> {
         let tpl = &iface.template;
         let attrs = &iface.attrs;
         let fmt = attrs.get("format");
+        // Netlisters with no Schemify dialect (inv_xschem row 15): counted, not translated.
+        for key in [
+            "vhdl_format",
+            "tedax_format",
+            "verilog_sym_def",
+            "vhdl_sym_def",
+        ] {
+            if attrs.get(key).is_some_and(|v| !v.trim().is_empty()) && acc.active {
+                *acc.unused.entry(format!("symbol {key}")).or_insert(0) += 1;
+            }
+        }
         let mut reviews: Vec<Review> = Vec::new();
         let mut tokens: Vec<String> = Vec::new();
         let implicit = implicit_nets(iface);
@@ -793,6 +834,9 @@ impl<'o> Tables<'o> {
             .split_whitespace()
             .collect();
         let keys: Vec<String> = (0..tpl.len()).map(|i| tpl.key(i).to_owned()).collect();
+        if let Some(v) = tpl.get("lvs_ignore").filter(|v| truthy(v) != Some(false)) {
+            reviews.push(review(Reason::Unsupported, lvs_ignore_note(v)));
+        }
         let mut params: Vec<ParamOut> = Vec::new();
         let mut dropped_keys: Vec<String> = Vec::new();
         for i in 0..tpl.len() {
@@ -1153,7 +1197,18 @@ impl<'o> Tables<'o> {
         {
             Some(v) if v.contains("[hierarchy_config") => {
                 let sch_dir = dir.replace("/sym/", "/sch/");
-                self.index.get(&format!("{sch_dir}/{stem}.sch")).copied()
+                let found = self.index.get(&format!("{sch_dir}/{stem}.sch")).copied();
+                if found.is_none() {
+                    // The proc's other views (a configured pex or spice netlist) need Tcl.
+                    acc.item(
+                        sym.src,
+                        0,
+                        Class::Review(Reason::Tcl),
+                        0,
+                        format!("schematic={v}: no {sch_dir}/{stem}.sch (the proc's default)"),
+                    );
+                }
+                found
             }
             Some(v) if v.starts_with("tcleval(") => {
                 acc.item(
@@ -1860,7 +1915,19 @@ impl<'o> Tables<'o> {
             doc.push_field(lang);
             text.iter().for_each(|l| doc.push_verbatim(l));
         }
-        (path, write(&doc).into_bytes())
+        // The fingerprint of the file as written (parsed back, so it is the one export
+        // recomputes from the loaded file): `xschem_out::XFP`.
+        let written = write(&doc);
+        let back =
+            schemify_format::parse(written.as_bytes()).expect("the import writes valid files");
+        let mut out = Document::new(back.kind());
+        crate::design::copy_header(&mut out, &back, &[]);
+        out.push_attr(crate::xschem_out::XFP);
+        out.push_value(&crate::xschem_out::fingerprint(&back));
+        for r in 1..back.record_count() {
+            out.copy_record(&back, r);
+        }
+        (path, write(&out).into_bytes())
     }
 
     /// The impls a cell gets, default first: `(name, lang, formats, ignore)`.
@@ -2074,19 +2141,22 @@ impl<'o> Tables<'o> {
         tally_common(f, fid, acc, true);
         // `S {}`: SPICE text emitted verbatim by xschem, inside the component's subckt when
         // the schematic is one (D17 as amended: a `.shcomp` carries `code` too).
+        // `V {}`: Verilog text, which xschem's Verilog netlist writes in the module body
+        // (goldens xs-logic-*: `assign #del Y=~A;` after the declarations).
         let g = &f.globals;
-        for i in (0..g.tag.len()).filter(|&i| g.tag[i] == GlobalTag::S) {
+        for i in (0..g.tag.len()).filter(|&i| matches!(g.tag[i], GlobalTag::S | GlobalTag::V)) {
             let text = f.str(g.text[i]);
+            let (name, lang) = match g.tag[i] {
+                GlobalTag::V => ("schematic_verilog", "verilog"),
+                _ => ("schematic_spice", "spice"),
+            };
             if text.trim().is_empty() {
                 acc.out(fid, 1);
             } else {
                 match netlist_text(text, self.opts.pdk_vars) {
                     Ok(t) => {
-                        out.codes.push((
-                            "schematic_spice".to_owned(),
-                            "spice".to_owned(),
-                            lines(&t),
-                        ));
+                        out.codes
+                            .push((name.to_owned(), lang.to_owned(), lines(&t)));
                         acc.out(fid, 1);
                     }
                     Err(d) => acc.item(fid, g.line[i], Class::Review(Reason::Tcl), 1, d),
@@ -2239,17 +2309,112 @@ impl<'o> Tables<'o> {
             doc.push_value_coord(f.texts.scale[i][0]);
             acc.out(fid, 1);
         }
-        // Drawings.
-        let drawings =
-            (f.lines.xy.len() + f.boxes.xy.len() + f.polygons.layer.len() + f.arcs.layer.len())
-                as u32;
-        if drawings > 0 {
+        // Drawings → rank-3 `shape` records (inv_xschem row 14); graphs and images (boxes
+        // with `flags=graph` or `image=`) have no Schemify form and stay reported.
+        let mut dropped = 0u32;
+        let layer_ok = |l: u8| u32::from(l) < CAD_LAYERS;
+        let mut shape = |doc: &mut Document, line: u32, form: &str, vals: &[i32], layer: u8| {
+            doc.begin_record(RecordKind::Shape);
+            doc.push_field(&ids.next(line, 0));
+            doc.push_field(form);
+            vals.iter().for_each(|&v| doc.push_field_coord(v));
+            push_layer(doc, layer);
+        };
+        for i in 0..f.lines.layer.len() {
+            if !layer_ok(f.lines.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            shape(
+                doc,
+                f.lines.line[i],
+                "line",
+                &f.lines.xy[i],
+                f.lines.layer[i],
+            );
+            let props = Attrs::parse(f.str(f.lines.props[i]));
+            if let Some(d) = props
+                .get("dash")
+                .filter(|d| d.trim().parse::<u32>().is_ok_and(|n| n > 0))
+            {
+                doc.push_attr("dash");
+                doc.push_value(d.trim());
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.boxes.layer.len() {
+            let props = Attrs::parse(f.str(f.boxes.props[i]));
+            if !layer_ok(f.boxes.layer[i])
+                || props.get("flags").is_some_and(|v| v.contains("graph"))
+                || props.get("image").is_some()
+            {
+                dropped += 1;
+                continue;
+            }
+            shape(
+                doc,
+                f.boxes.line[i],
+                "rect",
+                &f.boxes.xy[i],
+                f.boxes.layer[i],
+            );
+            if props.get("fill").map(str::trim) != Some("false") {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.polygons.layer.len() {
+            let (first, count) = (f.polygons.first[i] as usize, f.polygons.count[i] as usize);
+            let mut pts = f.points[first..first + count].to_vec();
+            let closed = pts.len() > 2 && pts.first() == pts.last();
+            if closed {
+                pts.pop();
+            }
+            if pts.len() < 2 || !layer_ok(f.polygons.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            let flat: Vec<i32> = pts.iter().flatten().copied().collect();
+            shape(doc, f.polygons.line[i], "poly", &flat, f.polygons.layer[i]);
+            let props = Attrs::parse(f.str(f.polygons.props[i]));
+            if matches!(props.get("fill").map(str::trim), Some("true" | "full")) {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            if closed {
+                doc.push_attr("closed");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        for i in 0..f.arcs.layer.len() {
+            if !layer_ok(f.arcs.layer[i]) {
+                dropped += 1;
+                continue;
+            }
+            let [cx, cy, r] = f.arcs.circle[i];
+            let [start, sweep] = f.arcs.angles[i];
+            if sweep.abs() >= 360_000 {
+                shape(doc, f.arcs.line[i], "circle", &[cx, cy, r], f.arcs.layer[i]);
+            } else {
+                let v = [cx, cy, r, start, sweep];
+                shape(doc, f.arcs.line[i], "arc", &v, f.arcs.layer[i]);
+            }
+            let props = Attrs::parse(f.str(f.arcs.props[i]));
+            if matches!(props.get("fill").map(str::trim), Some("true" | "full")) {
+                doc.push_attr("fill");
+                doc.push_value("true");
+            }
+            acc.out(fid, 1);
+        }
+        if dropped > 0 {
             acc.item(
                 fid,
                 0,
                 Class::Dropped(Drop::Graphic),
-                drawings,
-                format!("{drawings} L/B/P/A records"),
+                dropped,
+                format!("{dropped} L/B/P/A records (graphs, images, layer ≥ 22, < 2 points)"),
             );
         }
         // Interface pins bound by name only (xschem binds subcircuit ports by net name):
@@ -2325,6 +2490,12 @@ impl<'o> Tables<'o> {
                 }),
                 Target::Core(_) => None,
             };
+            // A bare name with no file (`schematic=passgate_1`, golden gain_stage) is
+            // xschem's per-instance specialisation of the cell's own schematic: subckt
+            // `passgate_1` with the instance's values, `@modelp` included. Every Schemify
+            // instance is specialised so (netlist §6); only the subckt name differs.
+            let specialised = matches!(target, Target::Cell(c) if self.cells[c as usize].sch.is_some())
+                && !alt.contains(['/', '.', '[', '(']);
             match resolved {
                 Some(a) => target = Target::Cell(a),
                 None => acc.item(
@@ -2332,7 +2503,14 @@ impl<'o> Tables<'o> {
                     line,
                     Class::Review(Reason::Unsupported),
                     0,
-                    format!("schematic={alt}"),
+                    if specialised {
+                        format!(
+                            "schematic={alt} names no file: xschem's per-instance specialisation, \
+                             as every instance is netlisted here; its subckt is not named {alt}"
+                        )
+                    } else {
+                        format!("schematic={alt}")
+                    },
                 ),
             }
         }
@@ -2349,6 +2527,25 @@ impl<'o> Tables<'o> {
                 format!("x{line}")
             }
         };
+        // xschem netlists a repeated name twice (golden nand2: two `m2`); elab refuses it
+        // (E009), so the second gets `_2` (case aside, as SPICE reads names).
+        let low = |n: &str| n.to_ascii_lowercase();
+        let name = if out.inst_names.contains(&low(&name)) {
+            let taken: Vec<String> = out.inst_names.iter().cloned().collect();
+            let new = unique(&low(&name), taken.iter().map(String::as_str));
+            let new = format!("{name}{}", &new[name.len()..]);
+            acc.item(
+                fid,
+                line,
+                Class::Review(Reason::Name),
+                0,
+                format!("instance name {name} is used twice: renamed {new}"),
+            );
+            new
+        } else {
+            name
+        };
+        out.inst_names.insert(low(&name));
         let cellref = match target {
             Target::Core(m) => format!("core:{}", m.cell),
             Target::Cell(c) => {
@@ -2389,6 +2586,15 @@ impl<'o> Tables<'o> {
                 doc.push_value("true");
             }
             _ => {}
+        }
+        if let Some(v) = props.get("lvs_ignore").filter(|v| truthy(v) != Some(false)) {
+            acc.item(
+                fid,
+                line,
+                Class::Review(Reason::Unsupported),
+                0,
+                lvs_ignore_note(v),
+            );
         }
         let iface = self.iface_of(target);
         let map = match target {
@@ -2439,6 +2645,30 @@ impl<'o> Tables<'o> {
                     .filter(|v| collapse_ws(v) != collapse_ws(xs_tpl.get(pname).unwrap_or(""))),
             };
             let Some(v) = value else { continue };
+            // xschem's per-element list on an iterated instance (`C="?1 1p,'1p/2',…"`,
+            // golden sar_adc: `xb6 … C=1p`): an override is one value for every element
+            // (format.md), so the elements keep the default; the text rides in `xsprop`
+            // for the xschem export. ponytail: needs a per-element override in the core.
+            let t = v.trim();
+            if t.strip_prefix('?')
+                .and_then(|r| r.split_once(char::is_whitespace))
+                .is_some_and(|(n, _)| !n.is_empty() && n.bytes().all(|b| b.is_ascii_digit()))
+            {
+                doc.push_attr(crate::xschem_out::XSPROP);
+                doc.push_value(pname);
+                doc.push_value(t);
+                acc.item(
+                    fid,
+                    line,
+                    Class::Review(Reason::Expression),
+                    0,
+                    format!(
+                        "{pname}={t}: a per-element value list (Schemify has one value per \
+                         instance; kept as xsprop for the xschem export)"
+                    ),
+                );
+                continue;
+            }
             match override_text(v, *kind, known, &sc.parents) {
                 Ok(text) if map.is_some() && text == *pdefault => {}
                 Ok(text) => {
@@ -2902,6 +3132,8 @@ struct SchOut {
     /// Model text for the schematic impl's `body` (component instances' device_model).
     body: Vec<String>,
     bbox: Option<[i32; 2]>,
+    /// Instance names so far, lowercased (a repeat is renamed).
+    inst_names: HashSet<String>,
 }
 
 impl SchOut {
@@ -2931,7 +3163,9 @@ fn tally_common(f: &XschemFile, fid: u32, acc: &mut Acc, schematic: bool) {
         let other = match g.tag[i] {
             GlobalTag::Version | GlobalTag::K => false,
             GlobalTag::G => schematic, // VHDL text in a schematic; symbol attributes in a symbol
-            GlobalTag::S => continue,  // the schematic pass decides; in a symbol: below
+            // The schematic pass decides; in a symbol: below.
+            GlobalTag::S => continue,
+            GlobalTag::V if schematic => continue,
             GlobalTag::V | GlobalTag::E => true,
         };
         if other && !text.is_empty() {

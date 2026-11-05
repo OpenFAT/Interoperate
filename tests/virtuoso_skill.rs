@@ -652,7 +652,7 @@ fn conn_records_draw_a_labelled_stub_at_the_real_pin() {
     assert!(t.contains("(\"wire\" 2 (-50000 0 -40000 0) 0)"), "{t}");
     assert!(t.contains("\"out\" -50000 0"), "{t}");
     assert!(t.contains("\"gnd!\" 50000 0"), "{t}");
-    assert!(t.contains("\"schemifyStub\" \"string\" \"1\""), "{t}");
+    assert!(t.contains("\"schemifyStub\" \"string\" \"conn\""), "{t}");
 }
 
 #[test]

@@ -157,6 +157,15 @@ fn import(root: &Path, bench: &str, base: &Path, h: &History) -> Result<PathBuf,
         let t = std::fs::read_to_string(&src).map_err(|e| io(&src, e))?;
         let a = wave::parse(&t).map_err(|e| (2, format!("{}: {e}", src.display())))?;
         write(&dir.join(j.to_string()).join("out.raw"), &wave::raw(&a))?;
+        let skipped = wave::skipped(&t);
+        if !skipped.is_empty() {
+            println!(
+                "note: point {j}: {} result value(s) are no waveform and are not mapped (the \
+                 operating point and noise summaries come from Schemify's own run): {}",
+                skipped.len(),
+                skipped.join(" ")
+            );
+        }
     }
     for (from, to) in [(&h.dump.rdb, "maestro.rdb"), (&h.dump.setup, "history.zip")] {
         if !from.is_empty() {

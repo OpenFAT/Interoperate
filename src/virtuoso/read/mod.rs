@@ -450,6 +450,16 @@ pub fn import(
             &cell,
             &mut notes,
         );
+        let dc = &ctx.dump.cells[k];
+        let out = match map
+            .by_virtuoso(&dc.lib, &dc.name)
+            .and_then(|r| Some((r, r.spice.as_deref()?)))
+        {
+            Some((row, spice)) if out.kind() == FileKind::Shprim => {
+                map_spice_wins(&out, spice, row.line, &cell, &mut notes)
+            }
+            _ => out,
+        };
         let out = with_fingerprints(&out, &doc, ctx.dump.cells[k].cdf.as_ref());
         let text = schemify_format::write(&out);
         if let Some(old) = existing.get(&path)
@@ -474,6 +484,52 @@ pub fn import(
         "one file per path"
     );
     Ok(Import { files, notes })
+}
+
+/// A mirror whose map row names a `spice` template (§8.2): the row wins for the format it
+/// names, the mirror keeps the rest (its spectre/cdl formats, a local `format xyce`). The
+/// local file's own `format spice`, when it differs, is replaced with a note; §8.1's "the
+/// local format spice wins" holds for mirrors without such a row.
+fn map_spice_wins(
+    doc: &Document<'static>,
+    spice: &str,
+    line: u32,
+    cell: &str,
+    notes: &mut Notes,
+) -> Document<'static> {
+    let mut out = Document::new(doc.kind());
+    copy_header(&mut out, doc, &[]);
+    let mut done = false;
+    for r in 1..doc.record_count() {
+        if doc.record_kind(r) != RecordKind::Impl || done {
+            out.copy_record(doc, r);
+            continue;
+        }
+        done = true; // a mirror has one impl
+        out.begin_record(RecordKind::Impl);
+        doc.fields(r).for_each(|f| out.push_field(f));
+        out.push_attr("format");
+        out.push_value("spice");
+        out.push_value(spice);
+        for a in doc.attrs(r) {
+            if doc.attr_key(a) == "format" && doc.attr_value(a, 0) == Some("spice") {
+                let old = doc.attr_value(a, 1).unwrap_or("");
+                if old != spice {
+                    notes.review(
+                        "format",
+                        cell,
+                        format!(
+                            "format spice from interop.map line {line} replaces the local {old:?}"
+                        ),
+                    );
+                }
+                continue;
+            }
+            crate::design::copy_attr(&mut out, doc, a);
+        }
+    }
+    assert_eq!(out.record_count(), doc.record_count());
+    out
 }
 
 /// `doc` (the merged file) with header attributes `vsym`/`vsch` set to the fingerprints of

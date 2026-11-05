@@ -3,65 +3,6 @@
 
 use super::*;
 
-/// What `maeGetAnalysis` answers for the fields of a new analysis nobody set (ICADVM20.1,
-/// read by the probe on a live run, 2026-10-15): (analysis, field, value). A dump drops them
-/// like `anaName`, so a setup reads as what was set; a field set to another value is kept.
-const FORM_DEFAULTS: &[(&str, &str, &str)] = &[
-    ("tran", "trannoisemethod", "default"),
-    ("tran", "noiseseed", "1"),
-    ("tran", "binnum", "16"),
-    ("tran", "noiseruns", "100"),
-    ("tran", "dynamicParameter", "Parameter"),
-    ("tran", "dynParamChoice", "User-defined"),
-    ("tran", "dynParamSetChoice", "User-defined"),
-    ("tran", "dynchoice", "Parameter vector"),
-    ("tran", "dynamicChoice", "Vector"),
-    ("tran", "write", "spectre.ic"),
-    ("tran", "writefinal", "spectre.fc"),
-    ("tran", "annotate", "status"),
-    ("tran", "annotatedigits", "4"),
-    ("tran", "progress_t", "60"),
-    ("tran", "progress_p", "10"),
-    ("tran", "finalTimeOp", "t"),
-    ("tran", "maxiters", "5"),
-    ("tran", "threshold", "0.0"),
-    ("tran", "detail", "node"),
-    ("tran", "sort", "name"),
-    ("tran", "thermalmethod", "Steady State"),
-    ("tran", "triseLimit", "300"),
-    ("tran", "resTriseRpt", "No"),
-    ("tran", "iterNum", "2"),
-    ("tran", "thermalTimeStep", "0"),
-    ("tran", "sortMethod", "Temperature Rise"),
-    ("tran", "triseTemp", "0.0"),
-    ("tran", "saveChannelOnly", "No"),
-    ("dc", "rangeType", "Start-Stop"),
-    ("dc", "incrType", "Automatic"),
-    ("dc", "stepTypeLin", "Step Size"),
-    ("dc", "stepTypeLog", "Points Per Decade"),
-    ("dc", "write", "spectre.dc"),
-    ("dc", "oppoint", "rawfile"),
-    ("dc", "maxiters", "150"),
-    ("dc", "maxsteps", "10000"),
-    ("dc", "annotate", "status"),
-    ("dc", "threshold", "0.0"),
-    ("dc", "detail", "node"),
-    ("dc", "sort", "name"),
-    ("ac", "rangeType", "Start-Stop"),
-    ("ac", "stepTypeLin", "Step Size"),
-    ("ac", "outType", "Voltage"),
-    ("ac", "srcType", "port"),
-    ("ac", "perturbation", "linear"),
-    ("ac", "special", "None"),
-    ("ac", "annotate", "status"),
-];
-
-pub(super) fn is_form_default(analysis: &str, k: &str, v: &str) -> bool {
-    FORM_DEFAULTS
-        .iter()
-        .any(|&(a, f, d)| a == analysis && f == k && d == v)
-}
-
 /// Maestro analysis options that are ADE form fields (the sweep and step choosers) with no
 /// OCEAN `analysis` keyword or Spectre parameter: OCEAN and Spectre infer them from the
 /// keywords present.
@@ -253,6 +194,18 @@ pub(super) fn ocean_script(
         } else {
             let _ = writeln!(o, "desVar({} {})", skill_str(n), skill_str(v));
         }
+    }
+    // ponytail: OCEAN's option() is not probed; the options ride in maestro only.
+    if !t.sim_opts.is_empty() {
+        let o: Vec<String> = t.sim_opts.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        notes.review(
+            "code",
+            cell,
+            format!(
+                "the OCEAN script sets no simulator options ({}): maestro has them",
+                o.join(" ")
+            ),
+        );
     }
     let mut analyses = t.analyses.clone();
     analyses.sort_by(|a, b| a.0.cmp(&b.0));

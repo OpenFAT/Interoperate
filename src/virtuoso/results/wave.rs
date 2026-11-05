@@ -17,6 +17,8 @@
 //! One `# analysis <name>` line per OCEAN result, then per waveform `# <signal> <n> points
 //! <V|I>` (the kind word absent means `V`) and `n` lines `x y` (real) or `x re im` (complex).
 //! `%.17g` text parses back to the same double, so the raw holds the simulator's bits.
+//! A `# skipped <result> <output>` line names a result value that is no waveform (a dcOp
+//! value, a noise summary): [`skipped`] lists them for the report.
 
 /// One waveform of one analysis.
 #[derive(Clone, Debug, PartialEq)]
@@ -64,6 +66,9 @@ pub fn parse(text: &str) -> Result<Vec<Analysis>, String> {
             return Err(bad("a value outside a waveform"));
         };
         let w: Vec<&str> = head.split_whitespace().collect();
+        if let ["skipped", _, _] = w[..] {
+            continue;
+        }
         if let ["analysis", name] = w[..] {
             out.push(Analysis {
                 name: name.to_owned(),
@@ -112,6 +117,22 @@ pub fn parse(text: &str) -> Result<Vec<Analysis>, String> {
         a.signals.push(s);
     }
     Ok(out)
+}
+
+/// The `<result>/<output>` of each `# skipped` line of an export, in file order.
+pub fn skipped(text: &str) -> Vec<String> {
+    text.lines()
+        .filter_map(|l| {
+            match l
+                .strip_prefix("# skipped ")?
+                .split_whitespace()
+                .collect::<Vec<_>>()[..]
+            {
+                [r, o] => Some(format!("{r}/{o}")),
+                _ => None,
+            }
+        })
+        .collect()
 }
 
 /// Schemify's name of OCEAN signal `s`, by the rule outputs use (`interop.md` §9.2): a
@@ -214,10 +235,14 @@ mod tests {
             "# analysis tran\n# /out 2 points\n1 2\n",
             "# analysis tran\n# /out 1 points\n1 x\n",
             "# analysis tran\n# /out 2 points\n1 2\n3 4 5\n",
+            "# skipped dcOp\n",
             "1 2\n",
         ] {
             assert!(parse(bad).is_err(), "{bad}");
         }
+        let t = "# analysis dcOp\n# skipped dcOp /out\n# analysis tran\n# /out 1 points\n0 1\n";
+        assert_eq!(parse(t).unwrap()[1].signals.len(), 1);
+        assert_eq!(skipped(t), ["dcOp//out"]);
     }
 
     #[test]
