@@ -1,7 +1,7 @@
 schemify 1 shcomp
   vibox -42 -32 42 22
   vsym aab279831c8cf04a
-  vsch 0e211f5f71c210f3
+  vsch 45798dddecceda77
   vcdf d6c8dc96356fe4c9
   vcdfrec "(\"cdf\" \"\")"
   vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\" \"Y\"))))"
@@ -56,8 +56,7 @@ wire zz835z -60 0 -20 0
 
 label htaex2 20 -88 R270 vdd!
   voff 1 0
-label peb7yn 20 90 R0 GND
-  global true
+label peb7yn 20 90 R0 0
   vinst I2
 
 port n1rj7r -60 0 R0 A
