@@ -1,0 +1,81 @@
+schemify 1 shbench
+
+var C 1n
+
+corner C1
+  lib /pdk/m1.scs tt
+  lib /pdk/m2.scs tt
+  temp -40
+corner C2
+  temp 85
+
+output st "settle(v(out), 10m)"
+output ymxa ymax(v(out))
+
+test B1
+  code B1
+  vnone output
+test N1
+  code N1
+  corner C1
+  vnone output
+test N2
+  code N2
+  vnone output
+test PA
+  code PA
+  vnone output
+test TH
+  code TH
+  output st ymxa
+test TR
+  code TR
+  design ./rr
+  vnone output
+
+code B1 spectre
+  | temp options temp=-40
+  | stb stb start=1 stop=1G dec=10 probe=IPRB0
+code N1 spice
+  | .temp -40
+  | .options reltol=1e-5 gmin=1e-14
+  | .noise v(out) V0 dec 10 1 1g
+code N2 spectre
+  | temp options temp=-40
+  | noise (out in) noise start=1 stop=5 lin=4
+code PA spectre
+  | temp options temp=-40
+  | pss pss fund=1M harms=3
+  | pac pac start=1k stop=100k dec=5
+code TH spice
+  | .temp -40
+  | .tran 1e-9 1u
+code TR spectre
+  | temp options temp=-40
+  | dc dc param=temp start=-40 stop=125 step=5
+
+--- report
+needs_review:code	tb	analysis dc has no SPICE form: kept in the spectre block
+needs_review:code	tb	analysis noise has no SPICE form: kept in the spectre block
+needs_review:code	tb	analysis pac has no SPICE form: kept in the spectre block
+needs_review:code	tb	analysis pss has no SPICE form: kept in the spectre block
+needs_review:code	tb	analysis stb has no SPICE form: kept in the spectre block
+needs_review:code	tb	maestro test N1: simulator option maxnotes=7 has no ngspice form: kept in the setup XML only
+needs_review:code	tb	maestro test N2: noise inType=voltage: only port is written
+needs_review:code	tb	maestro test N2: noise inVsrc=/V0: not a parameter of Spectre's noise
+needs_review:config	tb	maestro test B1 has no output: a Schemify run gives it every one
+needs_review:config	tb	maestro test N1 has no output: a Schemify run gives it every one
+needs_review:config	tb	maestro test N2 has no output: a Schemify run gives it every one
+needs_review:config	tb	maestro test PA has no output: a Schemify run gives it every one
+needs_review:config	tb	maestro test TH runs simulator hspiceD: a Schemify run uses its own; the test goes back to Maestro as spectre unless the setup XML restores it
+needs_review:config	tb	maestro test TR has no output: a Schemify run gives it every one
+needs_review:corner	tb	corner C1 model /pdk/m2.scs sections tt ss: a corner group; only tt comes back (Schemify has no corner group)
+needs_review:corner	tb	corner C1 var temperature -40,125: a corner group; only its first point -40 comes back (Schemify has no corner group)
+needs_review:output	tb	maestro test TH: output ymxa is evaluated over corners; Schemify evaluates every output per job
+needs_review:spec	tb	maestro test TH: spec of ymxa: ("tol" "0.1" "10%") has no Schemify spec (only > < and range)
+needs_review:sweep	tb	maestro test B1: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)
+needs_review:sweep	tb	maestro test N1: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)
+needs_review:sweep	tb	maestro test N2: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)
+needs_review:sweep	tb	maestro test PA: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)
+needs_review:sweep	tb	maestro test TH: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)
+needs_review:sweep	tb	maestro test TR: temperature sweep -40,27,125: only its first point -40 comes back (Schemify has no temperature sweep)

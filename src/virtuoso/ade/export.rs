@@ -579,8 +579,9 @@ fn param_to_virtuoso(p: &str) -> Option<String> {
 
 /// The attributes of `test` record `r` onto `t` (format.md rank 6): `set` → its own var
 /// values, `enable false` → `testenable` (with a stored setup, only when it differs),
-/// `config` → its design view; `omit`, a `corner` selection and `design` have no record
-/// and are reported unless the stored setup already holds them.
+/// `config` → its design view, `corner` → the corners it runs (`cornerrun`), `design` →
+/// `testdesign`; `omit` has no record
+/// and is reported unless the stored setup already holds it.
 fn test_attrs(
     c: &Cell,
     r: u32,
@@ -616,23 +617,31 @@ fn test_attrs(
             }
             ("code" | "output", _) => {}
             (VNONE, _) => {}
+            // The corners it runs: the others disable the test (`maeSetCorner
+            // ?disableTests`).
             ("corner", list) => {
-                let all: Vec<&str> = c
-                    .records(RecordKind::Corner)
-                    .filter(|&k| c.attr(k, "enable") != Some("false"))
-                    .map(|k| c.field(k, 0))
-                    .collect();
-                if all.iter().any(|x| !list.contains(x)) {
-                    notes.review(
-                        "corner",
-                        cell,
-                        format!(
-                            "test {name} corner {}: maestro runs every enabled corner",
-                            list.join(" ")
-                        ),
-                    );
+                for k in c.records(RecordKind::Corner) {
+                    let k = c.field(k, 0);
+                    if !t.corner_runs.iter().any(|x| x.0 == k) {
+                        t.corner_runs.push((k.to_owned(), list.contains(&k)));
+                    }
                 }
             }
+            // Another cell as its design: `./cell` in the bench's library, else `lib:cell`.
+            ("design", [r]) => match r
+                .strip_prefix("./")
+                .map(|x| (t.lib.as_str(), x))
+                .or_else(|| r.split_once(':'))
+            {
+                Some((l, x)) if !l.is_empty() && !x.is_empty() && !x.contains('/') => {
+                    t.design = Some((l.to_owned(), x.to_owned()));
+                }
+                _ => notes.review(
+                    "config",
+                    cell,
+                    format!("test {name} design {r}: not a cell reference"),
+                ),
+            },
             (k, _) => notes.review(
                 "config",
                 cell,
@@ -739,6 +748,7 @@ fn source_line(
             SpectreLine::Analysis(n, o) => SpiceLine::Analysis(n, o),
             SpectreLine::Model(f, sec) => SpiceLine::Model(f, sec),
             SpectreLine::Temp(v) => SpiceLine::Temp(v),
+            SpectreLine::SimOpts(o) => SpiceLine::SimOpts(o),
         })
     };
     let has_global = |t: &Test, n: &str| t.vars.iter().any(|v| v.0 == n && v.2.is_empty());
@@ -788,6 +798,13 @@ fn source_line(
                 .is_some()
         }
         Some(SpiceLine::Temp(_)) => false,
+        Some(SpiceLine::SimOpts(o)) => {
+            if o.iter().any(|(k, _)| t.sim_opts.iter().any(|x| &x.0 == k)) {
+                return false;
+            }
+            t.sim_opts.extend(o);
+            true
+        }
         Some(SpiceLine::Param(kvs)) => {
             if kvs
                 .iter()
@@ -821,15 +838,20 @@ pub(super) enum SpiceLine {
     Temp(String),
     /// `.param k=v …` (Schemify expressions).
     Param(Vec<(String, String)>),
+    /// Simulator options `(Spectre name, value)`: `.options reltol=…`, Spectre
+    /// `<name> options k=v …`.
+    SimOpts(Vec<(String, String)>),
 }
 
-/// AC/noise sweep options of `dec|lin n f1 f2` (values SPICE numbers).
+/// AC/noise sweep options of `dec|lin n f1 f2` (values SPICE numbers). ngspice's `lin n` is
+/// n points, Spectre's `lin=n` n steps (n+1 points, live): `lin n` is `lin=n-1` (`lin=0` the
+/// one point of start = stop; `lin=1` there is Spectre's SPECTRE-16108, live).
 fn freq_opts(ty: &str, n: &str, f1: &str, f2: &str) -> Option<Vec<(String, String)>> {
-    let (f1, f2, n) = (
-        ael::number_to_ael(f1)?,
-        ael::number_to_ael(f2)?,
-        ael::number_to_ael(n)?,
-    );
+    let (f1, f2) = (ael::number_to_ael(f1)?, ael::number_to_ael(f2)?);
+    let n = match ty.to_ascii_lowercase().as_str() {
+        "lin" => (n.parse::<u32>().ok().filter(|n| *n >= 1)? - 1).to_string(),
+        _ => ael::number_to_ael(n)?,
+    };
     let mut o = vec![kv("start", &f1), kv("stop", &f2)];
     match ty.to_ascii_lowercase().as_str() {
         "dec" => o.extend([
@@ -866,6 +888,8 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
             SpiceLine::Analysis("tran".into(), o)
         }
         (".ac", [ty, n, f1, f2]) => SpiceLine::Analysis("ac".into(), freq_opts(ty, n, f1, f2)?),
+        // ICADVM20.1's dc incrType default is Automatic, which netlists no step (live):
+        // the step needs Linear by step size.
         (".dc", [src, a, b, st]) if is_ident(src) => SpiceLine::Analysis(
             "dc".into(),
             vec![
@@ -874,18 +898,28 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
                 kv("param", "dc"),
                 kv("start", &ael::signed_number(a)?),
                 kv("stop", &ael::signed_number(b)?),
+                kv("incrType", "Linear"),
+                kv("stepTypeLin", "Step Size"),
                 kv("step", &ael::signed_number(st)?),
             ],
         ),
         (".op", []) => SpiceLine::Analysis("dc".into(), vec![kv("saveOppoint", "t")]),
+        // A voltage output is ADE's `outType voltage` with nodes `p`/`n` (`oprobe` names a
+        // probe instance: Spectre SFE-1997 on a net, live); ground is `/gnd!`.
         (".noise", [out, src, ty, n, f1, f2]) if is_ident(src) => {
-            let node = out
+            let nodes = out
                 .strip_prefix("v(")
                 .or_else(|| out.strip_prefix("V("))
-                .and_then(|x| x.strip_suffix(')'))
-                .filter(|x| is_ident(x))?;
+                .and_then(|x| x.strip_suffix(')'))?;
+            let (p, r) = nodes.split_once(',').unwrap_or((nodes, "gnd!"));
+            let r = if r == "0" { "gnd!" } else { r };
+            if !is_ident(p) || !(r == "gnd!" || is_ident(r)) {
+                return None;
+            }
             let mut o = freq_opts(ty, n, f1, f2)?;
-            o.push(kv("oprobe", &format!("/{node}")));
+            o.push(kv("outType", "voltage"));
+            o.push(kv("p", &format!("/{p}")));
+            o.push(kv("n", &format!("/{r}")));
             o.push(kv("iprobe", &format!("/{src}")));
             SpiceLine::Analysis("noise".into(), o)
         }
@@ -901,14 +935,26 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
             }
             SpiceLine::Param(out)
         }
-        (".options" | ".option", [kv]) => {
-            let p = kv.strip_prefix("errpreset=")?;
+        (".options" | ".option", [one]) if one.starts_with("errpreset=") => {
+            let p = one.strip_prefix("errpreset=")?;
             SpiceLine::ErrPreset(
                 ERRPRESETS
                     .iter()
                     .find(|x| x.eq_ignore_ascii_case(p))?
                     .to_string(),
             )
+        }
+        // Simulator options: those with a Spectre option of the same meaning.
+        (".options" | ".option", kvs) if !kvs.is_empty() => {
+            let mut out = Vec::new();
+            for p in kvs {
+                let (k, v) = p.split_once('=')?;
+                let o = NGSPICE_OPTIONS
+                    .iter()
+                    .find(|o| o.1.eq_ignore_ascii_case(k))?;
+                out.push(kv(o.0, &ael::number_to_ael(v)?));
+            }
+            SpiceLine::SimOpts(out)
         }
         (".include" | ".inc", [f]) => SpiceLine::Model(unquote_path(f), String::new()),
         (".lib", [f, sec]) => SpiceLine::Model(unquote_path(f), (*sec).to_owned()),
@@ -932,6 +978,8 @@ pub(super) enum SpectreLine {
     Model(String, String),
     /// `temp options temp=<t>`.
     Temp(String),
+    /// `<name> options k=v …`: simulator options.
+    SimOpts(Vec<(String, String)>),
 }
 
 /// Splits a Spectre line into words; a `"…"` (with `\"` and `\\`) may sit inside a word.
@@ -992,8 +1040,33 @@ fn spectre_line(line: &str) -> Option<SpectreLine> {
         [a, b, t] if a == "temp" && b == "options" => {
             Some(SpectreLine::Temp(t.strip_prefix("temp=")?.to_owned()))
         }
-        [a, b, rest @ ..] if a == b && is_ident(a) => {
-            Some(SpectreLine::Analysis(a.clone(), opts(rest)?))
+        [a, b, rest @ ..] if b == "options" && a != "temp" && is_ident(a) && !rest.is_empty() => {
+            let o = opts(rest)?;
+            o.iter()
+                .all(|(k, _)| is_spectre_param("options", k))
+                .then_some(SpectreLine::SimOpts(o))
+        }
+        // `<kind> [(<p> <n>)] <kind> k=v …`, the import's form (forms.rs).
+        [a, rest @ ..] if is_ident(a) => {
+            let (nodes, rest) = match rest.first() {
+                Some(w) if w.starts_with('(') => {
+                    let end = rest.iter().position(|w| w.ends_with(')'))?;
+                    let inner = rest[..=end].join(" ");
+                    let nodes: Vec<String> = inner[1..inner.len() - 1]
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    (nodes, &rest[end + 1..])
+                }
+                _ => (Vec::new(), rest),
+            };
+            match rest {
+                [b, params @ ..] if b == a => Some(SpectreLine::Analysis(
+                    a.clone(),
+                    from_spectre(a, &nodes, &opts(params)?),
+                )),
+                _ => None,
+            }
         }
         _ => None,
     }

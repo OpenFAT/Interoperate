@@ -6,6 +6,17 @@ use super::*;
 /// Spectre's transient accuracy presets (`tran` parameter `errpreset`).
 pub(super) const ERRPRESETS: [&str; 3] = ["liberal", "moderate", "conservative"];
 
+/// Spectre simulator options with an ngspice `.options` of the same meaning: (Spectre,
+/// ngspice). Their ICADVM20.1 defaults (forms.tsv) are ngspice's.
+pub(super) const NGSPICE_OPTIONS: [(&str, &str); 6] = [
+    ("reltol", "reltol"),
+    ("iabstol", "abstol"),
+    ("vabstol", "vntol"),
+    ("gmin", "gmin"),
+    ("tnom", "tnom"),
+    ("pivrel", "pivrel"),
+];
+
 pub(super) fn kv(k: &str, v: &str) -> (String, String) {
     (k.to_owned(), v.to_owned())
 }

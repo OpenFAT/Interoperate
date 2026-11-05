@@ -183,7 +183,8 @@
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
       ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("testvar" "ss")
       ("testenable" "i") ("parameter" "sss") ("varenable" "si") ("outenable" "si")
-      ("maefile" "sx") ("end" "")))))
+      ("maefile" "sx") ("simoption" "ss") ("cornerrun" "si") ("testdesign" "ss")
+      ("maenote" "ss") ("end" "")))))
 
 ;; nil when x is .sfyx data (strings, 32-bit integers, lists of them), else what is wrong.
 (procedure (SfyCheckData x depth)
@@ -314,7 +315,8 @@
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
     axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode
-    axlGetTestToolArgs hdbOpen hdbSetTopCellViewName hdbSave hdbClose getDirFiles isDir system
+    axlGetTestToolArgs axlGetCornerDisabledTests axlGetModelGroups
+    hdbOpen hdbSetTopCellViewName hdbSave hdbClose getDirFiles isDir system
     envGetVal maeSetSetup maeSetParameter axlSetEnabled
     axlGetHistoryEntry axlGetHistoryResults axlGetPointPsfDir openResults results
     selectResult outputs v i drGetWaveformXVec drGetWaveformYVec drVectorLength drGetElem

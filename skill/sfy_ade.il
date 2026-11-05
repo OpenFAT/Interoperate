@@ -23,10 +23,24 @@
 ;; that has a maestro view: per test (by name) maestro, global vars, the test's own vars,
 ;; enabled analyses, test model files, corners with their models and vars, outputs, specs,
 ;; definition files.
+;; A cell's other maestro views (maestro_b, a Monte Carlo copy: any view holding a
+;; maestro.sdb) are not dumped; each is a maenote of the dumped view's first test.
 (procedure (SfyAdeExport port lib cells)
-  (foreach cell cells
-    (when (ddGetObj lib cell "maestro")
-      (SfyAdeDumpCell port lib cell))))
+  (let ((sfyAdeOther nil))
+    (foreach cell cells
+      (when (ddGetObj lib cell "maestro")
+        (setq sfyAdeOther (SfyAdeOtherViews lib cell))
+        (SfyAdeDumpCell port lib cell)))))
+
+;; The names of cell lib/cell's views but maestro that hold a maestro.sdb, sorted.
+(procedure (SfyAdeOtherViews lib cell)
+  (let ((c (ddGetObj lib cell)) (v nil) (out nil))
+    (foreach n (and c (car (errset (getSGq (getSGq c views) name))))
+      (setq v (ddGetObj lib cell n))
+      (when (and (nequal n "maestro") v (stringp (getSGq v readPath))
+                 (isFile (strcat (getSGq v readPath) "/maestro.sdb")))
+        (setq out (cons n out))))
+    (sort out 'alphalessp)))
 
 ;; One maestro view, opened read-only and always closed. A read-only session answers setup
 ;; database 0 (ICADVM20.1, live run 2026-10-15: every axl call then signals ASSEMBLER-2404),
@@ -51,8 +65,10 @@
                 (unless (errset (SfyAdeDumpTest port lib cell sess sdb test stored) t)
                   (SfyRefuse 0 (sprintf nil "%s/%s/maestro test %s: SKILL error %s" lib cell test
                                  (SfyErrMsg))))
-                ;; The view's own setup goes with its first test only.
-                (setq stored nil)))))
+                ;; The view's own setup goes with its first test only, and so do the
+                ;; notes of the other maestro views.
+                (setq stored nil)
+                (setq sfyAdeOther nil)))))
         (SfyAdeClose sess)))))
 
 ;; The axlExportSetup/axlImportSetup tags: every part of the active setup an export holds.
@@ -205,12 +221,27 @@
 
 ;; The records of one test, in spec 9 order; stored (SfyAdeStored's records) right after
 ;; its maestro record.
+;; The value of key k in toolArgs pairs args (a non-empty string), or nil.
+(procedure (SfyAdeArg args k)
+  (let ((v (cadr (assoc k args))))
+    (and (stringp v) (nequal v "") v)))
+
 (procedure (SfyAdeDumpTest port lib cell sess sdb test stored)
   (let ((outs nil) (specs nil) (defs nil) (c nil) (m nil) (vl nil) (o nil) (p nil)
-        (line nil) (segs nil) (e nil) (th nil) (tp nil) (sd nil))
+        (line nil) (segs nil) (e nil) (th nil) (tp nil) (sd nil) (targs nil) (ev nil)
+        (runs nil) (sc nil))
     (setq th (car (errset (axlGetTest sdb test))))
-    (SfyPut port "maestro" (list test lib cell (SfyAdeTestView th) "spectre"))
+    (setq targs (and th (car (errset (axlGetTestToolArgs th)))))
+    (SfyPut port "maestro" (list test lib cell (SfyAdeTestView th)
+                             (or (SfyAdeArg targs "sim") "spectre")))
     (foreach r stored (SfyPut port (car r) (cdr r)))
+    ;; A test bound to another cell (toolArgs lib/cell, G31). Only the cell decides: a view
+    ;; loaded into another library may answer the library it came from.
+    (when (and (SfyAdeArg targs "cell")
+               (nequal (SfyAdeArg targs "cell") cell))
+      (SfyPut port "testdesign" (list (or (SfyAdeArg targs "lib") lib) (SfyAdeArg targs "cell"))))
+    (foreach v sfyAdeOther
+      (SfyPut port "maenote" (list "config" (sprintf nil "maestro view %s of %s/%s is not dumped (one maestro view per cell): open it as maestro to carry it" v lib cell))))
     ;; The global variables (GUESS(G18): maeGetSetup ?typeName "variables" lists their
     ;; names) and the test temperature (simulator option temp, GUESS(G28)) as the var
     ;; "temperature", which the Rust side reads as the test temperature; then the test's own
@@ -220,9 +251,11 @@
     (setq vl nil)
     (foreach n (car (errset (maeGetSetup ?typeName "variables" ?session sess)))
       (setq vl (cons (list n (SfyAtomStr (car (errset (maeGetVar n ?session sess))))) vl)))
+    ;; A global var named temperature beats the test's temp option in ADE's netlist (live
+    ;; ICADVM20.1: var -40,27,125 and option 50 netlist temp=-40): the option only without it.
     (setq tp (car (errset (maeGetSimOption test ?option "temp" ?session sess))))
-    (when (and (stringp tp) (nequal tp ""))
-      (setq vl (cons (list "temperature" tp) (setof x vl (nequal (car x) "temperature")))))
+    (when (and (stringp tp) (nequal tp "") (not (assoc "temperature" vl)))
+      (setq vl (cons (list "temperature" tp) vl)))
     (foreach x (SfySortByKey vl)
       (SfyPut port "var" (list (car x) (cadr x) "")))
     (setq vl nil)
@@ -232,6 +265,13 @@
                    vl))))
     (foreach x (SfySortByKey (setof x vl (nequal (cadr x) "")))
       (SfyPut port "testvar" x))
+    ;; Every simulator option but temp (the temperature above): Rust drops the defaults.
+    (setq vl nil)
+    (foreach kv (car (errset (maeGetSimOption test ?session sess)))
+      (when (and (listp kv) (stringp (car kv)) (nequal (car kv) "temp"))
+        (setq vl (cons (list (car kv) (SfyAtomStr (cadr kv))) vl))))
+    (foreach x (SfySortByKey vl)
+      (SfyPut port "simoption" x))
     (unless (errset (progn
     (foreach a (sort (copy (maeGetEnabledAnalysis test ?session sess)) nil)
       (SfyPut port "analysis"
@@ -244,6 +284,13 @@
       (SfyPut port "model" (list "" (SfyAtomStr (car mf)) (SfyAtomStr (cadr mf))))))
       t)
       (SfyRefuse 0 (sprintf nil "maestro %s model files: SKILL error %s" test (SfyErrMsg))))
+    ;; The view lists ADE netlists through, when not its defaults (live ICADVM20.1): no
+    ;; record carries them (a Schemify config does, spec 9.3).
+    (foreach ov (list (list "switchViewList" "(\"spectre\" \"cmos_sch\" \"cmos.sch\" \"schematic\" \"veriloga\")")
+                      (list "stopViewList" "(\"spectre\")"))
+      (setq e (car (errset (maeGetEnvOption test ?option (car ov) ?session sess))))
+      (when (and e (nequal (sprintf nil "%L" e) (cadr ov)))
+        (SfyPut port "maenote" (list "config" (sprintf nil "environment option %s is %L: not carried" (car ov) e)))))
     (unless (errset (progn
     (foreach cn (sort (copy (maeGetSetup ?typeName "corners" ?session sess)) nil)
       (setq c (axlGetCorner sdb cn))
@@ -269,7 +316,15 @@
           (setq vl (axlGetVars c))
           (foreach vn (sort (copy (cadr vl)) nil)
             (SfyPut port "var"
-              (list vn (SfyAtomStr (axlGetVarValue (axlGetVar c vn))) cn)))))))
+              (list vn (SfyAtomStr (axlGetVarValue (axlGetVar c vn))) cn)))
+          ;; axlGetCornerDisabledTests: (handle names) (live probe a_probe).
+          (when (member test (cadr (car (errset (axlGetCornerDisabledTests c)))))
+            (setq runs (cons cn runs))))))
+    (foreach cn (sort runs 'alphalessp)
+      (SfyPut port "cornerrun" (list cn 0)))
+    (setq m (cadr (car (errset (axlGetModelGroups sdb)))))
+    (when m
+      (SfyPut port "maenote" (list "corner" (sprintf nil "model groups %L are not dumped" m)))))
       t)
       (SfyRefuse 0 (sprintf nil "maestro %s corners: SKILL error %s" test (SfyErrMsg))))
     ;; IC23.1 outputs answer ~>expression and ~>signal (what virtuoso-bridge-lite reads live);
@@ -281,18 +336,26 @@
       (cond
         ;; ADE allows outputs without a name (a saved or plotted signal): no record.
         ((not (and (stringp (getSGq so name)) (nequal (getSGq so name) "")))
-          (SfyLog (sprintf nil "skipped: maestro %s output without a name (%L %L)" test e o)))
-        ((stringp e) (setq outs (cons (list (getSGq so name) "point" e) outs)))
+          (SfyPut port "maenote" (list "output" (sprintf nil "an output without a name (%L %L) is not dumped" e o))))
+        ((stringp e)
+          (setq outs (cons (list (getSGq so name) "point" e) outs))
+          ;; ~>evalType point, corners, sweeps or all (live: axlAddOutputExpr ?evalType).
+          (setq ev (car (errset (getSGq so evalType))))
+          (when (and ev (nequal (SfyAtomStr ev) "point"))
+            (SfyPut port "maenote"
+              (list "output" (sprintf nil "output %s is evaluated over %s; Schemify evaluates every output per job"
+                               (getSGq so name) (SfyAtomStr ev))))))
         ((stringp o) (setq outs (cons (list (getSGq so name) "net" o) outs)))
-        ;; A refusal, not a note: the outputs and their specs would be lost (G29).
-        (t (SfyRefuse 0 (sprintf nil "maestro %s output %L: neither ~>expression ~>expr ~>signal nor ~>signalName answers a string"
-                          test (getSGq so name))))))
+        ;; An OCEAN-script or MATLAB measurement: no text to carry, the rest still goes.
+        (t (SfyPut port "maenote"
+             (list "output" (sprintf nil "output %s (%s) has neither an expression nor a signal: not dumped"
+                              (getSGq so name) (SfyAtomStr (car (errset (getSGq so type))))))))))
     (foreach x (SfySortByKey outs)
       (SfyPut port "output" x)
       ;; axlGetSpecData: op "gt" "lt" or "range" with its values (shape below).
       (setq sd (errset (axlGetSpecData sdb (car x) test)))
       (unless sd
-        (SfyLog (sprintf nil "skipped: maestro %s spec of %s: axlGetSpecData failed" test (car x))))
+        (SfyPut port "maenote" (list "spec" (sprintf nil "spec of %s: axlGetSpecData failed, not dumped" (car x)))))
       ;; ICADVM20.1 answers one flat list, ("gt" "1") or ("range" "1" "2") (live probe);
       ;; a list of such lists, or (op (lo hi)), is read too.
       (setq sd (car sd))
@@ -307,7 +370,16 @@
             (setq specs (cons (list (list (car x) "lt")
                                 (SfyAtomStr (if (listp (cadr sp)) (cadr (cadr sp)) (caddr sp))))
                           specs)))
-          (t (SfyLog (sprintf nil "skipped: maestro %s spec %s %L" test (car x) (car sp)))))))
+          (t (SfyPut port "maenote"
+               (list "spec" (sprintf nil "spec of %s: %L has no Schemify spec (only > < and range)"
+                              (car x) sp))))))
+      ;; A spec a corner overrides (axlGetSpecData ... corner answers the override).
+      (foreach cn (car (errset (maeGetSetup ?typeName "corners" ?session sess)))
+        (setq sc (car (errset (axlGetSpecData sdb (car x) test cn))))
+        (when (and sc (car sd) (nequal sc sd) (nequal cn "Nominal"))
+          (SfyPut port "maenote"
+            (list "spec" (sprintf nil "spec of %s in corner %s is %L (Schemify specs are one per output)"
+                           (car x) cn sc))))))
     (foreach x (SfySortByKey specs)
       (SfyPut port "spec" (list (car (car x)) (cadr (car x)) (cadr x)))))
       t)
@@ -616,7 +688,7 @@
 (procedure (SfyAdeFill test tlib cell sess)
   (let ((restore sfyAdeRestore) (m (cadr (car test))) (name nil) (sdb nil) (models nil) (defs nil) (specs nil)
         (used nil) (opts nil) (f nil) (line nil) (c nil) (mh nil) (mn nil) (id nil) (p nil)
-        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil))
+        (ok nil) (gt nil) (lt nil) (outs nil) (have nil) (clash nil) (old nil) (w nil) (dn nil))
     (setq name (nth 1 m))
     (prog ()
       (setq have (member name (car (errset (maeGetSetup ?session sess)))))
@@ -625,8 +697,13 @@
           (SfyRefuse (car (car test)) (sprintf nil "cannot replace maestro test %s" name))
           (return nil))
         (setq have nil))
+      ;; A test bound to another cell (testdesign): that cell, in the target library when
+      ;; it was the maestro's own.
+      (setq dn (cadr (car (setof lr (cdr test) (equal (car (cadr lr)) "testdesign")))))
       (unless (or have
-                  (car (errset (maeCreateTest name ?lib tlib ?cell cell ?view (nth 4 m)
+                  (car (errset (maeCreateTest name
+                                 ?lib (if (and dn (nequal (nth 1 dn) (nth 2 m))) (nth 1 dn) tlib)
+                                 ?cell (if dn (nth 2 dn) cell) ?view (nth 4 m)
                                  ?simulator (nth 5 m) ?session sess))))
         (SfyRefuse (car (car test)) (sprintf nil "cannot create maestro test %s" name))
         (return nil))
@@ -702,6 +779,16 @@
                 (maeSetParameter (strcat tlib "/" cell "/schematic/" (nth 0 f)) (nth 1 f)
                   ?typeName "corner" ?typeValue (list (nth 2 f)) ?session sess)))
             ("corner" (maeSetCorner (nth 0 f) ?enabled (equal (nth 1 f) 1) ?session sess))
+            ;; Whether this test runs the corner: Maestro's per-corner disabled tests.
+            ("cornerrun"
+              (if (equal (nth 1 f) 1)
+                (maeSetCorner (nth 0 f) ?enableTests (list name) ?session sess)
+                (maeSetCorner (nth 0 f) ?disableTests (list name) ?session sess)))
+            ("simoption"
+              (maeSetSimOption name ?options (list (list (nth 0 f) (nth 1 f))) ?session sess))
+            ;; Read before the test was created; a note is for the import only.
+            ("testdesign" t)
+            ("maenote" t)
             ("model"
               (if (equal (nth 0 f) "")
                 (setq models (cons (list (nth 1 f) (nth 2 f)) models))
