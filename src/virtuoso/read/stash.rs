@@ -67,8 +67,17 @@ pub(super) fn report_rest(sv: &Cv, cell: &str, notes: &mut Notes, tally: &mut Ta
             format!("`{}` on line {}", r.tag, r.line),
         );
     }
-    tally.reported += sv.conns.len() + sv.unknown.len();
-    tally.out += sv.props.iter().filter(|p| p.r != 0).count();
+    // What the dumper left out (S6): one row per kind, with its count.
+    for (kind, n) in &sv.skipped {
+        notes.dropped(
+            "display-only",
+            cell,
+            format!("{kind} ×{n} ({} view): not in the dump as drawn", sv.view),
+        );
+    }
+    tally.reported += sv.conns.len() + sv.unknown.len() + sv.skipped.len();
+    // Virtuoso's connectivity is the oracle `check_connectivity` reads.
+    tally.out += sv.props.iter().filter(|p| p.r != 0).count() + sv.tnets.len();
 }
 
 /// A segment with its ends in sorted order, the key two drawings of one wire share.

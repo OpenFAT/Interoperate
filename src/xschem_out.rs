@@ -83,6 +83,9 @@ pub const XFP: &str = "xfp";
 /// What a Virtuoso import keeps for the way back to Virtuoso (interop.md §7.5): no xschem
 /// field, so a trip through Virtuoso that adds them edits nothing xschem sees.
 const VIRTUOSO_ONLY: &[&str] = &[
+    "vcell",
+    "vjoin",
+    "vview",
     "vsym",
     "vsch",
     "vcdf",

@@ -5,4 +5,6 @@ dropped:selection-box	analogLib/nmos4	1 object(s)
 dropped:selection-box	analogLib/pmos4	1 object(s)
 dropped:selection-box	demo/inv	1 object(s)
 needs_review:cdl-approximate	analogLib/nmos4	auCdl format from simInfo
+needs_review:template	analogLib/nmos4	`cdsParam(1)` → `w={w}`: Virtuoso shows `:` for a value at its default
 needs_review:template	analogLib/nmos4	symbol label `cdsTerm("S")` dropped
+needs_review:template	analogLib/vdc	`cdsParam(1)` → `vdc={vdc}`: Virtuoso shows `:` for a value at its default

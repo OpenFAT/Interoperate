@@ -93,6 +93,7 @@
 ("prop" 3 "schemifyId" "string" "i0001")
 ("prop" 3 "w" "string" "2u")
 ("prop" 12 "schemifyId" "string" "w0001")
+("skipped" "cvprop author" 1)
 ("cv" "symbol" "schematicSymbol" 160000)
 ("term" "in" "input" "")
 ("term" "out" "output" "")

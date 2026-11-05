@@ -71,12 +71,15 @@ pub(super) fn nlp_in(text: &str, label_set: &str) -> Option<String> {
         .strip_prefix("cdsParam(")
         .and_then(|x| x.strip_suffix(')'))
     {
+        // The k-th word of paramLabelSet; a `-` word shows its value only (cdfuser ch. 5,
+        // "Show Value Only"), and still counts.
         let k: usize = n.trim().parse().ok()?;
-        let p = label_set
-            .split_whitespace()
-            .filter(|w| !w.starts_with('-'))
-            .nth(k.checked_sub(1)?)?;
-        return Some(format!("{p}={{{p}}}"));
+        let w = label_set.split_whitespace().nth(k.checked_sub(1)?)?;
+        return Some(match w.strip_prefix('-') {
+            Some(p) if !p.is_empty() => format!("{{{p}}}"),
+            Some(_) => return None,
+            None => format!("{w}={{{w}}}"),
+        });
     }
     if t == "cdsName()" {
         return Some("{name}".into());

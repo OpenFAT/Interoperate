@@ -1,0 +1,35 @@
+************************************************************************
+* auCdl Netlist:
+* 
+* Library Name:  sfyprobe_s
+* Top Cell Name: pc
+* View Name:     schematic
+* Netlisted on:  Nov  4 20:45:05 2026
+************************************************************************
+
+*.BIPOLAR
+*.RESI = 2000 
+*.RESVAL
+*.CAPVAL
+*.DIOPERI
+*.DIOAREA
+*.EQUATION
+*.SCALE METER
+*.MEGA
+.PARAM
+
+
+
+************************************************************************
+* Library Name: sfyprobe_s
+* Cell Name:    pc
+* View Name:    schematic
+************************************************************************
+
+.SUBCKT pc
+*.PININFO
+*.CONNECT y x 
+RR1 x y0 1K $[RP]
+RR0 x0 x 1K $[RP]
+.ENDS
+

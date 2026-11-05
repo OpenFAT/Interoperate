@@ -1,0 +1,42 @@
+************************************************************************
+* auCdl Netlist:
+* 
+* Library Name:  sfyprobe_s
+* Top Cell Name: conn
+* View Name:     schematic
+* Netlisted on:  Nov  4 20:44:42 2026
+************************************************************************
+
+*.BIPOLAR
+*.RESI = 2000 
+*.RESVAL
+*.CAPVAL
+*.DIOPERI
+*.DIOAREA
+*.EQUATION
+*.SCALE METER
+*.MEGA
+.PARAM
+
+*.GLOBAL vdd!
+
+*.PIN vdd!
+
+************************************************************************
+* Library Name: sfyprobe_s
+* Cell Name:    conn
+* View Name:    schematic
+************************************************************************
+
+.SUBCKT conn
+*.PININFO
+RR6 net2 n6m 1K $[RP]
+RR4 net1 n4m 1K $[RP]
+RR8 n_tee n_float 1K $[RP]
+RR7 n_corner net3 1K $[RP]
+RR5 n5p net2 1K $[RP]
+RR3 vdd! net1 1K $[RP]
+RR2 n_mid n_off 1K $[RP]
+RR1 n_edge n_in 1K $[RP]
+.ENDS
+
