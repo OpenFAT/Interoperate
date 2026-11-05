@@ -2367,6 +2367,38 @@ fn live_step() {
     }
 }
 
+/// analogLib `port` (421 CDF params, live ICADVM20.1 dump) imports with Schemify's 256
+/// params per cell, the rest reported, and Schemify's project opens it (a load past the
+/// table capacity panicked).
+#[test]
+fn a_cell_past_the_param_table_imports_and_loads() {
+    let text = read(&fixtures().join("virtuoso/analoglib_port.sfyx")).unwrap();
+    let imp = interop::virtuoso::import(
+        &text,
+        &interop::design::Files::new(),
+        &interop::map::Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
+    let (path, port) = imp
+        .files
+        .iter()
+        .find(|f| f.0.ends_with("port.shprim"))
+        .expect("port.shprim");
+    let shprim = String::from_utf8(port.clone()).unwrap();
+    assert_eq!(shprim.lines().filter(|l| l.starts_with("param ")).count(), 256);
+    assert!(
+        imp.notes.rows.iter().any(|n| n.class == "dropped:param"),
+        "{}",
+        imp.notes.text()
+    );
+    use schemify_doc::Project;
+    let mut p = Project::new(Some(b"schemify 1 project\n"), None, 7).unwrap();
+    let rel = path.rsplit_once('/').map_or(path.as_str(), |x| x.1);
+    p.index_library("", "t", &[(rel, port.as_slice())]).unwrap();
+    p.open("", rel, port, None).expect("opens");
+}
+
 /// Lane A (gaps round 2): the Spectre netlists Schemify makes of a maestro dump imported
 /// into a fresh project (`<dump>.proj`): `SFY_A_DUMP` the `.sfyx` (absolute), `SFY_A_CELL`
 /// the bench file it gives, `SFY_A_OUT` a directory that gets `<test>.scs` per `test`
