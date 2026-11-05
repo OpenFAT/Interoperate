@@ -68,6 +68,13 @@ jobs:
         run: |
           corpus/ratchet.sh corpus/.cache/netlist-out/TABLE.md
           corpus/rows.sh corpus/.cache/netlist-out/RESULTS.txt corpus/RATCHET.rows
+      # Verilog netlists of the logic and co-sim benches (golden.sh's verilog mode).
+      - name: verilog differential (VERILOG.rows)
+        if: ${{ !cancelled() }}
+        run: |
+          SCHEMIFY_CORPUS=$CACHE cargo test --release --test xschem_differential -- \
+            --exact xschem_verilog_differential --nocapture
+          corpus/rows.sh corpus/.cache/netlist-out/VERILOG.txt corpus/VERILOG.rows
       # xschem → Schemify → xschem over every bench, netlisted by the same pinned xschem
       # (about 5 minutes): its agree count may only go up (RATCHET.md "Export round trip"),
       # and no row may move to a worse category (ROUNDTRIP.rows).

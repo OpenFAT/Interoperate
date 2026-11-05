@@ -675,6 +675,27 @@ impl<'o> Tables<'o> {
                 continue;
             }
             if let Some(map) = self.core_map(s) {
+                // xschem's Verilog netlist writes such a device by its `verilog_format`
+                // (`res.sym`: `tran @name (@@P, @@M);`); a core cell has no Verilog format,
+                // so Verilog elaboration refuses it (E013): a core need (gaps2/core_X.md).
+                if let Some(v) = self.syms[s]
+                    .iface
+                    .attrs
+                    .get("verilog_format")
+                    .filter(|v| !v.trim().is_empty())
+                {
+                    let line = self.k_line(s);
+                    acc.item(
+                        self.syms[s].src,
+                        line,
+                        Class::Review(Reason::Unsupported),
+                        0,
+                        format!(
+                            "verilog_format={v}: core:{} has no Verilog format",
+                            map.cell
+                        ),
+                    );
+                }
                 self.targets[s] = Some(Target::Core(map));
                 continue;
             }
@@ -2120,19 +2141,22 @@ impl<'o> Tables<'o> {
         tally_common(f, fid, acc, true);
         // `S {}`: SPICE text emitted verbatim by xschem, inside the component's subckt when
         // the schematic is one (D17 as amended: a `.shcomp` carries `code` too).
+        // `V {}`: Verilog text, which xschem's Verilog netlist writes in the module body
+        // (goldens xs-logic-*: `assign #del Y=~A;` after the declarations).
         let g = &f.globals;
-        for i in (0..g.tag.len()).filter(|&i| g.tag[i] == GlobalTag::S) {
+        for i in (0..g.tag.len()).filter(|&i| matches!(g.tag[i], GlobalTag::S | GlobalTag::V)) {
             let text = f.str(g.text[i]);
+            let (name, lang) = match g.tag[i] {
+                GlobalTag::V => ("schematic_verilog", "verilog"),
+                _ => ("schematic_spice", "spice"),
+            };
             if text.trim().is_empty() {
                 acc.out(fid, 1);
             } else {
                 match netlist_text(text, self.opts.pdk_vars) {
                     Ok(t) => {
-                        out.codes.push((
-                            "schematic_spice".to_owned(),
-                            "spice".to_owned(),
-                            lines(&t),
-                        ));
+                        out.codes
+                            .push((name.to_owned(), lang.to_owned(), lines(&t)));
                         acc.out(fid, 1);
                     }
                     Err(d) => acc.item(fid, g.line[i], Class::Review(Reason::Tcl), 1, d),
@@ -3139,7 +3163,9 @@ fn tally_common(f: &XschemFile, fid: u32, acc: &mut Acc, schematic: bool) {
         let other = match g.tag[i] {
             GlobalTag::Version | GlobalTag::K => false,
             GlobalTag::G => schematic, // VHDL text in a schematic; symbol attributes in a symbol
-            GlobalTag::S => continue,  // the schematic pass decides; in a symbol: below
+            // The schematic pass decides; in a symbol: below.
+            GlobalTag::S => continue,
+            GlobalTag::V if schematic => continue,
             GlobalTag::V | GlobalTag::E => true,
         };
         if other && !text.is_empty() {
