@@ -143,7 +143,7 @@ fn the_plain_callback_becomes_computed_and_the_branching_one_stays_virtuosos() {
         "param w: callback becomes wf computed `w / nf`",
         "param nf: callback becomes wf computed `w / nf`",
         "param l: callback not carried: it branches (`if`)",
-        "param w: callback not carried",
+        "pdkCb: callbacks of 1 params in 1 cells not carried",
     ] {
         assert!(notes.contains(want), "{want}\n{notes}");
     }

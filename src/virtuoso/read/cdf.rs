@@ -173,7 +173,7 @@ pub(super) struct ParamIn {
 }
 
 /// The detail of a reference cell's callback row before `group_kit_callbacks`.
-const KIT_CALLBACK: &str = "callback not carried: ";
+const KIT_CALLBACK: &str = "kit callback not carried: ";
 
 /// A kit's callback rows, one per param of every reference cell (15066 for GF22FDX), as
 /// one row per (library, callback function): how many params of how many cells, the first
@@ -193,7 +193,13 @@ pub(super) fn group_kit_callbacks(notes: &mut Notes) {
             return true;
         };
         let (lib, cell) = r.cell.split_once('/').expect("lib/cell");
-        let fun = cb.split(['(', ' ']).next().unwrap_or(cb).to_owned();
+        // `GFcdfCallback('w)` and `(pdkCb)` alike: the function's name.
+        let fun = cb
+            .trim_start_matches('(')
+            .split(['(', ' ', ')'])
+            .next()
+            .unwrap_or(cb)
+            .to_owned();
         let e = g
             .entry((lib.to_owned(), fun))
             .or_insert_with(|| (0, BTreeSet::new(), format!("{cell} {param}: {cb}")));
