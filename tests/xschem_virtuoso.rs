@@ -295,4 +295,38 @@ fn sky130_from_xschem_maps_to_a_virtuoso_kit_and_back() {
         "{}",
         xs.notes.text()
     );
+    // The mirror and a map row with `spice` (§8.2): the row wins for the format it names, the
+    // mirror keeps the rest. A local `format spice` edit is replaced (with a note), a local
+    // `format xyce` stays.
+    let edited = mirror.replace(
+        "  format spectre ",
+        "  format spice \"X{name} {pins} mine\"\n  format xyce \"Y{name} {pins} x\"\n  format spectre ",
+    );
+    assert_ne!(edited, mirror, "{mirror}");
+    files3.insert("sky130_fd_pr/nfet_01v8.shprim".into(), edited.into_bytes());
+    let row = Mapping::parse(
+        "map sky130_fd_pr:nfet_01v8 virtuoso sky130_fd_pr nfet_01v8\n  pin D D\n  pin G G\n  pin S S\n  pin B B\n  spice \"X{name} {D} {G} {S} {B} sky130_fd_pr__nfet_01v8 w={w}\"\n",
+    )
+    .unwrap();
+    let imp = virtuoso::import(&back, &files3, &row, &ImportOptions::default()).unwrap();
+    let m = imp
+        .files
+        .iter()
+        .find(|f| f.0 == "sky130_fd_pr/nfet_01v8.shprim")
+        .map(|f| String::from_utf8_lossy(&f.1).into_owned())
+        .unwrap();
+    assert!(
+        m.contains("format spice \"X{name} {D} {G} {S} {B} sky130_fd_pr__nfet_01v8 w={w}\"")
+            && !m.contains("mine")
+            && m.contains("format xyce")
+            && m.contains("format spectre"),
+        "{m}"
+    );
+    assert!(
+        imp.notes
+            .text()
+            .contains("format spice from interop.map line 1 replaces the local"),
+        "{}",
+        imp.notes.text()
+    );
 }

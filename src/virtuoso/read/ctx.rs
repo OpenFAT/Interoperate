@@ -172,7 +172,14 @@ impl<'a> Ctx<'a> {
                 .map
                 .by_virtuoso(&c.lib, &c.name)
                 .is_some_and(|r| r.cellref == format!("{}:{}", t.slib, t.stem))
-            && self.project_iface(&t.slib, &t.stem).is_some()
+            && ["shcomp", "shprim"].iter().any(|ext| {
+                let p = cell_path(&t.dir, &t.stem, ext);
+                let mirror = format!("provenance \"virtuoso {}/{}\"", c.lib, c.name);
+                // The mirror itself is re-imported (and takes the row's `spice`).
+                self.existing
+                    .get(&p)
+                    .is_some_and(|b| !String::from_utf8_lossy(b).contains(&mirror))
+            })
         {
             return t;
         }
