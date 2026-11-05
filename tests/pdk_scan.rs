@@ -458,7 +458,10 @@ fn a_spectre_kit_reads_through_spicerack() {
             .iter()
             .filter(|l| l.starts_with("issue "))
             .collect::<Vec<_>>(),
-        ["issue ff_missing.scs: include not found"],
+        [
+            "issue ff_missing.scs: include not found",
+            "issue 2 instance(s) whose master the kit does not declare: parasitic_rc (2)"
+        ],
         "{lines:?}"
     );
     // The `simulator lang=spice` region is read as SPICE now: nothing is left unread.

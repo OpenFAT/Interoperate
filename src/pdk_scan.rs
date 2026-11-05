@@ -367,7 +367,9 @@ fn rack_devices(
         }
     };
     let mut out: Vec<Device> = Vec::new();
-    let (mut unread, mut unknown) = (BTreeMap::new(), 0usize);
+    let mut unread = BTreeMap::new();
+    // Undeclared masters by name, with how many instances name each (gaps2 P16).
+    let mut unknown: BTreeMap<String, usize> = BTreeMap::new();
     for (i, file) in kit.files().iter().enumerate() {
         let id = FileId(i as u32);
         match file.role {
@@ -391,7 +393,14 @@ fn rack_devices(
         let mut lines = Vec::new();
         for d in &file.diags {
             match d.code {
-                Code::R0001 => unknown += 1,
+                Code::R0001 => {
+                    let at = toks.start(d.token.min(toks.len().saturating_sub(1) as u32)) as usize;
+                    let name: String = file.text[at..]
+                        .chars()
+                        .take_while(|c| !c.is_whitespace() && !"()=".contains(*c))
+                        .collect();
+                    *unknown.entry(name).or_default() += 1;
+                }
                 Code::R0008 => {
                     issues.push(format!("{}: include chain too deep", shown(&file.path)))
                 }
@@ -457,9 +466,12 @@ fn rack_devices(
             by.join(", ")
         ));
     }
-    if unknown > 0 {
+    if !unknown.is_empty() {
+        let n: usize = unknown.values().sum();
+        let by: Vec<String> = unknown.iter().map(|(k, c)| format!("{k} ({c})")).collect();
         issues.push(format!(
-            "{unknown} instance(s) whose master the kit does not declare (not shown)"
+            "{n} instance(s) whose master the kit does not declare: {}",
+            by.join(", ")
         ));
     }
     out
