@@ -656,3 +656,99 @@ fn xschem_differential() {
     std::fs::write(outdir.join("TABLE.md"), &table).unwrap();
     eprintln!("{}\n{table}", lines.join("\n"));
 }
+
+/// A Verilog netlist as a set of statements: `//` comments dropped, white space collapsed,
+/// split at `;` and the module keywords, sorted. ponytail: textual, not structural (port and
+/// instance order and net names count); a Verilog comparator in spicecmp if this bites.
+fn verilog_statements(text: &str) -> Vec<String> {
+    let body: String = text
+        .lines()
+        .map(|l| l.split("//").next().unwrap_or(""))
+        .collect::<Vec<_>>()
+        .join(" ");
+    let body = body.replace("endmodule", ";endmodule;");
+    let mut v: Vec<String> = body
+        .split(';')
+        .map(|s| s.split_whitespace().collect::<Vec<_>>().join(" "))
+        .filter(|s| !s.is_empty())
+        .collect();
+    v.sort();
+    v
+}
+
+/// inv_xschem row X15: the Verilog netlist (`Dialect::Verilog`) of every bench with a
+/// golden `<name>.v` (golden.sh's verilog mode: the logic and Verilog co-sim benches)
+/// against xschem's. Writes `netlist-out/VERILOG.txt` (`<bench> verilog agree|differ|…`)
+/// and `<bench>.v`; reports, never fails: the counts are the record (RATCHET.md).
+#[test]
+fn xschem_verilog_differential() {
+    let Some(cache) = std::env::var_os("SCHEMIFY_CORPUS").map(PathBuf::from) else {
+        eprintln!("SCHEMIFY_CORPUS unset: verilog differential skipped");
+        return;
+    };
+    let cache = std::fs::canonicalize(&cache).expect("corpus cache exists");
+    let list =
+        std::fs::read_to_string(Path::new(env!("CARGO_MANIFEST_DIR")).join("corpus/benches.txt"))
+            .unwrap();
+    let outdir = cache.join("netlist-out");
+    std::fs::create_dir_all(&outdir).unwrap();
+    let mut lines = Vec::new();
+    for g in groups(&cache) {
+        let mine: Vec<(&str, &str)> = list
+            .lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .filter_map(|l| {
+                let mut w = l.split_whitespace();
+                Some((w.next()?, w.next()?, w.next()?))
+            })
+            .filter(|b| b.1 == g.name && cache.join(format!("golden/{}.v", b.0)).is_file())
+            .map(|b| (b.0, b.2))
+            .collect();
+        if mine.is_empty() {
+            continue;
+        }
+        let out = import(&g);
+        let (project, handles) = load(&out);
+        for (name, path) in mine {
+            let Some(cell) = bench_cell(&handles, path, false) else {
+                lines.push(format!("{name} verilog failed-to-import"));
+                continue;
+            };
+            let e = elaborate(
+                &project,
+                handles[&cell],
+                &request(Dialect::Verilog),
+                &mut no_funcs,
+            );
+            let blocking: Vec<String> = e
+                .violations
+                .rows
+                .iter()
+                .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
+                .map(|v| format!("{} {}", v.code.as_str(), v.detail))
+                .collect();
+            let text = emit(&e, Dialect::Verilog).text;
+            std::fs::write(outdir.join(format!("{name}.v")), &text).unwrap();
+            let golden = std::fs::read_to_string(cache.join(format!("golden/{name}.v"))).unwrap();
+            let (a, b) = (verilog_statements(&golden), verilog_statements(&text));
+            if !blocking.is_empty() {
+                lines.push(format!(
+                    "{name} verilog failed-to-elaborate: {}",
+                    blocking[0]
+                ));
+            } else if a == b {
+                lines.push(format!("{name} verilog agree"));
+            } else {
+                let first = a
+                    .iter()
+                    .find(|s| !b.contains(s))
+                    .map_or("(extra in ours)".to_owned(), |s| {
+                        format!("golden only: {s}")
+                    });
+                lines.push(format!("{name} verilog differ: {first}"));
+            }
+        }
+    }
+    std::fs::write(outdir.join("VERILOG.txt"), lines.join("\n") + "\n").unwrap();
+    eprintln!("{}", lines.join("\n"));
+}

@@ -110,6 +110,17 @@ Nightly ratchets the agree count (2026-11-04, of 602 rows; 1 golden-unevaluated,
 
 Export round trip agree: **547**
 
+## Verilog (`xschem_verilog_differential`)
+
+`golden.sh` also writes `<name>.v` (`xschem -w`) for the 17 `xs-logic-*`/`xs-cosim-*`
+benches; the test compares our `Dialect::Verilog` netlist statement by statement (comments
+and spacing aside) and writes `netlist-out/VERILOG.txt`. 2026-11-04: **0 agree**, 10
+differ, 7 failed-to-elaborate. Root causes: the schematics' `V {}` Verilog text is dropped on
+import (reported, row X15) and Schemify writes a non-ANSI module header without the
+symbol's `parameter`s (netlist, core); `E013` for leaves with only a SPICE format (ccap,
+tgate, test_mos_verilog, sar_adc ×2); the parametric bus widths of the gate table (ram_tb,
+testbench, test_ngspice). Not ratcheted until something agrees.
+
 ## Remaining differences by root cause
 
 Rows are `bench (mode)`; SPICE unless marked. 12 SPICE and 23 CDL (code stripped)
