@@ -80,7 +80,7 @@
                       (list (getSGq f isDrafted) (getSGq f isOverbar) (getSGq f isVisible)
                         (getSGq f isNameVisible) (getSGq f isValueVisible)))))
           (setq entries (cons (list b f b) entries)))
-        (SfyCount "skipped:textDisplay")))
+        (SfySkip "textDisplay")))
     (foreach e (SfySortByKey entries)
       (SfyPut port "td" (caddr e)))))
 

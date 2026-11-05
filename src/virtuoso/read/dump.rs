@@ -237,6 +237,11 @@ pub struct Cv {
     pub refs: BTreeSet<u32>,
     /// Connection requests.
     pub conns: Vec<Conn>,
+    /// Virtuoso's own instance terminal → net table (`tnet`: a schematic's connectivity as
+    /// its database holds it, the import's connectivity oracle).
+    pub tnets: Vec<Conn>,
+    /// `(kind, count)` of the objects the dumper left out (`skipped`).
+    pub skipped: Vec<(String, u32)>,
     /// Records with a tag this reader does not know, kept for the report.
     pub unknown: Vec<Record>,
 }
@@ -254,6 +259,8 @@ impl Cv {
             + self.tds.len()
             + self.props.len()
             + self.conns.len()
+            + self.tnets.len()
+            + self.skipped.len()
             + self.unknown.len()
     }
 
@@ -296,12 +303,31 @@ pub struct DCell {
     pub configs: Vec<crate::virtuoso::config::ConfigView>,
     /// Line of the `cell` record.
     pub line: u32,
+    /// `(view, master file)` of each view the dump does not carry (`skipview`).
+    pub skipviews: Vec<(String, String)>,
 }
 
 impl DCell {
     /// The cellview named `view`.
     pub fn cv(&self, view: &str) -> Option<&Cv> {
         self.cvs.iter().find(|c| c.view == view)
+    }
+
+    /// The symbol the cell's Schemify file is drawn from: view `symbol`, else its first
+    /// symbol cellview (a master only placed through `symbol_xform`, say).
+    pub fn symbol(&self) -> Option<&Cv> {
+        self.cv("symbol")
+            .or_else(|| self.cvs.iter().find(|c| c.vtype == "schematicSymbol"))
+    }
+
+    /// A supply symbol that is no device (S11): one `x!` terminal, no schematic and no
+    /// simInfo, as a copy of analogLib `vdd` in a kit or a user library is.
+    pub fn is_global_symbol(&self) -> bool {
+        self.cv("schematic").is_none()
+            && self.cdf.as_ref().is_none_or(|d| d.siminfo.is_empty())
+            && self
+                .symbol()
+                .is_some_and(|s| matches!(&s.terms[..], [t] if t.name.ends_with('!')))
     }
 }
 
@@ -316,6 +342,8 @@ pub struct Dump {
     pub maestro: Vec<Vec<Record>>,
     /// Records outside any cellview with a tag this reader does not know.
     pub unknown: Vec<Record>,
+    /// `(library, its CDF's param count, has libInit.il)` (`libcdf`).
+    pub libcdfs: Vec<(String, u32, bool)>,
 }
 
 fn ints(r: &Record, v: &[Value], what: &str) -> Result<Vec<i32>, Error> {
@@ -413,7 +441,16 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 in_cell = true;
                 in_cdf = false;
             }
-            "cdf" | "param" | "siminfo" | "textview" | "config" | "cv" if !in_cell => {
+            "libcdf" => {
+                r.arity(2)?;
+                let l = lib.clone().ok_or_else(|| r.err("before any `lib`"))?;
+                let n = u32::try_from(r.int(0)?).map_err(|_| r.err("a negative count"))?;
+                d.libcdfs.push((l, n, r.int(1)? != 0));
+            }
+            "cdf" | "param" | "cdfattr" | "paramattr" | "siminfo" | "textview" | "skipview"
+            | "config" | "cv"
+                if !in_cell =>
+            {
                 return Err(r.err("outside a cell"));
             }
             "cdf" => {
@@ -428,7 +465,33 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                 });
                 in_cdf = true;
             }
-            "param" | "siminfo" if !in_cdf => return Err(r.err("before the cell's `cdf`")),
+            "param" | "cdfattr" | "paramattr" | "siminfo" if !in_cdf => {
+                return Err(r.err("before the cell's `cdf`"));
+            }
+            "cdfattr" => {
+                r.arity(2)?;
+                let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
+                cdf.attrs.push((r.str(0)?.to_owned(), r.str(1)?.to_owned()));
+            }
+            "paramattr" => {
+                r.arity(3)?;
+                let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
+                let name = r.str(0)?;
+                let p = cdf
+                    .params
+                    .iter_mut()
+                    .find(|p| p.name == name)
+                    .ok_or_else(|| r.err(format!("paramattr of unknown param {name}")))?;
+                p.attrs.push((r.str(1)?.to_owned(), r.str(2)?.to_owned()));
+            }
+            "skipview" => {
+                r.arity(2)?;
+                d.cells
+                    .last_mut()
+                    .unwrap()
+                    .skipviews
+                    .push((r.str(0)?.to_owned(), r.str(1)?.to_owned()));
+            }
             "param" => {
                 // Eight fields, or ten in a design cell whose callback's code the dumper
                 // read (`from`, `code`; sfy_cdfcb.il).
@@ -452,6 +515,7 @@ pub fn dump(records: &[Record]) -> Result<Dump, Error> {
                         10 => Some((r.str(8)?.to_owned(), r.text(9)?)),
                         _ => None,
                     },
+                    attrs: Vec::new(),
                 };
                 let cdf = d.cells.last_mut().unwrap().cdf.as_mut().unwrap();
                 if cdf.params.iter().any(|x| x.name == p.name) {
@@ -593,7 +657,7 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
     // Objects belong to one kind of cellview (§4.2, §6.2): terminals and pin figures to a
     // symbol (a schematic's terminals travel as `spin`s), wires, schematic pins and loader
     // records to a schematic.
-    let schematic_only = r.tag == "conn"
+    let schematic_only = matches!(r.tag.as_str(), "conn" | "tnet")
         || (matches!(r.tag.as_str(), "spin" | "wire") && cv.vtype != "schematicSymbol");
     let symbol_only = r.tag == "term";
     // A pin figure in a schematic (Cadence's sample library has them) from a dumper that
@@ -808,6 +872,19 @@ pub(super) fn object(cv: &mut Cv, r: &Record) -> Result<(), Error> {
                 net: r.str(2)?.to_owned(),
             });
         }
+        "tnet" => {
+            r.arity(3)?;
+            cv.tnets.push(Conn {
+                r: pos(r, 0)?,
+                term: r.str(1)?.to_owned(),
+                net: r.str(2)?.to_owned(),
+            });
+        }
+        "skipped" => {
+            r.arity(2)?;
+            let n = u32::try_from(r.int(1)?).map_err(|_| r.err("a negative count"))?;
+            cv.skipped.push((r.str(0)?.to_owned(), n));
+        }
         _ => cv.unknown.push(r.clone()),
     }
     Ok(())
@@ -824,6 +901,14 @@ fn check_refs(cv: &Cv) -> Result<(), String> {
         .chain(cv.wires.iter().map(|x| x.r))
         .chain(cv.labels.iter().map(|x| x.r))
         .chain(cv.shapes.iter().map(|x| x.r))
+        // An instance inside a symbol (a sheet border's title block) is reported, and its
+        // properties with it (live ICADVM20.1: US_8ths/Asize).
+        .chain(
+            cv.unknown
+                .iter()
+                .filter(|r| matches!(r.tag.as_str(), "inst" | "spin" | "wire"))
+                .filter_map(|r| u32::try_from(r.int(0).ok()?).ok()),
+        )
         .collect();
     let n = refs.len();
     refs.sort_unstable();
@@ -842,7 +927,7 @@ fn check_refs(cv: &Cv) -> Result<(), String> {
             return Err(format!("property {} of unknown ref {}", p.name, p.r));
         }
     }
-    for c in &cv.conns {
+    for c in cv.conns.iter().chain(&cv.tnets) {
         if !cv.insts.iter().any(|i| i.r == c.r) {
             return Err(format!("conn of unknown instance {}", c.r));
         }

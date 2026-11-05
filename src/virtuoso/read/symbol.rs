@@ -328,7 +328,7 @@ pub(super) fn build(
     let kind = t.kind.expect("only written cells are built");
     let cell = format!("{}/{}", c.lib, c.name);
     let mut doc = Document::new(kind);
-    let sym = c.cv("symbol");
+    let sym = c.symbol();
     let sch = c.cv("schematic");
     // Header.
     // The symbol's selection box as drawn (`vibox <x0> <y0> <x1> <y1>`, or `none`): export
@@ -378,7 +378,7 @@ pub(super) fn build(
     // Cadence's sample library shows `[@w]/[@l]` on cells without a CDF). Such a name becomes
     // an empty string param, so the label template and instances that set it stay valid.
     if let Some(sv) = sym.filter(|_| kind != FileKind::Shbench) {
-        let label_set = c.cdf.as_ref().map_or("", |d| d.label_set.as_str());
+        let label_set = c.cdf.as_ref().map_or("", Cdf::cds_param_set);
         let mut extra: BTreeSet<String> = BTreeSet::new();
         for l in sv
             .labels
@@ -478,6 +478,27 @@ pub(super) fn build(
             if let Some(s) = spice {
                 formats.insert(0, ("spice".into(), s));
             }
+            for f in &mut formats {
+                f.1 = optional_strings(&f.1, &params);
+            }
+            // A spectre `iprobe` (basic's cds_thru, live ICADVM20.1: `T0 (x y) iprobe`) is a
+            // 0 V source in SPICE: the same short, and the same probe of its current.
+            let probe = formats
+                .iter()
+                .find(|f| f.0 == "spectre")
+                .and_then(|f| f.1.strip_prefix("{name} (")?.strip_suffix(") iprobe"))
+                .map(|pins| format!("V{{name}} {pins} 0"));
+            if let Some(p) = probe.filter(|_| !formats.iter().any(|f| f.0 == "spice")) {
+                formats.insert(0, ("spice".into(), p));
+            }
+            if formats.is_empty() {
+                // basic's patch has no simInfo (live ICADVM20.1): si renames nets by it.
+                notes.review(
+                    "format",
+                    &cell,
+                    "no simInfo for spectre or auCdl: no netlist format (E013 when netlisted)",
+                );
+            }
             impls.push(("spice".into(), "spice".into(), formats, None));
         }
         _ => {}
@@ -487,7 +508,18 @@ pub(super) fn build(
             "veriloga" => ("veriloga", "veriloga"),
             "functional" | "verilog" => ("verilog", "verilog"),
             other => {
-                notes.review("format", &cell, format!("text view {other} not imported"));
+                // A spectre or auCdl text view is the netlist Virtuoso stops at: a library
+                // made from this import gets a symbol copy there instead (gaps2 S4).
+                let stop = if matches!(other, "spectre" | "auCdl") {
+                    ": a new library gets the symbol as this stop view, not this netlist"
+                } else {
+                    ""
+                };
+                notes.review(
+                    "format",
+                    &cell,
+                    format!("text view {other} ({}) not imported{stop}", tv.file),
+                );
                 continue;
             }
         };
@@ -579,7 +611,7 @@ pub(super) fn build(
     if let Some(sv) = sym {
         let mut tally = Tally::default();
         tally.out += sv.terms.len() + sv.pinfigs.len();
-        let label_set = c.cdf.as_ref().map_or("", |d| d.label_set.as_str());
+        let label_set = c.cdf.as_ref().map_or("", Cdf::cds_param_set);
         let body: Vec<&Shape> = sv
             .shapes
             .iter()
@@ -621,13 +653,36 @@ pub(super) fn build(
             };
             tally.out += 1;
             let Some(tmpl) = tmpl.filter(|t| !t.is_empty()) else {
+                let mode = c
+                    .cdf
+                    .as_ref()
+                    .and_then(|d| d.attrs.iter().find(|a| a.0 == "paramDisplayMode"))
+                    .filter(|_| l.text.starts_with("cdsParam("));
                 notes.review(
                     "template",
                     &cell,
-                    format!("symbol label `{}` dropped", l.text),
+                    match mode {
+                        Some((_, m)) => format!(
+                            "symbol label `{}` dropped (paramDisplayMode {m}: no params shown)",
+                            l.text
+                        ),
+                        None => format!("symbol label `{}` dropped", l.text),
+                    },
                 );
                 continue;
             };
+            // Virtuoso writes `w:7u` for a value at the CDF default and `w=7u` for one the
+            // instance sets (skcompref cdsParam); the template has one form.
+            if l.text.starts_with("cdsParam(") && tmpl.contains('=') {
+                notes.review(
+                    "template",
+                    &cell,
+                    format!(
+                        "`{}` → `{tmpl}`: Virtuoso shows `:` for a value at its default",
+                        l.text
+                    ),
+                );
+            }
             let at = pt(l.xy, sv.upi, "label", &cell, notes);
             doc.begin_record(RecordKind::Stext);
             doc.push_field_coord(at[0]);

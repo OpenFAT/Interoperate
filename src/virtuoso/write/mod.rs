@@ -290,6 +290,28 @@ fn cell_out(d: &Design, ci: usize, plan: &Plan, m: &Mapping, notes: &mut Notes) 
             // A cell from Virtuoso whose interface nobody changed gets its CDF back as it
             // was (the reverse stash, §7.5); otherwise the CDF is derived from the cell.
             let as_imported = if core { None } else { cdf_as_imported(c) };
+            // An edited interface: the CDF is derived, and what only Virtuoso's CDF had is
+            // not sent (gaps2 S7); a load over the library keeps its own.
+            if !core
+                && as_imported.is_none()
+                && let Some(old) = records::stashed_cdf(c)
+            {
+                let mut lost: Vec<String> = old.attrs.iter().map(|a| a.0.clone()).collect();
+                for p in &old.params {
+                    lost.extend(p.attrs.iter().map(|a| format!("{}.{}", p.name, a.0)));
+                }
+                if !lost.is_empty() {
+                    notes.review(
+                        "callback",
+                        &c.path,
+                        format!(
+                            "interface edited: CDF {} not sent (SfyImport over the library \
+                             keeps them; a new library has none)",
+                            lost.join(" ")
+                        ),
+                    );
+                }
+            }
             let cdf = as_imported
                 .clone()
                 .flatten()

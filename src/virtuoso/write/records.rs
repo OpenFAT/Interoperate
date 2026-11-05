@@ -8,6 +8,9 @@ use super::*;
 /// as stored (the dump writes it sorted by simulator).
 pub fn cdf_records(cdf: &Cdf) -> Vec<Record> {
     let mut out = vec![Record::new("cdf", vec![sfyx::text(&cdf.label_set)])];
+    for (k, v) in &cdf.attrs {
+        out.push(Record::new("cdfattr", vec![s(k), s(v)]));
+    }
     for p in &cdf.params {
         out.push(Record::new(
             "param",
@@ -22,6 +25,9 @@ pub fn cdf_records(cdf: &Cdf) -> Vec<Record> {
                 sfyx::text(&p.callback),
             ],
         ));
+        for (k, v) in &p.attrs {
+            out.push(Record::new("paramattr", vec![s(&p.name), s(k), s(v)]));
+        }
     }
     for si in &cdf.siminfo {
         let fields = si
@@ -41,7 +47,12 @@ pub fn cdf_records(cdf: &Cdf) -> Vec<Record> {
             vec![s(&si.sim), Value::List(fields)],
         ));
     }
-    debug_assert_eq!(out.len(), 1 + cdf.params.len() + cdf.siminfo.len());
+    debug_assert_eq!(
+        out.len(),
+        1 + cdf.attrs.len()
+            + cdf.params.iter().map(|p| 1 + p.attrs.len()).sum::<usize>()
+            + cdf.siminfo.len()
+    );
     out
 }
 
@@ -56,13 +67,19 @@ pub(super) fn cdf_as_imported(c: &Cell) -> Option<Option<Cdf>> {
     if fp != crate::virtuoso::fingerprint(&c.doc, crate::virtuoso::Part::Interface) {
         return None;
     }
+    Some(stashed_cdf(c))
+}
+
+/// The CDF records the import stored (`vcdfrec`), whatever the cell's edits since; `None`
+/// when there are none.
+pub(super) fn stashed_cdf(c: &Cell) -> Option<Cdf> {
     let recs: Vec<&str> = (0..c.doc.attrs(0).len() as u32)
         .map(|k| c.doc.attrs(0).start + k)
         .filter(|&a| c.doc.attr_key(a) == "vcdfrec")
         .filter_map(|a| c.doc.attr_value(a, 0))
         .collect();
     if recs.is_empty() {
-        return Some(None);
+        return None;
     }
     let text = format!(
         "(\"sfyx\" 1 \"vcdf\")\n(\"lib\" \"l\")\n(\"cell\" \"c\" \"design\")\n{}\n(\"end\")\n",
@@ -73,7 +90,7 @@ pub(super) fn cdf_as_imported(c: &Cell) -> Option<Option<Cdf>> {
         .and_then(|r| read::dump(&r).ok())
         .and_then(|d| d.cells.into_iter().next())
         .and_then(|c| c.cdf)?;
-    Some(Some(cdf))
+    Some(cdf)
 }
 
 /// The records of `d` in §4.2 order: header; per library (sorted), its `ref` cells then

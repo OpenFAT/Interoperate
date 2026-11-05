@@ -177,7 +177,7 @@ fn without_schemify_props(text: &str) -> String {
     let recs: Vec<sfyx::Record> = sfyx::read(text)
         .unwrap()
         .into_iter()
-        .filter(|r| r.tag != "sfyx")
+        .filter(|r| r.tag != "sfyx" && r.tag != "skipped")
         .filter(|r| !(r.tag == "prop" && r.str(1).is_ok_and(|n| n.starts_with("schemify"))))
         .collect();
     sfyx::write(&recs)
