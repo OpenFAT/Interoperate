@@ -1678,7 +1678,7 @@ fn live_p_terms() {
         std::fs::write(path, b).unwrap();
     }
     let mut fails = 0;
-    for cell in ["inv_tb", "bulk", "res"] {
+    for cell in ["inv_tb", "bulk", "res", "dev"] {
         let Some(path) = imp.files.iter().map(|f| &f.0).find(|p| {
             p.ends_with(&format!("/{cell}.shbench")) || p.ends_with(&format!("/{cell}.shcomp"))
         }) else {
@@ -1854,4 +1854,71 @@ fn an_inherited_terminal_named_apart_from_its_property_keeps_the_property() {
         "{}",
         x.sfyx
     );
+}
+
+/// Lane P's live refresh comparison (live/checks/p_drive.sh): in `$SFY_P_DIR/project`
+/// refreshed by `virtuoso-refresh --apply`, every `cached` value of the resized kit nfet MN
+/// (inv) and resistor R0 (res) against what the callbacks derive for the same sizes
+/// (`p_truth.txt`, `<inst> <param> <value>` lines). One PASS/FAIL line each.
+#[test]
+#[ignore]
+fn live_p_refresh() {
+    let Some(dir) = std::env::var_os("SFY_P_DIR").map(PathBuf::from) else {
+        return;
+    };
+    let truth = std::fs::read_to_string(dir.join("p_truth.txt")).unwrap();
+    let num = |s: &str| schemify_expr::parse_num(s.trim()).ok();
+    let mut fails = 0;
+    for (file, inst) in [
+        ("sfyprobe_p/inv.shcomp", "MN"),
+        ("sfyprobe_p/res.shbench", "R0"),
+    ] {
+        let text = std::fs::read_to_string(dir.join("project").join(file)).unwrap();
+        let block: Vec<&str> = text
+            .split("\n\n")
+            .find(|b| b.lines().any(|l| l == format!("  name {inst}")))
+            .unwrap_or_default()
+            .lines()
+            .collect();
+        let cached: Vec<(&str, &str)> = block
+            .iter()
+            .filter_map(|l| {
+                let mut w = l.trim().split_whitespace();
+                (w.next() == Some("cached"))
+                    .then(|| (w.next().unwrap_or(""), w.next().unwrap_or("")))
+            })
+            .collect();
+        let mut bad = Vec::new();
+        for (p, v) in &cached {
+            let want = truth.lines().find_map(|l| {
+                let mut w = l.splitn(3, ' ');
+                (w.next() == Some(inst) && w.next() == Some(p)).then(|| w.next().unwrap_or(""))
+            });
+            // A string value is written quoted (`""`), the truth bare.
+            let v = &v.trim_matches('"');
+            let same = match (want, num(v), want.and_then(num)) {
+                (_, Some(a), Some(b)) => (a - b).abs() <= 1e-6 * a.abs().max(b.abs()),
+                (Some(w), _, _) => w == *v,
+                _ => false,
+            };
+            if !same {
+                bad.push(format!("{p}: ours {v} callbacks {want:?}"));
+            }
+        }
+        let ok = !cached.is_empty() && bad.is_empty();
+        if !ok {
+            fails += 1;
+        }
+        println!(
+            "{} refresh.{inst}: {} cached value(s) {}",
+            if ok { "PASS" } else { "FAIL" },
+            cached.len(),
+            if bad.is_empty() {
+                "equal the callbacks'".to_owned()
+            } else {
+                bad.join("; ")
+            }
+        );
+    }
+    assert_eq!(fails, 0, "see the FAIL lines");
 }

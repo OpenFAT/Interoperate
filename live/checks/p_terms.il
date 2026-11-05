@@ -4,8 +4,10 @@
 ;; - inv: pfet MP and nfet MN, pins IN OUT VDD VSS; inv_tb: inv I0 on labelled stubs;
 ;; - bulk: analogLib's 3-terminal nmos M0 (bulk [@bulk_n:%:gnd!] in spectre's stopping view,
 ;;   progn(bn) in auCdl's termOrder) and pmos M1 with bn set to "vdd!";
-;; - res: the PDK resistor R0 between a and b, and a stub on net VSS!.
-;; Then dumps inv_tb, bulk and res with their refs to out/p_terms.sfyx (SfyExport) and
+;; - res: the PDK resistor R0 between a and b, and a stub on net VSS!;
+;; - dev: a MOS cap, a MOM cap, a BJT, a diode and a 4-pin MOS of the kit (P10);
+;; - the kit's nfet and opnpcres characterized into out/p_char.sfyx.
+;; Then dumps inv_tb, bulk, res and dev with their refs to out/p_terms.sfyx (SfyExport) and
 ;; prints each ref's dumped terms. p_drive.sh netlists the cells with si and compares.
 
 ;; A wire from inst's pin term to a label net, (dx dy) away from the pin centre.
@@ -78,6 +80,29 @@ let((plib cv p n x ok)
     schCreateWireLabel(cv w 1:0.25 "VSS!" "lowerLeft" "R0" "stick" 0.0625 nil))
   chkLine("res schCheck" schCheck(cv))
   dbSave(cv) dbClose(cv)
+  ;; dev (gaps2 P10): the other device classes, each pin on a labelled stub: a MOS cap
+  ;; (ncap, sx inherited), a MOM cap (apmom), a BJT (vnpn), a diode (diodenx), a 4-pin
+  ;; MOS (nfet_b); VSS! and VDD! on stubs for the kit's inherited defaults.
+  cv = dbOpenCellViewByType(chkLib "dev" "schematic" "schematic" "w")
+  ;; (cell inst origin ((pin dx dy) ...)): each stub away from the body.
+  foreach(e list(list("ncap" "C0" 0:0 list(list("g" 0 0.25) list("sd" 0 -0.25)))
+                 list("apmom" "C1" 3:0 list(list("p" 0 0.25) list("n" 0 -0.25)))
+                 list("vnpn" "Q0" 6:0 list(list("c" 0 0.25) list("b" -0.25 0) list("e" 0 -0.25)))
+                 list("diodenx" "D0" 9:0 list(list("sx" 0 0.25) list("nd" 0 -0.25)))
+                 list("nfet_b" "MB" 12:0 list(list("d" 0 0.25) list("g" -0.25 0) list("s" 0 -0.25)
+                                              list("b" 0.25 0))))
+    x = dbCreateInst(cv dbOpenCellViewByType(plib car(e) "symbol") cadr(e) caddr(e) "R0")
+    foreach(pd cadddr(e)
+      chkPStub(cv x car(pd) strcat(cadr(e) "_" car(pd)) cadr(pd) caddr(pd))))
+  foreach(e list(list("VSS!" 15:0) list("VDD!" 16:0))
+    let((w) w = car(schCreateWire(cv "draw" "full" list(cadr(e) list(xCoord(cadr(e)) 0.25)) 0.0625 0.0625 0.0))
+      schCreateWireLabel(cv w list(xCoord(cadr(e)) 0.25) car(e) "lowerLeft" "R0" "stick" 0.0625 nil)))
+  chkLine("dev schCheck" schCheck(cv))
+  dbSave(cv) dbClose(cv)
+  ;; The kit's nfet and its resistor characterized (discovery) for p_drive.sh's refresh.
+  chkLine("characterize nfet opnpcres"
+    SfyCharacterize(strcat(getShellEnvVar("SFYCHECK_WORK") "/out/p_char.sfyx") plib
+      list("nfet" "opnpcres") chkLib))
   ;; auCdl's progn(bn) as the dump spells it reads back as the list (SfySimElem).
   chkThat("progn(bn) reads back as a list"
     let((b) b = nth(3 caddr(cadr(SfySimInfoValue(
@@ -86,6 +111,6 @@ let((plib cv p n x ok)
       listp(b) && car(b) == 'progn && cadr(b) == 'bn))
   ;; The dump.
   ok = SfyExport(strcat(getShellEnvVar("SFYCHECK_WORK") "/out/p_terms.sfyx") chkLib
-         list("inv_tb" "bulk" "res"))
-  chkThat("SfyExport of inv_tb bulk res" ok)
+         list("inv_tb" "bulk" "res" "dev"))
+  chkThat("SfyExport of inv_tb bulk res dev" ok)
   chkPass("p_terms drawn"))

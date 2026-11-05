@@ -9,7 +9,7 @@ envfile="${SFYCHECK_ENV:-$HOME/sfytest/env.csh}"
 lib="${P_LIB:-sfyprobe_p}"
 out="$work/out/p_si"
 rm -rf "$out"; mkdir -p "$out"
-for cell in ${P_CELLS:-inv_tb bulk res}; do
+for cell in ${P_CELLS:-inv_tb bulk res dev}; do
   for sim in spectre auCdl; do
     d="$work/si/$lib.$cell.$sim" command=nl
     rm -rf "$d"; mkdir -p "$d"

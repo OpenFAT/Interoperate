@@ -233,11 +233,14 @@
 ;; one point per entry of points, each a list of (input value-text) pairs (an input left
 ;; out is at its default). t when the cell had a CDF to read.
 (procedure (SfyCharCell port cv lib cell names points)
-  (let ((m nil) (cdf nil) (outs nil) (found nil) (ins nil))
+  (let ((m nil) (cdf nil) (sp nil) (outs nil) (found nil) (ins nil))
     (setq m (car (errset (dbOpenCellViewByType lib cell "symbol" nil "r") t)))
     (setq cdf (car (errset (cdfGetCellCDF (ddGetObj lib cell)) t)))
-    (setq outs (and cdf (cadr (assoc "instParameters"
-                                (cadr (assoc "spectre" (SfySimInfoFields (getSGq cdf simInfo))))))))
+    (setq sp (and cdf (cadr (assoc "spectre" (SfySimInfoFields (getSGq cdf simInfo))))))
+    ;; The netlisted params by their CDF names, through propMapping (a kit resistor
+    ;; netlists r from its CDF value: live GF22FDX opnpcres, gaps2 P10).
+    (setq outs (mapcar (lambda (k) (or (cadr (assoc k (cadr (assoc "propMapping" sp)))) k))
+                       (cadr (assoc "instParameters" sp))))
     (setq found (and m cdf outs (SfyCharDiscover cv m cdf outs names)))
     (setq ins (car found))
     (when (equal (caddr found) "sources")
