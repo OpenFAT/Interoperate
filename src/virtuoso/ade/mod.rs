@@ -39,6 +39,7 @@ use crate::sfyx::{Error, Record, Value, i, pairs, s, text};
 
 mod disabled;
 mod export;
+mod forms;
 mod import;
 pub mod mae_xml;
 mod ocean;
@@ -51,6 +52,7 @@ mod tests;
 pub mod viewfiles;
 
 pub use export::*;
+use forms::*;
 pub use import::*;
 use mae_xml::Setup;
 use ocean::*;

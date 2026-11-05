@@ -235,7 +235,7 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
     t.push_str(
         "output vmax \"ymax(v(out))\"\noutput gain \"(ymax(v(out)) - ymin(v(out))) / vdd\"\n",
     );
-    t.push_str("output tr \"delay(v(in), 0.9, v(out), 0.9)\"\n");
+    t.push_str("output tr \"ymax(fft(v(out)))\"\n");
     t.push_str("spec vmax\n  min 1\n  max 1.7\nspec gain\n  max 2\nspec tr\n  max 1n\n");
     exact.extend([
         "output vmax".into(),
@@ -403,8 +403,8 @@ fn records_follow_the_spec_9_table() {
         r#"("var" "temperature" "50" "")"#,
         r#"("var" "vdd" "1.8" "")"#,
         r#"("analysis" "ac" 1 (("start" "1") ("stop" "1G") ("incrType" "Logarithmic") ("stepTypeLog" "Points Per Decade") ("dec" "10")))"#,
-        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/V1") ("param" "dc") ("start" "0") ("stop" "1.8") ("step" "0.1") ("saveOppoint" "t")))"#,
-        r#"("analysis" "noise" 1 (("start" "1k") ("stop" "1M") ("incrType" "Linear") ("stepTypeLin" "Number of Steps") ("lin" "5") ("oprobe" "/out") ("iprobe" "/V1")))"#,
+        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/V1") ("param" "dc") ("start" "0") ("stop" "1.8") ("incrType" "Linear") ("stepTypeLin" "Step Size") ("step" "0.1") ("saveOppoint" "t")))"#,
+        r#"("analysis" "noise" 1 (("start" "1k") ("stop" "1M") ("incrType" "Linear") ("stepTypeLin" "Number of Steps") ("lin" "4") ("outType" "voltage") ("p" "/out") ("n" "/gnd!") ("iprobe" "/V1")))"#,
         r#"("analysis" "tran" 1 (("stop" "1u") ("start" "0") ("maxstep" "2n")))"#,
         r#"("model" "" "$PDK/t.lib" "tt")"#,
         r#"("corner" "ff" 1)"#,
@@ -438,7 +438,7 @@ fn a_deck_block_with_title_and_negative_dc_maps_line_by_line() {
         .collect();
     let want = [
         r#"("maestro" "netlist" "schemify" "tb" "schematic" "spectre")"#,
-        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/Vsw") ("param" "dc") ("start" "-0.2") ("stop" "0.2") ("step" "0.1m")))"#,
+        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/Vsw") ("param" "dc") ("start" "-0.2") ("stop" "0.2") ("incrType" "Linear") ("stepTypeLin" "Step Size") ("step" "0.1m")))"#,
         r#"("model" "" "$PDK/models.lib" "tt")"#,
     ];
     assert_eq!(got, want.map(|s| format!("{s}\n")));

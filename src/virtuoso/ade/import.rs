@@ -108,14 +108,10 @@ pub(super) fn parse(records: &[Record]) -> Result<Test, Error> {
                 if n.is_empty() || t.analyses.iter().any(|a| a.0 == n) {
                     return Err(r.err(format!("analysis `{n}` empty or twice")));
                 }
-                // maeGetAnalysis answers form fields nothing set: `anaName` (the analysis
-                // name) and the ac/noise sweep chooser `sweep "Frequency"`. They carry no
-                // meaning, so a dump of a setup we wrote reads as what we wrote.
-                opts.retain(|(k, v)| {
-                    !((k == "anaName" && v == n)
-                        || (k == "sweep" && v == "Frequency" && matches!(n, "ac" | "noise"))
-                        || is_form_default(n, k, v))
-                });
+                // maeGetAnalysis answers every form field nothing set (`anaName`, the
+                // choosers, the options form; forms.tsv): they carry no meaning, so a dump
+                // of a setup we wrote reads as what we wrote. An empty field is unset.
+                opts.retain(|(k, v)| !v.is_empty() && form_default(n, k) != Some(v.as_str()));
                 t.analyses.push((n.into(), en, opts));
             }
             "corner" => {
@@ -522,15 +518,24 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
         }
         let mut temp = None;
         for (n, v, _) in first.vars.iter().filter(|v| &v.2 == c) {
-            if top_level_split(v).len() > 1 {
+            // A list makes the corner a group (a corner per point, Maestro's `C_0`, `C_1`…;
+            // the netlist of the corner itself takes the first point: live). Schemify has
+            // no corner group (core_A.md): the first point.
+            let pts = top_level_split(v);
+            if pts.len() > 1 {
                 notes.review(
-                    "expression",
+                    "corner",
                     cell,
-                    format!("corner {c} var {n}: a sweep list"),
+                    format!(
+                        "corner {c} var {n} {v}: a corner group; only its first point {} \
+                         comes back (Schemify has no corner group)",
+                        pts[0]
+                    ),
                 );
-                continue;
             }
-            let Some(x) = from(v, notes) else { continue };
+            let Some(x) = from(pts[0], notes) else {
+                continue;
+            };
             if n == "temperature" {
                 temp = Some(x);
             } else {
@@ -664,7 +669,24 @@ fn import_test(
         .vars
         .iter()
         .find(|v| v.0 == "temperature" && v.2.is_empty())
-        .map(|v| &v.1)
+        .map(|v| {
+            // A temperature list is Maestro's temperature sweep (a global var `temperature`,
+            // which wins over the test's temp option in the netlist: live). Schemify has no
+            // swept temperature (core_A.md): its first point, the one ADE's own netlist runs.
+            let pts = top_level_split(&v.1);
+            if pts.len() > 1 {
+                notes.review(
+                    "sweep",
+                    cell,
+                    format!(
+                        "maestro test {}: temperature sweep {}: only its first point {} comes \
+                         back (Schemify has no temperature sweep)",
+                        t.name, v.1, pts[0]
+                    ),
+                );
+            }
+            pts[0]
+        })
         .filter(|v| v.parse::<f64>().is_ok_and(|x| x != 27.0) || v.parse::<f64>().is_err());
     let enabled: Vec<&Analysis> = t
         .analyses
@@ -732,10 +754,12 @@ fn import_test(
         if let Some(v) = temp {
             lines.push(format!("temp options temp={}", spectre_word(v)));
         }
+        // Each analysis as the statement ADE netlists (forms.rs): valid Spectre, not ADE's
+        // form fields.
         for (n, _, opts) in &enabled {
-            let mut l = format!("{n} {n}");
-            for (k, v) in opts.iter().filter(|o| !FORM_ONLY.contains(&o.0.as_str())) {
-                l.push_str(&format!(" {k}={}", spectre_word(v)));
+            let (l, left) = to_spectre(n, opts);
+            for why in left {
+                notes.review("code", cell, format!("maestro test {}: {why}", t.name));
             }
             lines.push(l);
         }
@@ -926,9 +950,11 @@ pub(super) fn sweep_shape(pts: &[String]) -> (&'static str, Vec<String>) {
 }
 
 /// The SPICE lines of one ADE analysis (§9.2), `None` when it has none: options exactly
-/// those §9.1 writes for it, numbers only.
+/// those §9.1 writes for it (a chooser at its form default may be absent), numbers only.
+/// Spectre's `lin=n` is n steps, n+1 points; ngspice's `.ac lin n` is n points.
 fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
-    let get = |k: &str| opts.iter().find(|o| o.0 == k).map(|o| o.1.as_str());
+    let set = |k: &str| opts.iter().find(|o| o.0 == k).map(|o| o.1.as_str());
+    let get = |k: &str| set(k).or_else(|| form_default(name, k));
     let num = |k: &str| -> Option<String> {
         let t = ael::from_ael(get(k)?, |_| AelName::Unknown, |_| None)?.text;
         ael::number_to_ael(&t).map(|_| t)
@@ -942,11 +968,12 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
     let freq = || -> Option<String> {
         let (f1, f2) = (num("start")?, num("stop")?);
         match (get("incrType")?, get("stepTypeLog"), get("stepTypeLin")) {
-            ("Logarithmic", Some("Points Per Decade"), None) => {
+            ("Logarithmic", Some("Points Per Decade"), _) => {
                 Some(format!("dec {} {f1} {f2}", num("dec")?))
             }
-            ("Linear", None, Some("Number of Steps")) => {
-                Some(format!("lin {} {f1} {f2}", num("lin")?))
+            ("Linear", _, Some("Number of Steps")) => {
+                let steps: u32 = get("lin")?.parse().ok()?;
+                Some(format!("lin {} {f1} {f2}", steps.checked_add(1)?))
             }
             _ => None,
         }
@@ -969,8 +996,8 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
             write_num(&mut step, format!("{:.14e}", x / 1000.0).parse().ok()?);
             let mut l = format!(".tran {step} {stop}");
             match (
-                get("start").map(|_| num("start")),
-                get("maxstep").map(|_| num("maxstep")),
+                set("start").map(|_| num("start")),
+                set("maxstep").map(|_| num("maxstep")),
             ) {
                 (None, None) => {}
                 (Some(st), None) => l.push_str(&format!(" {}", st?)),
@@ -978,7 +1005,7 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
                     l.push_str(&format!(" {} {}", st.unwrap_or(Some("0".into()))?, m?))
                 }
             }
-            match get("errpreset") {
+            match set("errpreset") {
                 Some(p) if ERRPRESETS.contains(&p) => {
                     Some(vec![format!(".options errpreset={p}"), l])
                 }
@@ -988,8 +1015,17 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
         }
         "ac" if only(&FREQ) => Some(vec![format!(".ac {}", freq()?)]),
         "dc" => {
-            let op = get("saveOppoint");
-            let sweep = ["sweep", "dev", "param", "start", "stop", "step"];
+            let op = set("saveOppoint");
+            let sweep = [
+                "sweep",
+                "dev",
+                "param",
+                "start",
+                "stop",
+                "step",
+                "incrType",
+                "stepTypeLin",
+            ];
             if !only(&[&sweep[..], &["saveOppoint"]].concat()) || op.is_some_and(|v| v != "t") {
                 return None;
             }
@@ -999,7 +1035,13 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
             }
             if opts.len() > usize::from(op.is_some()) {
                 let dev = get("dev")?.strip_prefix('/').filter(|d| is_ident(d))?;
-                if get("sweep")? != "Component Parameter" || get("param")? != "dc" {
+                // ADE netlists the step of a Linear sweep by step size only (live: an
+                // Automatic one has no `step=`).
+                if get("sweep")? != "Component Parameter"
+                    || get("param")? != "dc"
+                    || get("incrType")? != "Linear"
+                    || get("stepTypeLin")? != "Step Size"
+                {
                     return None;
                 }
                 out.push(format!(
@@ -1011,10 +1053,20 @@ fn spice_form(name: &str, opts: &[(String, String)]) -> Option<Vec<String>> {
             }
             (!out.is_empty()).then_some(out)
         }
-        "noise" if only(&[&FREQ[..], &["oprobe", "iprobe"]].concat()) => {
-            let o = get("oprobe")?.strip_prefix('/').filter(|d| is_ident(d))?;
-            let src = get("iprobe")?.strip_prefix('/').filter(|d| is_ident(d))?;
-            Some(vec![format!(".noise v({o}) {src} {}", freq()?)])
+        "noise" if only(&[&FREQ[..], &["outType", "p", "n", "iprobe"]].concat()) => {
+            if !get("outType")?.eq_ignore_ascii_case("voltage") {
+                return None;
+            }
+            let node = |k: &str| get(k)?.strip_prefix('/').filter(|d| is_ident(d));
+            let out = match get("n") {
+                None | Some("/gnd!") => format!("v({})", node("p")?),
+                Some(_) => format!("v({},{})", node("p")?, node("n")?),
+            };
+            Some(vec![format!(
+                ".noise {out} {} {}",
+                node("iprobe")?,
+                freq()?
+            )])
         }
         _ => None,
     }

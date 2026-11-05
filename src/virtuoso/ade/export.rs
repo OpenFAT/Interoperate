@@ -823,13 +823,15 @@ pub(super) enum SpiceLine {
     Param(Vec<(String, String)>),
 }
 
-/// AC/noise sweep options of `dec|lin n f1 f2` (values SPICE numbers).
+/// AC/noise sweep options of `dec|lin n f1 f2` (values SPICE numbers). ngspice's `lin n` is
+/// n points, Spectre's `lin=n` n steps (n+1 points, live): `lin n` is `lin=n-1` (`lin=0` the
+/// one point of start = stop; `lin=1` there is Spectre's SPECTRE-16108, live).
 fn freq_opts(ty: &str, n: &str, f1: &str, f2: &str) -> Option<Vec<(String, String)>> {
-    let (f1, f2, n) = (
-        ael::number_to_ael(f1)?,
-        ael::number_to_ael(f2)?,
-        ael::number_to_ael(n)?,
-    );
+    let (f1, f2) = (ael::number_to_ael(f1)?, ael::number_to_ael(f2)?);
+    let n = match ty.to_ascii_lowercase().as_str() {
+        "lin" => (n.parse::<u32>().ok().filter(|n| *n >= 1)? - 1).to_string(),
+        _ => ael::number_to_ael(n)?,
+    };
     let mut o = vec![kv("start", &f1), kv("stop", &f2)];
     match ty.to_ascii_lowercase().as_str() {
         "dec" => o.extend([
@@ -866,6 +868,8 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
             SpiceLine::Analysis("tran".into(), o)
         }
         (".ac", [ty, n, f1, f2]) => SpiceLine::Analysis("ac".into(), freq_opts(ty, n, f1, f2)?),
+        // ICADVM20.1's dc incrType default is Automatic, which netlists no step (live):
+        // the step needs Linear by step size.
         (".dc", [src, a, b, st]) if is_ident(src) => SpiceLine::Analysis(
             "dc".into(),
             vec![
@@ -874,18 +878,28 @@ fn spice_line(line: &str) -> Option<SpiceLine> {
                 kv("param", "dc"),
                 kv("start", &ael::signed_number(a)?),
                 kv("stop", &ael::signed_number(b)?),
+                kv("incrType", "Linear"),
+                kv("stepTypeLin", "Step Size"),
                 kv("step", &ael::signed_number(st)?),
             ],
         ),
         (".op", []) => SpiceLine::Analysis("dc".into(), vec![kv("saveOppoint", "t")]),
+        // A voltage output is ADE's `outType voltage` with nodes `p`/`n` (`oprobe` names a
+        // probe instance: Spectre SFE-1997 on a net, live); ground is `/gnd!`.
         (".noise", [out, src, ty, n, f1, f2]) if is_ident(src) => {
-            let node = out
+            let nodes = out
                 .strip_prefix("v(")
                 .or_else(|| out.strip_prefix("V("))
-                .and_then(|x| x.strip_suffix(')'))
-                .filter(|x| is_ident(x))?;
+                .and_then(|x| x.strip_suffix(')'))?;
+            let (p, r) = nodes.split_once(',').unwrap_or((nodes, "gnd!"));
+            let r = if r == "0" { "gnd!" } else { r };
+            if !is_ident(p) || !(r == "gnd!" || is_ident(r)) {
+                return None;
+            }
             let mut o = freq_opts(ty, n, f1, f2)?;
-            o.push(kv("oprobe", &format!("/{node}")));
+            o.push(kv("outType", "voltage"));
+            o.push(kv("p", &format!("/{p}")));
+            o.push(kv("n", &format!("/{r}")));
             o.push(kv("iprobe", &format!("/{src}")));
             SpiceLine::Analysis("noise".into(), o)
         }
@@ -992,8 +1006,27 @@ fn spectre_line(line: &str) -> Option<SpectreLine> {
         [a, b, t] if a == "temp" && b == "options" => {
             Some(SpectreLine::Temp(t.strip_prefix("temp=")?.to_owned()))
         }
-        [a, b, rest @ ..] if a == b && is_ident(a) => {
-            Some(SpectreLine::Analysis(a.clone(), opts(rest)?))
+        // `<kind> [(<p> <n>)] <kind> k=v …`, the import's form (forms.rs).
+        [a, rest @ ..] if is_ident(a) => {
+            let (nodes, rest) = match rest.first() {
+                Some(w) if w.starts_with('(') => {
+                    let end = rest.iter().position(|w| w.ends_with(')'))?;
+                    let inner = rest[..=end].join(" ");
+                    let nodes: Vec<String> = inner[1..inner.len() - 1]
+                        .split_whitespace()
+                        .map(str::to_owned)
+                        .collect();
+                    (nodes, &rest[end + 1..])
+                }
+                _ => (Vec::new(), rest),
+            };
+            match rest {
+                [b, params @ ..] if b == a => Some(SpectreLine::Analysis(
+                    a.clone(),
+                    from_spectre(a, &nodes, &opts(params)?),
+                )),
+                _ => None,
+            }
         }
         _ => None,
     }

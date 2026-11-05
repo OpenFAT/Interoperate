@@ -6,6 +6,7 @@ var X foo*2
 
 corner fast
   lib /pdk/models/toplevel.scs ff
+  set VDD 0.8
   temp -40
   enable false
 
@@ -38,8 +39,8 @@ code stimuli spectre
 needs_review:code	tb	analysis noise is disabled in maestro: dropped
 needs_review:code	tb	analysis pss has no SPICE form: kept in the spectre block
 needs_review:config	tb	maestro test TRAN2 has no output: a Schemify run gives it every one
+needs_review:corner	tb	corner fast var VDD 0.8,0.9: a corner group; only its first point 0.8 comes back (Schemify has no corner group)
 needs_review:design-variable	tb	`foo*2` → `foo*2`
-needs_review:expression	tb	corner fast var VDD: a sweep list
 needs_review:output	tb	output BW (point) `bandwidth(mag(VF("/OUT")) 3 "low")` has no calculator form
 needs_review:output	tb	output OutPlot (net) `/OUT` has no calculator form
 needs_review:output	tb	output gm (point) `deriv(IT("/M1/D"))` has no calculator form

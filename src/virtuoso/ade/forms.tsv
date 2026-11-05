@@ -1,0 +1,988 @@
+# ADE (ICADVM20.1) analysis form fields with a default and Spectre (21.10) analysis parameters,
+# per analysis kind (spec interop.md §9.2). Generated 2026-11-04 on iccad4 from
+# $CDS/tools/dfII/etc/tools/spectre/.cdsenv (rows spectre.<kind> and spectre.<kind>Opts) and
+# `spectre -h <kind>` (its numbered parameter lines). Rows (TAB-separated):
+#   d kind field value   a field maeGetAnalysis (kind options: maeGetSimOption) answers untouched
+#   s kind param...      the parameters of Spectre's statement (options: the options statement)
+d	tran	anaName	tran
+d	tran	trannoisemethod	default
+d	tran	noiseseed	1
+d	tran	binnum	16
+d	tran	noiseruns	100
+d	tran	dynamicParameter	Parameter
+d	tran	dynParamChoice	User-defined
+d	tran	dynParamSetChoice	User-defined
+d	tran	dynchoice	Parameter vector
+d	tran	dynamicChoice	Vector
+d	tran	write	spectre.ic
+d	tran	writefinal	spectre.fc
+d	tran	annotate	status
+d	tran	annotatedigits	4
+d	tran	progress_t	60
+d	tran	progress_p	10
+d	tran	finalTimeOp	t
+d	tran	maxiters	5
+d	tran	threshold	0.0
+d	tran	detail	node
+d	tran	sort	name
+d	tran	thermalmethod	Steady State
+d	tran	triseLimit	300
+d	tran	resTriseRpt	No
+d	tran	iterNum	2
+d	tran	thermalTimeStep	0
+d	tran	sortMethod	Temperature Rise
+d	tran	triseTemp	0.0
+d	tran	saveChannelOnly	No
+s	tran	stop tpoints start pstep outputstart autostop maxstep step minstep istep ic skipdc rampupratio rampuptime readic useprevic linearic oscfreq readns cmin write writefinal ckptperiod saveperiod saveperiodhistory saveclock savetime savefile recover method emirformat emirstart emirstop emirfile emirtimewindows errpreset relref lteratio fastbreak d2aminstep fastcross transres lteminstep ltethstep d2atimetol vrefmax irefmax vrefbins irefbins resetref annotate annotateic annotatedigits title save nestlvl oppoint skipstart skipstop skipcount strobeperiod strobedelay strobeoutput strobestep strobefreq strobestart strobestop strobetimes progress_t progress_p compression comppreset compref compvabstol compiabstol comppwrabstol compreltol complvl flushpoints flushtime flushofftime flushpercent infonames infotimes infotime_pair acnames actimes actime_pair maxiters dcmaxiters restart circuitage trannoisemethod noisefmax noisescale noiseseed mc_auto_noiseseed noisefmin noiseon noiseoff param paramset param_vec param_file sub mod dev param_step paramsetfile steppreset faulttimes faultstep faultstart faultstop faultfile faultevent faultautostop faultdetratio faultconfidlevel faultskipdc faultstrobe faultmethod faulttablefmt faults faultsid faultsname faultsinst faultsamplenum faultsampleratio faultseed faultsamplemethod faultsamplereplace faultsort faultcollapse faultduplicate faultsave faultddm faultdb faultfmt faultleadtime faultmaxiters faultlimsteps faultmaxsteps faultlimtime faultsafecheck faultrampinterval faultic maxstepratio reltolratio
+d	dc	anaName	dc
+d	dc	rangeType	Start-Stop
+d	dc	incrType	Automatic
+d	dc	stepTypeLin	Step Size
+d	dc	stepTypeLog	Points Per Decade
+d	dc	write	spectre.dc
+d	dc	oppoint	rawfile
+d	dc	maxiters	150
+d	dc	maxsteps	10000
+d	dc	annotate	status
+d	dc	threshold	0.0
+d	dc	detail	node
+d	dc	sort	name
+s	dc	start stop center span step lin dec log values valuesfile hysteresis dev mod param force readns readforce write writefinal useprevic save nestlvl print oppoint check homotopy newton restart maxiters maxsteps annotate title emirformat emirfile swpuseprevic component
+d	ac	anaName	ac
+d	ac	sweep	Frequency
+d	ac	rangeType	Start-Stop
+d	ac	incrType	Automatic
+d	ac	stepTypeLin	Step Size
+d	ac	stepTypeLog	Points Per Decade
+d	ac	outType	Voltage
+d	ac	srcType	port
+d	ac	perturbation	linear
+d	ac	special	None
+d	ac	annotate	status
+s	ac	prevoppoint start stop center span step lin dec log values valuesfile dev mod param freq readns write writefinal force readforce skipdc useprevic save nestlvl oppoint restart annotate title perturbation flin_out fim_out out1 out2 contriblist maxharm_nonlin rfmag rfdbm rf1_src rf2_src
+d	noise	anaName	noise
+d	noise	sweep	Frequency
+d	noise	rangeType	Start-Stop
+d	noise	incrType	Automatic
+d	noise	stepTypeLin	Step Size
+d	noise	stepTypeLog	Points Per Decade
+d	noise	outType	probe
+d	noise	inType	port
+d	noise	annotate	status
+s	noise	prevoppoint start stop center span step lin dec log values valuesfile dev mod param freq oprobe iprobe readns write writefinal force readforce skipdc useprevic save nestlvl oppoint separatenoise restart annotate title
+d	xf	anaName	xf
+d	xf	sweep	Frequency
+d	xf	rangeType	Start-Stop
+d	xf	incrType	Automatic
+d	xf	stepTypeLin	Step Size
+d	xf	stepTypeLog	Points Per Decade
+d	xf	outType	voltage
+d	xf	annotate	status
+s	xf	prevoppoint start stop center span step lin dec log values valuesfile dev mod param freq probe readns write writefinal force readforce skipdc useprevic stimuli save nestlvl oppoint restart annotate title
+d	stb	anaName	stb
+d	stb	sweep	Frequency
+d	stb	rangeType	Start-Stop
+d	stb	incrType	Automatic
+d	stb	stepTypeLin	Step Size
+d	stb	stepTypeLog	Points Per Decade
+d	stb	stbProbeMode	single-ended
+d	stb	probeType	Probe Instance
+d	stb	annotate	status
+s	stb	prevoppoint start stop center span step lin dec log values valuesfile dev mod param freq probe localgnd readns write writefinal force readforce skipdc useprevic save nestlvl oppoint restart annotate title margininfo_unstable diffprobe swap mode
+d	pz	anaName	pz
+d	pz	outType	voltage
+d	pz	inType	voltage
+d	pz	freq	1
+d	pz	rangeType	Start-Stop
+d	pz	incrType	Automatic
+d	pz	stepTypeLin	Step Size
+d	pz	stepTypeLog	Points Per Decade
+d	pz	porti	1
+s	pz	iprobe oprobe portv porti start stop center span step lin dec log values valuesfile dev mod param freq readns useprevic oppoint zeroonly fmax docancel absdiff reldiff prevoppoint restart annotate title method pole_emphasis numpoles numzeros sigmar sigmai
+d	sens	anaName	sens
+d	sens	sensType	(nil nil nil)
+d	dcmatch	anaName	dcmatch
+d	dcmatch	outType	voltage
+d	dcmatch	rangeType	Start-Stop
+d	dcmatch	incrType	Automatic
+d	dcmatch	stepTypeLin	Step Size
+d	dcmatch	stepTypeLog	Points Per Decade
+d	dcmatch	method	standard
+d	dcmatch	nsigma	3
+d	dcmatch	porti	1
+d	dcmatch	annotate	status
+d	dcmatch	where	rawfile
+s	dcmatch	mth where file oprobe portv porti start stop center span step lin dec log values valuesfile dev mod param readns useprevic save nestlvl oppoint prevoppoint restart annotate title version method nsigma variations deltascale nullmfactorcorrelation
+d	sp	anaName	sp
+d	sp	sweep	Frequency
+d	sp	rangeType	Start-Stop
+d	sp	incrType	Automatic
+d	sp	stepTypeLin	Step Size
+d	sp	stepTypeLog	Points Per Decade
+d	sp	donoise	no
+d	sp	modeSelection	Single-Ended
+d	sp	annotate	status
+s	sp	prevoppoint start stop center span step lin dec log values valuesfile dev mod param freq ports readns write writefinal force readforce skipdc useprevic file mode datafmt paramtype datatype noisedata oppoint donoise oprobe iprobe restart annotate title sprobes sprobeports
+d	pss	engine	Shooting
+d	pss	signalLevel	Large
+d	pss	freqPeriod	Beat Frequency
+d	pss	harmonics	Number of harmonics
+d	pss	selFreqFrom	0
+d	pss	selFreqTo	1e12
+d	pss	order	1
+d	pss	PssTranMode	Yes
+d	pss	tstabenvlpMode	yes
+d	pss	tstabHB	-1
+d	pss	hbhomotopy	default
+d	pss	dynamicParameter	Parameter
+d	pss	dynParamSetChoice	User-defined
+d	pss	dynchoice	Parameter vector
+d	pss	oscicMethod	t
+d	pss	tuneParam	Variable
+d	pss	tuneStepID	TuneStep Size
+d	pss	sweepListString	1 2 3
+d	pss	sweepLevel	1
+d	pss	sweepOrderList	 
+d	pss	sweep	Variable
+d	pss	freqVar	no
+d	pss	rangeType	Start-Stop
+d	pss	incrType	Linear
+d	pss	stepTypeLin	Step Size
+d	pss	stepTypeLog	Points Per Decade
+d	pss	sweepOrderList2	 
+d	pss	sweep2	Variable
+d	pss	freqVar2	no
+d	pss	rangeType2	Start-Stop
+d	pss	incrType2	Linear
+d	pss	stepTypeLin2	Step Size
+d	pss	stepTypeLog2	Points Per Decade
+d	pss	sweepOrderList3	 
+d	pss	sweep3	Variable
+d	pss	freqVar3	no
+d	pss	rangeType3	Start-Stop
+d	pss	incrType3	Linear
+d	pss	stepTypeLin3	Step Size
+d	pss	stepTypeLog3	Points Per Decade
+d	pss	z0	50
+d	pss	lsspWizardState	Disable
+d	pss	hbhighq	yes
+d	pss	annotate	status
+d	pss	envlpname	envlp
+s	pss	period fund autofund harms autoharms tstab autotstab autosteady tstart tstabenvlp envlpname tstabenvlpstop tstabenvlpstep maxstep maxacfreq step ic skipdc readic oscic useprevic readns cmin harmsvec outputtype save nestlvl oppoint skipstart skipstop skipcount strobeperiod strobedelay saveinit write writefinal swapfile writepss readpss checkpss method tstabmethod errpreset relref lteratio lteminstep steadyratio maxperiods max_innerkrylov_size max_outerkrylov_size itres inexactNewton finitediff highorder psaratio maxorder fullpssvec fdharms harmonicbalance flexbalance pinnode pinnodeminus pinnoderank pinnodemag oversamplefactor oversample oscmethod hbhomotopy sweepic gstart gstop glog backtracking excludeconvgwithBK krylov_size hbprecond_solver lowmem annotate annotateic title maxiters restart circuitage saveperiod saveperiodhistory saveclock savetime savefile recover ppv xdbcompression xdblevel xdbgain xdbref xdbsource xdbload xdbnodep xdbnoden xdbrefnode xdbharm xdbsteps xdbmax xdbstart xdbtol xdbrapid xdbcpi backoff memoryestimate tuneparam tunedev tunerange tunestep tunelin tunevalues lsspports lsspharms lsspfile lsspdatafmt lsspdatatype param paramset param_vec param_file sub mod dev param_step
+d	pac	crossingdirection	all
+d	pac	sampledSigType	probe
+d	pac	ptvtype	sampled
+d	pac	outType	Voltage
+d	pac	srcType	port
+d	pac	moduppersideband	0
+d	pac	inmodharmnum	1
+d	pac	outmodharmvec	1
+d	pac	inputType	SSB
+d	pac	perturbation	linear
+d	pac	special	None
+d	pac	sweeptype	default
+d	pac	rangeType	Start-Stop
+d	pac	incrType	Automatic
+d	pac	stepTypeLin	Step Size
+d	pac	stepTypeLog	Points Per Decade
+d	pac	harmonics	Maximum sideband
+d	pac	side	upper
+d	pac	selFreqFrom	0
+d	pac	selFreqTo	1e12
+d	pac	order	1
+d	pac	annotate	status
+s	pac	start stop center span step lin dec log values valuesfile sweeptype relharmnum ptvtype sampleprobe thresholdvalue crossingdirection maxsamples extrasampletimepoints sidebands maxsideband freqaxis save nestlvl outputperiod tolerance relativeTol gear_order solver oscsolver resgmrescycle hbprecond_solver lowmem krylov_size osc_version osc_accuracy freqdivide annotate title modulated inmodharmnum outmodharmvec moduppersideband modsource perturbation flin_out fim_out out1 out2 contriblist maxharm_nonlin rfmag rfdbm rf1_src rf2_src rf_src freqs rfampls
+d	pnoise	MultiEna1	t
+d	pnoise	sweeptype	default
+d	pnoise	rangeType	Start-Stop
+d	pnoise	incrType	Automatic
+d	pnoise	stepTypeLin	Step Size
+d	pnoise	stepTypeLog	Points Per Decade
+d	pnoise	pnoisemethod	default
+d	pnoise	harmonics	Maximum sideband
+d	pnoise	side	upper
+d	pnoise	selFreqFrom	0
+d	pnoise	selFreqTo	1e12
+d	pnoise	order	1
+d	pnoise	outType	probe
+d	pnoise	inType	port
+d	pnoise	refsbSelect	Enter in field
+d	pnoise	refsbFreqFrom	0
+d	pnoise	refsbFreqTo	1e12
+d	pnoise	refsbOrder	1
+d	pnoise	noisetype	timeaverage
+d	pnoise	supportmultijitter	no
+d	pnoise	noisetypeUI	sources
+d	pnoise	noisetypeUI1	timeaverage
+d	pnoise	crossingdirection	all
+d	pnoise	labelForPmAuto	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto	FM jitter for autonomous circuit
+d	pnoise	labelForDriven	PM jitter for driven circuit
+d	pnoise	jitterType	xyz
+d	pnoise	jitterTypeUI1	PM
+d	pnoise	jitterTypeUI	FM
+d	pnoise	noiseoutUI	USB
+d	pnoise	tdnoise	Noise Skip Count
+d	pnoise	enableEvent	t
+d	pnoise	timingevent	Edge Crossing
+d	pnoise	triggerType	voltage
+d	pnoise	triggerEdgeDir	rise
+d	pnoise	targetType	voltage
+d	pnoise	targetEdgeDir	rise
+d	pnoise	sampledOutputType	voltage
+d	pnoise	sweeptype2	default
+d	pnoise	rangeType2	Start-Stop
+d	pnoise	incrType2	Automatic
+d	pnoise	stepTypeLin2	Step Size
+d	pnoise	stepTypeLog2	Points Per Decade
+d	pnoise	outType2	probe
+d	pnoise	inType2	port
+d	pnoise	refsbSelect2	Enter in field
+d	pnoise	refsbFreqFrom2	0
+d	pnoise	refsbFreqTo2	1e12
+d	pnoise	refsbOrder2	1
+d	pnoise	noisetype2	timeaverage
+d	pnoise	noisetypeUI2	sources
+d	pnoise	noisetypeUI12	timeaverage
+d	pnoise	crossingdirection2	all
+d	pnoise	labelForPmAuto2	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto2	FM jitter for autonomous circuit
+d	pnoise	labelForDriven2	PM jitter for driven circuit
+d	pnoise	jitterType2	xyz
+d	pnoise	jitterTypeUI12	PM
+d	pnoise	jitterTypeUI2	FM
+d	pnoise	noiseoutUI2	USB
+d	pnoise	tdnoise2	Noise Skip Count
+d	pnoise	enableEvent2	t
+d	pnoise	timingevent2	Edge Crossing
+d	pnoise	triggerType2	voltage
+d	pnoise	triggerEdgeDir2	rise
+d	pnoise	targetType2	voltage
+d	pnoise	targetEdgeDir2	rise
+d	pnoise	sampledOutputType2	voltage
+d	pnoise	sweeptype3	default
+d	pnoise	rangeType3	Start-Stop
+d	pnoise	incrType3	Automatic
+d	pnoise	stepTypeLin3	Step Size
+d	pnoise	stepTypeLog3	Points Per Decade
+d	pnoise	outType3	probe
+d	pnoise	inType3	port
+d	pnoise	refsbSelect3	Enter in field
+d	pnoise	refsbFreqFrom3	0
+d	pnoise	refsbFreqTo3	1e12
+d	pnoise	refsbOrder3	1
+d	pnoise	noisetype3	timeaverage
+d	pnoise	noisetypeUI3	sources
+d	pnoise	noisetypeUI13	timeaverage
+d	pnoise	crossingdirection3	all
+d	pnoise	labelForPmAuto3	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto3	FM jitter for autonomous circuit
+d	pnoise	labelForDriven3	PM jitter for driven circuit
+d	pnoise	jitterType3	xyz
+d	pnoise	jitterTypeUI13	PM
+d	pnoise	jitterTypeUI3	FM
+d	pnoise	noiseoutUI3	USB
+d	pnoise	tdnoise3	Noise Skip Count
+d	pnoise	enableEvent3	t
+d	pnoise	timingevent3	Edge Crossing
+d	pnoise	triggerType3	voltage
+d	pnoise	triggerEdgeDir3	rise
+d	pnoise	targetType3	voltage
+d	pnoise	targetEdgeDir3	rise
+d	pnoise	sampledOutputType3	voltage
+d	pnoise	sweeptype4	default
+d	pnoise	rangeType4	Start-Stop
+d	pnoise	incrType4	Automatic
+d	pnoise	stepTypeLin4	Step Size
+d	pnoise	stepTypeLog4	Points Per Decade
+d	pnoise	outType4	probe
+d	pnoise	inType4	port
+d	pnoise	refsbSelect4	Enter in field
+d	pnoise	refsbFreqFrom4	0
+d	pnoise	refsbFreqTo4	1e12
+d	pnoise	refsbOrder4	1
+d	pnoise	noisetype4	timeaverage
+d	pnoise	noisetypeUI4	sources
+d	pnoise	noisetypeUI14	timeaverage
+d	pnoise	crossingdirection4	all
+d	pnoise	labelForPmAuto4	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto4	FM jitter for autonomous circuit
+d	pnoise	labelForDriven4	PM jitter for driven circuit
+d	pnoise	jitterType4	xyz
+d	pnoise	jitterTypeUI14	PM
+d	pnoise	jitterTypeUI4	FM
+d	pnoise	noiseoutUI4	USB
+d	pnoise	tdnoise4	Noise Skip Count
+d	pnoise	enableEvent4	t
+d	pnoise	timingevent4	Edge Crossing
+d	pnoise	triggerType4	voltage
+d	pnoise	triggerEdgeDir4	rise
+d	pnoise	targetType4	voltage
+d	pnoise	targetEdgeDir4	rise
+d	pnoise	sampledOutputType4	voltage
+d	pnoise	sweeptype5	default
+d	pnoise	rangeType5	Start-Stop
+d	pnoise	incrType5	Automatic
+d	pnoise	stepTypeLin5	Step Size
+d	pnoise	stepTypeLog5	Points Per Decade
+d	pnoise	outType5	probe
+d	pnoise	inType5	port
+d	pnoise	refsbSelect5	Enter in field
+d	pnoise	refsbFreqFrom5	0
+d	pnoise	refsbFreqTo5	1e12
+d	pnoise	refsbOrder5	1
+d	pnoise	noisetype5	timeaverage
+d	pnoise	noisetypeUI5	sources
+d	pnoise	noisetypeUI15	timeaverage
+d	pnoise	crossingdirection5	all
+d	pnoise	labelForPmAuto5	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto5	FM jitter for autonomous circuit
+d	pnoise	labelForDriven5	PM jitter for driven circuit
+d	pnoise	jitterType5	xyz
+d	pnoise	jitterTypeUI15	PM
+d	pnoise	jitterTypeUI5	FM
+d	pnoise	noiseoutUI5	USB
+d	pnoise	tdnoise5	Noise Skip Count
+d	pnoise	enableEvent5	t
+d	pnoise	timingevent5	Edge Crossing
+d	pnoise	triggerType5	voltage
+d	pnoise	triggerEdgeDir5	rise
+d	pnoise	targetType5	voltage
+d	pnoise	targetEdgeDir5	rise
+d	pnoise	sampledOutputType5	voltage
+d	pnoise	sweeptype6	default
+d	pnoise	rangeType6	Start-Stop
+d	pnoise	incrType6	Automatic
+d	pnoise	stepTypeLin6	Step Size
+d	pnoise	stepTypeLog6	Points Per Decade
+d	pnoise	outType6	probe
+d	pnoise	inType6	port
+d	pnoise	refsbSelect6	Enter in field
+d	pnoise	refsbFreqFrom6	0
+d	pnoise	refsbFreqTo6	1e12
+d	pnoise	refsbOrder6	1
+d	pnoise	noisetype6	timeaverage
+d	pnoise	noisetypeUI6	sources
+d	pnoise	noisetypeUI16	timeaverage
+d	pnoise	crossingdirection6	all
+d	pnoise	labelForPmAuto6	PM jitter for autonomous circuit
+d	pnoise	labelForFmAuto6	FM jitter for autonomous circuit
+d	pnoise	labelForDriven6	PM jitter for driven circuit
+d	pnoise	jitterType6	xyz
+d	pnoise	jitterTypeUI16	PM
+d	pnoise	jitterTypeUI6	FM
+d	pnoise	noiseoutUI6	USB
+d	pnoise	tdnoise6	Noise Skip Count
+d	pnoise	enableEvent6	t
+d	pnoise	timingevent6	Edge Crossing
+d	pnoise	triggerType6	voltage
+d	pnoise	triggerEdgeDir6	rise
+d	pnoise	targetType6	voltage
+d	pnoise	targetEdgeDir6	rise
+d	pnoise	sampledOutputType6	voltage
+d	pnoise	annotate	status
+s	pnoise	start stop center span step lin dec log values valuesfile sweeptype relharmnum stophalffund oprobe iprobe refsideband thresholdvalue crossingdirection maxsamples sampleratio externalsourcedata measurement noisetype maxsideband sidebands save nestlvl maxcycles noiseskipcount noisetimepoints numberofpoints saveallsidebands separatenoise cyclo2txtfile noiseout tolerance relativeTol gear_order solver oscsolver resgmrescycle hbprecond_solver lowmem ppv ppvfile augmented lorentzian pnoisemethod krylov_size osc_version osc_accuracy freqdivide annotate title
+d	pxf	crossingdirection	all
+d	pxf	sampledSigType	probe
+d	pxf	ptvtype	sampled
+d	pxf	moduppersideband	0
+d	pxf	outmodharmnum	1
+d	pxf	inmodharmvec	1
+d	pxf	outputType	SSB
+d	pxf	special	None
+d	pxf	outType	voltage
+d	pxf	sweeptype	default
+d	pxf	rangeType	Start-Stop
+d	pxf	incrType	Automatic
+d	pxf	stepTypeLin	Step Size
+d	pxf	stepTypeLog	Points Per Decade
+d	pxf	harmonics	Maximum sideband
+d	pxf	side	upper
+d	pxf	selFreqFrom	0
+d	pxf	selFreqTo	1e12
+d	pxf	order	1
+d	pxf	annotate	status
+s	pxf	start stop center span step lin dec log values valuesfile sweeptype relharmnum probe ptvtype sampleprobe thresholdvalue crossingdirection maxsamples extrasampletimepoints sampleratio externalsources extcorrsources1 extcorrsources2 deterministicsources determsourcesfreqs stimuli sidebands maxsideband freqaxis save nestlvl tolerance relativeTol gear_order solver oscsolver resgmrescycle hbprecond_solver lowmem krylov_size osc_version osc_accuracy freqdivide annotate title modulated outmodharmnum inmodharmvec moduppersideband
+d	pstb	rangeType	Start-Stop
+d	pstb	incrType	Automatic
+d	pstb	stepTypeLin	Step Size
+d	pstb	stepTypeLog	Points Per Decade
+d	pstb	annotate	status
+s	pstb	start stop center span step lin dec log values valuesfile probe localgnd save nestlvl tolerance relativeTol gear_order solver oscsolver resgmrescycle hbprecond_solver lowmem krylov_size osc_version osc_accuracy annotate title
+d	hb	HBTranMode	Decide automatically
+d	hb	HBTranMode2	Yes
+d	hb	HBTranSteady	t
+d	hb	tstab	auto
+d	hb	dynamicParameter	Parameter
+d	hb	dynParamSetChoice	User-defined
+d	hb	dynchoice	Parameter vector
+d	hb	tones	Frequencies
+d	hb	FBTstabToneEdit	yes
+d	hb	HBTonesNum	1
+d	hb	HBHarm1	auto
+d	hb	HBSample1	1
+d	hb	HBSample2	1
+d	hb	HBSample3	1
+d	hb	HBSample4	1
+d	hb	HBDivRatio1	1
+d	hb	HBDivRatio2	1
+d	hb	HBDivRatio3	1
+d	hb	HBDivRatio4	1
+d	hb	HBHomotopy1	1
+d	hb	HBHomotopy2	1
+d	hb	HBHomotopy3	0
+d	hb	HBHomotopy4	0
+d	hb	signalLevel	Moderate
+d	hb	freqdivide	1
+d	hb	selectharm	diamond
+d	hb	harmonicsCyc	Default
+d	hb	selFreqFrom	0
+d	hb	selFreqTo	1e12
+d	hb	errpreset	moderate
+d	hb	hbhomotopy	default
+d	hb	oscicMethod	t
+d	hb	tuneParam	Variable
+d	hb	tuneStepID	TuneStep Size
+d	hb	sweepListString	1 2 3
+d	hb	sweepLevel	1
+d	hb	sweepOrderList	 
+d	hb	sweep	Variable
+d	hb	freqVar	no
+d	hb	rangeType	Start-Stop
+d	hb	incrType	Linear
+d	hb	stepTypeLin	Step Size
+d	hb	stepTypeLog	Points Per Decade
+d	hb	sweepOrderList2	 
+d	hb	sweep2	Variable
+d	hb	freqVar2	no
+d	hb	rangeType2	Start-Stop
+d	hb	incrType2	Linear
+d	hb	stepTypeLin2	Step Size
+d	hb	stepTypeLog2	Points Per Decade
+d	hb	sweepOrderList3	 
+d	hb	sweep3	Variable
+d	hb	freqVar3	no
+d	hb	rangeType3	Start-Stop
+d	hb	incrType3	Linear
+d	hb	stepTypeLin3	Step Size
+d	hb	stepTypeLog3	Points Per Decade
+d	hb	z0	50
+d	hb	lsspharms	1
+d	hb	lsspDisplayHarmonic	0
+d	hb	xdbgainEx	Power
+d	hb	xdbgain	power
+d	hb	xdbref1	Small-Signal Gain
+d	hb	xdbref	linear
+d	hb	xdblevel	1
+d	hb	xdbharm	1
+d	hb	displayHarmonic	0
+d	hb	outType	voltage
+d	hb	lowmem	no
+d	hb	lsspWizardState	Disable
+d	hb	tstabOpt	yes
+d	hb	annotate	status
+s	hb	funds fundfreqs maxharms autoharms selectharm evenodd maximorder mappingfft axisbw minialiasorder selharmvec freqdivide freqdividevector tstab autotstab autosteady tstabenvlp envlpname tstabenvlpstop tstabenvlpstep maxstep ic skipdc readic oscic useprevic tone_homotopy readns cmin hbhomotopy gstart gstop glog sweepic oscmethod pinnode pinnoderank pinnodemag pinnodeminus backtracking save nestlvl saveinit tstabmethod errpreset maxperiods max_innerkrylov_size max_outerkrylov_size itres krylov_size oversamplefactor oversample excludeconvgwithBK hbpartition_defs hbpartition_fundratios hbpartition_harms hbprecond_solver lowmem annotate title restart circuitage write writehb readhb selharmread selharmwrite saveperiod saveperiodhistory saveclock savetime savefile recover xdbcompression xdblevel xdbgain xdbref xdbsource xdbload xdbnodep xdbnoden xdbrefnode xdbharm xdbsteps xdbmax xdbstart xdbtol xdbrapid xdbcpi backoff memoryestimate tuneparam tunedev tunerange tunestep tunelin tunevalues lsspports lsspharms lsspfile lsspdatafmt lsspdatatype param paramset param_vec param_file sub mod dev param_step oscmacrogene oscmacroprobe oscmacroout oscmacrosave harmoutputlist
+d	hbac	lowmem	no
+d	hbac	crossingdirection	all
+d	hbac	sampledSigType	probe
+d	hbac	ptvtype	sampled
+d	hbac	outType	Voltage
+d	hbac	srcType	port
+d	hbac	moduppersideband	0
+d	hbac	inmodharmnum	1
+d	hbac	outmodharmvec	1
+d	hbac	inputType	SSB
+d	hbac	perturbation	linear
+d	hbac	special	None
+d	hbac	sweeptype	default
+d	hbac	rangeType	Start-Stop
+d	hbac	incrType	Automatic
+d	hbac	stepTypeLin	Step Size
+d	hbac	stepTypeLog	Points Per Decade
+d	hbac	sbsm	Maximum sideband
+d	hbac	selFreqFrom	0
+d	hbac	selFreqTo	1e12
+d	hbac	order	1
+d	hbac	annotate	status
+s	hbac	start stop center span step lin dec log values valuesfile sweeptype relharmvec ptvtype sampleprobe thresholdvalue crossingdirection maxsamples extrasampletimepoints sidevec maxsideband freqaxis save nestlvl tolerance relativeTol resgmrescycle hbprecond_solver lowmem krylov_size annotate title modulated inmodharmnum outmodharmvec moduppersideband modsource perturbation flin_out fim_out out1 out2 contriblist maxharm_nonlin rfmag rfdbm rf1_src rf2_src rf_src freqs rfampls
+d	hbnoise	MultiEna1	t
+d	hbnoise	sweeptype	default
+d	hbnoise	rangeType	Start-Stop
+d	hbnoise	incrType	Automatic
+d	hbnoise	stepTypeLin	Step Size
+d	hbnoise	stepTypeLog	Points Per Decade
+d	hbnoise	sbsm	Maximum sideband
+d	hbnoise	selFreqFrom	0
+d	hbnoise	selFreqTo	1e12
+d	hbnoise	order	1
+d	hbnoise	outType	probe
+d	hbnoise	inType	port
+d	hbnoise	refsbSelect	Enter in field
+d	hbnoise	refsbFreqFrom	0
+d	hbnoise	refsbFreqTo	1e12
+d	hbnoise	refsbOrder	1
+d	hbnoise	donoise	t
+d	hbnoise	xfonly	yes
+d	hbnoise	noisetype	sources
+d	hbnoise	supportmultijitter	no
+d	hbnoise	noisetypeUI	sources
+d	hbnoise	noisetypeUI1	timeaverage
+d	hbnoise	noiseoutUI	USB
+d	hbnoise	crossingdirection	all
+d	hbnoise	labelForPmAuto	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven	PM jitter for driven circuit
+d	hbnoise	jitterType	xyz
+d	hbnoise	jitterTypeUI1	PM
+d	hbnoise	jitterTypeUI	FM
+d	hbnoise	tdnoise	Noise Skip Count
+d	hbnoise	enableEvent	t
+d	hbnoise	timingevent	Edge Crossing
+d	hbnoise	triggerType	voltage
+d	hbnoise	triggerEdgeDir	rise
+d	hbnoise	targetType	voltage
+d	hbnoise	targetEdgeDir	rise
+d	hbnoise	sampledOutputType	voltage
+d	hbnoise	sweeptype2	default
+d	hbnoise	rangeType2	Start-Stop
+d	hbnoise	incrType2	Automatic
+d	hbnoise	stepTypeLin2	Step Size
+d	hbnoise	stepTypeLog2	Points Per Decade
+d	hbnoise	outType2	probe
+d	hbnoise	inType2	port
+d	hbnoise	refsbSelect2	Enter in field
+d	hbnoise	refsbFreqFrom2	0
+d	hbnoise	refsbFreqTo2	1e12
+d	hbnoise	refsbOrder2	1
+d	hbnoise	noisetype2	timeaverage
+d	hbnoise	noisetypeUI2	sources
+d	hbnoise	noisetypeUI12	timeaverage
+d	hbnoise	crossingdirection2	all
+d	hbnoise	labelForPmAuto2	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto2	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven2	PM jitter for driven circuit
+d	hbnoise	jitterType2	xyz
+d	hbnoise	jitterTypeUI12	PM
+d	hbnoise	jitterTypeUI2	FM
+d	hbnoise	noiseoutUI2	USB
+d	hbnoise	tdnoise2	Noise Skip Count
+d	hbnoise	enableEvent2	t
+d	hbnoise	timingevent2	Edge Crossing
+d	hbnoise	triggerType2	voltage
+d	hbnoise	triggerEdgeDir2	rise
+d	hbnoise	targetType2	voltage
+d	hbnoise	targetEdgeDir2	rise
+d	hbnoise	sampledOutputType2	voltage
+d	hbnoise	sweeptype3	default
+d	hbnoise	rangeType3	Start-Stop
+d	hbnoise	incrType3	Automatic
+d	hbnoise	stepTypeLin3	Step Size
+d	hbnoise	stepTypeLog3	Points Per Decade
+d	hbnoise	outType3	probe
+d	hbnoise	inType3	port
+d	hbnoise	refsbSelect3	Enter in field
+d	hbnoise	refsbFreqFrom3	0
+d	hbnoise	refsbFreqTo3	1e12
+d	hbnoise	refsbOrder3	1
+d	hbnoise	noisetype3	timeaverage
+d	hbnoise	noisetypeUI3	sources
+d	hbnoise	noisetypeUI13	timeaverage
+d	hbnoise	crossingdirection3	all
+d	hbnoise	labelForPmAuto3	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto3	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven3	PM jitter for driven circuit
+d	hbnoise	jitterType3	xyz
+d	hbnoise	jitterTypeUI13	PM
+d	hbnoise	jitterTypeUI3	FM
+d	hbnoise	noiseoutUI3	USB
+d	hbnoise	tdnoise3	Noise Skip Count
+d	hbnoise	enableEvent3	t
+d	hbnoise	timingevent3	Edge Crossing
+d	hbnoise	triggerType3	voltage
+d	hbnoise	triggerEdgeDir3	rise
+d	hbnoise	targetType3	voltage
+d	hbnoise	targetEdgeDir3	rise
+d	hbnoise	sampledOutputType3	voltage
+d	hbnoise	sweeptype4	default
+d	hbnoise	rangeType4	Start-Stop
+d	hbnoise	incrType4	Automatic
+d	hbnoise	stepTypeLin4	Step Size
+d	hbnoise	stepTypeLog4	Points Per Decade
+d	hbnoise	outType4	probe
+d	hbnoise	inType4	port
+d	hbnoise	refsbSelect4	Enter in field
+d	hbnoise	refsbFreqFrom4	0
+d	hbnoise	refsbFreqTo4	1e12
+d	hbnoise	refsbOrder4	1
+d	hbnoise	noisetype4	timeaverage
+d	hbnoise	noisetypeUI4	sources
+d	hbnoise	noisetypeUI14	timeaverage
+d	hbnoise	crossingdirection4	all
+d	hbnoise	labelForPmAuto4	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto4	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven4	PM jitter for driven circuit
+d	hbnoise	jitterType4	xyz
+d	hbnoise	jitterTypeUI14	PM
+d	hbnoise	jitterTypeUI4	FM
+d	hbnoise	noiseoutUI4	USB
+d	hbnoise	tdnoise4	Noise Skip Count
+d	hbnoise	enableEvent4	t
+d	hbnoise	timingevent4	Edge Crossing
+d	hbnoise	triggerType4	voltage
+d	hbnoise	triggerEdgeDir4	rise
+d	hbnoise	targetType4	voltage
+d	hbnoise	targetEdgeDir4	rise
+d	hbnoise	sampledOutputType4	voltage
+d	hbnoise	sweeptype5	default
+d	hbnoise	rangeType5	Start-Stop
+d	hbnoise	incrType5	Automatic
+d	hbnoise	stepTypeLin5	Step Size
+d	hbnoise	stepTypeLog5	Points Per Decade
+d	hbnoise	outType5	probe
+d	hbnoise	inType5	port
+d	hbnoise	refsbSelect5	Enter in field
+d	hbnoise	refsbFreqFrom5	0
+d	hbnoise	refsbFreqTo5	1e12
+d	hbnoise	refsbOrder5	1
+d	hbnoise	noisetype5	timeaverage
+d	hbnoise	noisetypeUI5	sources
+d	hbnoise	noisetypeUI15	timeaverage
+d	hbnoise	crossingdirection5	all
+d	hbnoise	labelForPmAuto5	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto5	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven5	PM jitter for driven circuit
+d	hbnoise	jitterType5	xyz
+d	hbnoise	jitterTypeUI15	PM
+d	hbnoise	jitterTypeUI5	FM
+d	hbnoise	noiseoutUI5	USB
+d	hbnoise	tdnoise5	Noise Skip Count
+d	hbnoise	enableEvent5	t
+d	hbnoise	timingevent5	Edge Crossing
+d	hbnoise	triggerType5	voltage
+d	hbnoise	triggerEdgeDir5	rise
+d	hbnoise	targetType5	voltage
+d	hbnoise	targetEdgeDir5	rise
+d	hbnoise	sampledOutputType5	voltage
+d	hbnoise	sweeptype6	default
+d	hbnoise	rangeType6	Start-Stop
+d	hbnoise	incrType6	Automatic
+d	hbnoise	stepTypeLin6	Step Size
+d	hbnoise	stepTypeLog6	Points Per Decade
+d	hbnoise	outType6	probe
+d	hbnoise	inType6	port
+d	hbnoise	refsbSelect6	Enter in field
+d	hbnoise	refsbFreqFrom6	0
+d	hbnoise	refsbFreqTo6	1e12
+d	hbnoise	refsbOrder6	1
+d	hbnoise	noisetype6	timeaverage
+d	hbnoise	noisetypeUI6	sources
+d	hbnoise	noisetypeUI16	timeaverage
+d	hbnoise	crossingdirection6	all
+d	hbnoise	labelForPmAuto6	PM jitter for autonomous circuit
+d	hbnoise	labelForFmAuto6	FM jitter for autonomous circuit
+d	hbnoise	labelForDriven6	PM jitter for driven circuit
+d	hbnoise	jitterType6	xyz
+d	hbnoise	jitterTypeUI16	PM
+d	hbnoise	jitterTypeUI6	FM
+d	hbnoise	noiseoutUI6	USB
+d	hbnoise	tdnoise6	Noise Skip Count
+d	hbnoise	enableEvent6	t
+d	hbnoise	timingevent6	Edge Crossing
+d	hbnoise	triggerType6	voltage
+d	hbnoise	triggerEdgeDir6	rise
+d	hbnoise	targetType6	voltage
+d	hbnoise	targetEdgeDir6	rise
+d	hbnoise	sampledOutputType6	voltage
+d	hbnoise	oscmacrogene	no
+d	hbnoise	lowmem	no
+d	hbnoise	annotate	status
+s	hbnoise	start stop center span step lin dec log values valuesfile sweeptype relharmvec stophalffund oprobe iprobe refsideband refsidebandoption ptvtype extrasampletimepoints sampleprobe sampleratio noiseskipcount noisetimepoints numberofpoints thresholdvalue crossingdirection maxsamples measurement noisetype maxsideband noiseout sidevec save nestlvl saveallsidebands output_xf stimuli separatenoise cyclo2txtfile tolerance relativeTol resgmrescycle hbprecond_solver lowmem ppv augmented lorentzian krylov_size annotate title oscmacrogene oscmacrosave
+d	hbsp	sweeptype	default
+d	hbsp	rangeType	Start-Stop
+d	hbsp	incrType	Automatic
+d	hbsp	stepTypeLin	Step Size
+d	hbsp	stepTypeLog	Points Per Decade
+d	hbsp	selectPorts	t
+d	hbsp	donoise	yes
+d	hbsp	lowmem	no
+d	hbsp	annotate	status
+s	hbsp	start stop center span step lin dec log values valuesfile sweeptype ports portharmsvec harmsvec freqaxis file datafmt datatype donoise maxsideband tolerance relativeTol hbprecond_solver lowmem krylov_size annotate title sprobes
+d	hbstb	rangeType	Start-Stop
+d	hbstb	incrType	Automatic
+d	hbstb	stepTypeLin	Step Size
+d	hbstb	stepTypeLog	Points Per Decade
+d	hbstb	annotate	status
+s	hbstb	start stop center span step lin dec log values valuesfile probe localgnd save nestlvl tolerance relativeTol gear_order solver oscsolver resgmrescycle hbprecond_solver krylov_size annotate title
+d	hbxf	crossingdirection	all
+d	hbxf	sampledSigType	probe
+d	hbxf	ptvtype	sampled
+d	hbxf	moduppersideband	0
+d	hbxf	outmodharmnum	1
+d	hbxf	inmodharmvec	1
+d	hbxf	outputType	SSB
+d	hbxf	special	None
+d	hbxf	outType	voltage
+d	hbxf	sweeptype	default
+d	hbxf	rangeType	Start-Stop
+d	hbxf	incrType	Automatic
+d	hbxf	stepTypeLin	Step Size
+d	hbxf	stepTypeLog	Points Per Decade
+d	hbxf	sbsm	Maximum sideband
+d	hbxf	selFreqFrom	0
+d	hbxf	selFreqTo	1e12
+d	hbxf	order	1
+d	hbxf	lowmem	no
+d	hbxf	annotate	status
+s	hbxf	start stop center span step lin dec log values valuesfile sweeptype relharmvec probe ptvtype sampleprobe thresholdvalue crossingdirection maxsamples extrasampletimepoints sampleratio sidevec maxsideband freqaxis save nestlvl stimuli tolerance relativeTol resgmrescycle hbprecond_solver lowmem lorentzian krylov_size annotate title
+d	envlp	tones	Frequencies
+d	envlp	envMode	Classic
+d	envlp	measTime	0
+d	envlp	engine	Harmonic Balance
+d	envlp	flexbalance	yes
+d	envlp	FBTstabToneEdit	yes
+d	envlp	HBTonesNum	1
+d	envlp	HBSample1	1
+d	envlp	HBSample2	1
+d	envlp	HBSample3	1
+d	envlp	HBSample4	1
+d	envlp	HBDivRatio1	1
+d	envlp	HBDivRatio2	1
+d	envlp	HBDivRatio3	1
+d	envlp	HBDivRatio4	1
+d	envlp	HBHomotopy1	1
+d	envlp	HBHomotopy2	1
+d	envlp	HBHomotopy3	0
+d	envlp	HBHomotopy4	0
+d	envlp	freqdivide	1
+d	envlp	clockFreqPeriod	Period
+d	envlp	harmonics	Number of harmonics
+d	envlp	envtimeStepSet	fixed
+d	envlp	envtimeStepFixed	fixed
+d	envlp	fixstepsize	yes
+d	envlp	oscicUI	default
+d	envlp	errpreset	moderate
+d	envlp	fastmode	off
+d	envlp	fastmethod	passband
+d	envlp	outputallharms	no
+d	envlp	outputharmonic	1
+d	envlp	sweepType	Log
+d	envlp	dec	3
+d	envlp	lin	10
+d	envlp	noisemethod	level2
+d	envlp	fstart	1k
+d	envlp	selFreqFrom	0
+d	envlp	selFreqTo	1e12
+d	envlp	z0	50
+d	envlp	stepsize_period	Step Size
+d	envlp	annotate	status
+d	envlp	sweepmethodUI	coarse
+d	envlp	sweepmethodUI1	adaptive
+d	envlp	sweepmethod	coarse
+d	envlp	magPoints	7
+d	envlp	angPoints	12
+d	envlp	FundSwpPoints	7
+d	envlp	FreqSwpPoints	3
+s	envlp	clockname modulationbw resolutionbw stop start tstab period fund outputstart maxstep envmaxstep fixstepsize stepsize stepperiod ic skipdc readic useprevic readns cmin write writefinal swapfile envmethod method oscic errpreset relref lteratio smoothcheck itres inexactNewton steadyratio envlteratio annotate title harms harmsvec outputtype save nestlvl compression strobeperiod transtrobeperiod maxiters envmaxiters restart circuitage fmspeedup saveinit fastmode fastmethod writeenv readenv srci srcq srcw sweepmethod sweepnum output outputharmonic outputallharms noisemethod fstart dec lin noisesep wsource wprobe funds maxharms freqdivide fundfreqs harmonicbalance flexbalance oversamplefactor oversample saveperiod saveclock savetime savefile recover resetenv ignoredclk trancycles pacnames pactimes
+d	acmatch	anaName	acmatch
+d	acmatch	outType	voltage
+d	acmatch	rangeType	Start-Stop
+d	acmatch	incrType	Automatic
+d	acmatch	stepTypeLin	Step Size
+d	acmatch	stepTypeLog	Points Per Decade
+d	acmatch	groupby	param
+d	acmatch	where	rawfile
+d	acmatch	oppoint	no
+d	acmatch	prevoppoint	no
+d	acmatch	force	none
+d	acmatch	skipdc	no
+d	acmatch	restart	yes
+d	acmatch	useprevic	no
+d	acmatch	annotate	status
+s	acmatch	mth oprobe start stop center span step lin dec log values valuesfile groupby where file save oppoint write writefinal readns prevoppoint force readforce skipdc useprevic restart annotate title
+d	qpss	engine	Shooting
+d	qpss	FBTstabToneEdit	yes
+d	qpss	signalLevel	Moderate
+d	qpss	freqdivide	1
+d	qpss	harmsAndFreqsFile	./qpssHarmsAndFreqs.info
+d	qpss	evenodd	auto
+d	qpss	selectharmUI2	diamond
+d	qpss	selectharmUI1	diamond
+d	qpss	harmonicsCyc	Default
+d	qpss	selFreqFrom	0
+d	qpss	selFreqTo	1e12
+d	qpss	tstabHB	-1
+d	qpss	hbhomotopy	default
+d	qpss	oscicMethod	t
+d	qpss	sweepListString	1 2 3
+d	qpss	sweepLevel	1
+d	qpss	sweepOrderList	 
+d	qpss	sweep	Variable
+d	qpss	freqVar	no
+d	qpss	rangeType	Start-Stop
+d	qpss	incrType	Linear
+d	qpss	stepTypeLin	Step Size
+d	qpss	stepTypeLog	Points Per Decade
+d	qpss	sweepOrderList2	 
+d	qpss	sweep2	Variable
+d	qpss	freqVar2	no
+d	qpss	rangeType2	Start-Stop
+d	qpss	incrType2	Linear
+d	qpss	stepTypeLin2	Step Size
+d	qpss	stepTypeLog2	Points Per Decade
+d	qpss	sweepOrderList3	 
+d	qpss	sweep3	Variable
+d	qpss	freqVar3	no
+d	qpss	rangeType3	Start-Stop
+d	qpss	incrType3	Linear
+d	qpss	stepTypeLin3	Step Size
+d	qpss	stepTypeLog3	Points Per Decade
+d	qpss	annotate	status
+s	qpss	funds maxharms autoharms selectharm evenodd maximorder mappingfft axisbw minialiasorder selharmvec harmlist freqdivide freqdividevector tstab autotstab autosteady stabcycles tstart tstabenvlp envlpname tstabenvlpstop tstabenvlpstep maxstep maxacfreq step ic skipdc readic useprevic oscic tone_homotopy readns cmin save nestlvl oppoint skipstart skipstop skipcount strobeperiod strobedelay saveinit write writefinal swapfile writeqpss readqpss selharmread selharmwrite method errpreset relref lteratio lteminstep steadyratio maxperiods max_innerkrylov_size max_outerkrylov_size itres inexactNewton finitediff harmonicbalance flexbalance hbpartition_defs hbpartition_fundratios hbpartition_harms oversamplefactor oversample sweepic hbhomotopy gstart gstop glog backtracking excludeconvgwithBK krylov_size hbprecond_solver lowmem annotate annotateic title maxiters restart circuitage ckptperiod saveperiod saveperiodhistory saveclock savetime savefile recover xdbcompression xdblevel xdbgain xdbref xdbsource xdbload xdbnodep xdbnoden xdbrefnode xdbharm xdbsteps xdbmax xdbstart xdbtol xdbrapid xdbcpi backoff memoryestimate
+d	qpac	sweeptype	default
+d	qpac	rangeType	Start-Stop
+d	qpac	incrType	Automatic
+d	qpac	stepTypeLin	Step Size
+d	qpac	stepTypeLog	Points Per Decade
+d	qpac	sbsm	Maximum clock order
+d	qpac	selFreqFrom	0
+d	qpac	selFreqTo	1e12
+d	qpac	order	1
+d	qpac	annotate	status
+s	qpac	start stop center span step lin dec log values valuesfile sweeptype relharmvec sidevec clockmaxharm freqaxis save nestlvl tolerance relativeTol gear_order solver resgmrescycle hbprecond_solver lowmem krylov_size annotate title
+d	qpnoise	MultiEna1	t
+d	qpnoise	sweeptype	default
+d	qpnoise	rangeType	Start-Stop
+d	qpnoise	incrType	Automatic
+d	qpnoise	stepTypeLin	Step Size
+d	qpnoise	stepTypeLog	Points Per Decade
+d	qpnoise	sbsm	Maximum clock order
+d	qpnoise	selFreqFrom	0
+d	qpnoise	selFreqTo	1e12
+d	qpnoise	order	1
+d	qpnoise	outType	probe
+d	qpnoise	inType	port
+d	qpnoise	refsbSelect	Enter in field
+d	qpnoise	refsbFreqFrom	0
+d	qpnoise	refsbFreqTo	1e12
+d	qpnoise	refsbOrder	1
+d	qpnoise	sweeptype2	default
+d	qpnoise	rangeType2	Start-Stop
+d	qpnoise	incrType2	Automatic
+d	qpnoise	stepTypeLin2	Step Size
+d	qpnoise	stepTypeLog2	Points Per Decade
+d	qpnoise	outType2	probe
+d	qpnoise	inType2	port
+d	qpnoise	refsbSelect2	Enter in field
+d	qpnoise	refsbFreqFrom2	0
+d	qpnoise	refsbFreqTo2	1e12
+d	qpnoise	refsbOrder2	1
+d	qpnoise	sweeptype3	default
+d	qpnoise	rangeType3	Start-Stop
+d	qpnoise	incrType3	Automatic
+d	qpnoise	stepTypeLin3	Step Size
+d	qpnoise	stepTypeLog3	Points Per Decade
+d	qpnoise	outType3	probe
+d	qpnoise	inType3	port
+d	qpnoise	refsbSelect3	Enter in field
+d	qpnoise	refsbFreqFrom3	0
+d	qpnoise	refsbFreqTo3	1e12
+d	qpnoise	refsbOrder3	1
+d	qpnoise	sweeptype4	default
+d	qpnoise	rangeType4	Start-Stop
+d	qpnoise	incrType4	Automatic
+d	qpnoise	stepTypeLin4	Step Size
+d	qpnoise	stepTypeLog4	Points Per Decade
+d	qpnoise	outType4	probe
+d	qpnoise	inType4	port
+d	qpnoise	refsbSelect4	Enter in field
+d	qpnoise	refsbFreqFrom4	0
+d	qpnoise	refsbFreqTo4	1e12
+d	qpnoise	refsbOrder4	1
+d	qpnoise	sweeptype5	default
+d	qpnoise	rangeType5	Start-Stop
+d	qpnoise	incrType5	Automatic
+d	qpnoise	stepTypeLin5	Step Size
+d	qpnoise	stepTypeLog5	Points Per Decade
+d	qpnoise	outType5	probe
+d	qpnoise	inType5	port
+d	qpnoise	refsbSelect5	Enter in field
+d	qpnoise	refsbFreqFrom5	0
+d	qpnoise	refsbFreqTo5	1e12
+d	qpnoise	refsbOrder5	1
+d	qpnoise	sweeptype6	default
+d	qpnoise	rangeType6	Start-Stop
+d	qpnoise	incrType6	Automatic
+d	qpnoise	stepTypeLin6	Step Size
+d	qpnoise	stepTypeLog6	Points Per Decade
+d	qpnoise	outType6	probe
+d	qpnoise	inType6	port
+d	qpnoise	refsbSelect6	Enter in field
+d	qpnoise	refsbFreqFrom6	0
+d	qpnoise	refsbFreqTo6	1e12
+d	qpnoise	refsbOrder6	1
+d	qpnoise	annotate	status
+s	qpnoise	start stop center span step lin dec log values valuesfile sweeptype relharmvec oprobe iprobe refsideband refsidebandoption clockmaxharm sidevec save nestlvl saveallsidebands noiseout separatenoise tolerance relativeTol gear_order solver resgmrescycle hbprecond_solver lowmem krylov_size annotate title
+d	qpxf	sweeptype	default
+d	qpxf	rangeType	Start-Stop
+d	qpxf	incrType	Automatic
+d	qpxf	stepTypeLin	Step Size
+d	qpxf	stepTypeLog	Points Per Decade
+d	qpxf	sbsm	Maximum clock order
+d	qpxf	selFreqFrom	0
+d	qpxf	selFreqTo	1e12
+d	qpxf	order	1
+d	qpxf	outType	voltage
+d	qpxf	annotate	status
+s	qpxf	start stop center span step lin dec log values valuesfile sweeptype relharmvec probe stimuli sidevec clockmaxharm freqaxis save nestlvl tolerance relativeTol gear_order solver resgmrescycle hbprecond_solver lowmem krylov_size annotate title
+d	qpsp	sweeptype	default
+d	qpsp	rangeType	Start-Stop
+d	qpsp	incrType	Automatic
+d	qpsp	stepTypeLin	Step Size
+d	qpsp	stepTypeLog	Points Per Decade
+d	qpsp	selectPorts	t
+d	qpsp	donoise	yes
+d	qpsp	annotate	status
+s	qpsp	start stop center span step lin dec log values valuesfile sweeptype ports sprobes portharmsvec harmsvec freqaxis file datafmt datatype donoise clockmaxharm tolerance relativeTol gear_order solver resgmrescycle hbprecond_solver lowmem krylov_size annotate title
+d	psp	sweeptype	default
+d	psp	rangeType	Start-Stop
+d	psp	incrType	Automatic
+d	psp	stepTypeLin	Step Size
+d	psp	stepTypeLog	Points Per Decade
+d	psp	selectPorts	t
+d	psp	donoise	yes
+d	psp	annotate	status
+s	psp	start stop center span step lin dec log values valuesfile sweeptype ports portharmsvec harmsvec freqaxis file datafmt datatype donoise maxsideband tolerance relativeTol gear_order solver oscsolver resgmrescycle osc_version osc_accuracy hbprecond_solver lowmem krylov_size annotate title sprobes
+d	lf	anaName	lf
+d	lf	zmin	0.1
+d	lf	dampmax	0.7
+d	lf	freqmin	1e-2
+d	lf	freqmax	1e10
+d	lf	freqtol	1e-3
+d	lf	sweep	None
+d	lf	rangeType	Start-Stop
+d	lf	incrType	Automatic
+d	lf	stepTypeLin	Step Size
+d	lf	stepTypeLog	Points Per Decade
+d	lf	annotate	status
+s	lf	start stop center span step lin dec log values valuesfile dev mod param readns write writefinal oppoint restart annotate order sensitivity solver_method romsize zmin dampmax freqtol freqmax freqmin emptyloop doublekrylov print_all_poles prevoppoint force readforce skipdc useprevic
+d	options	scale	1.0
+d	options	digits	5
+d	options	cols	80
+d	options	pivrel	1e-3
+d	options	noiseOffType	(nil nil nil nil nil)
+d	options	maxwarns	5
+d	options	maxnotes	5
+d	options	noiseOnType	(nil nil nil nil nil)
+d	options	scalem	1.0
+d	options	gmin	1e-12
+d	options	rforce	1
+d	options	enable_dcsweep_op_info	no
+d	options	ckptclock	1800
+d	options	iabstol	1e-12
+d	options	vabstol	1e-6
+d	options	sensfile	../psf/sens.output
+d	options	tnom	27
+d	options	reltol	1e-3
+d	options	checklimitdest	psf
+d	options	temp	27
+s	options	reltol residualtol vabstol iabstol chargeabstol temp tnom tempeffects save saveselectedtoallpub nestlvl currents subcktprobelvl pwr subcktiprobes useprobes useterms usenodes savefilter saveports save_time_window wfdebug mcwf saveahdlvars spfprobenode dspf_nodename redundant_currents sine_sync_period pwl_ignore_error_msg disable_check_nf disable_selfheating wb_need_propose_time vcr_need_reject_time skip_bjt_limit clamp_bjt_cap skip_bsim4_limit src_allbrkpts ahdldomainerror rawfmt rawfile precision psfversion fsdbversion uwifmt uwilib exportfile wfmaxsize disk_check_thresh disk_check_autoresume disk_check_user_quota_cmd gennetlistdir procopt homotopy newton noiseon_type noiseoff_type limit device_limit maxdeltav automaxdeltavscale maxvdddc maxvdd maxphysicalv maxphysicali maxphysicalmmf maxphysicalflux maxphysicalunitless ahdl_device_limit ahdl_maxdeltav gmethod dptran_gmethod gmin_start gmin_converge try_fast_op icversion dcmaxiters dcminiters stackfet_dcmaxiters dc_diagnose_time dc_diagnose_elements ptranmaxsteps dptranmaxsteps ptranmaxsteps1 dptranmaxsteps1 dcoptmaxsteps dcoptautoptransteps dcoptautodptransteps dcoptic dcoptictype reusedc icpriority subcktoppoint out_dev_stack fastmcmethod detect_path_vpn detect_path_vgnd detect_path_clock detect_path_config subcktcap subcktopfreq multithread forcemt nthreads rabsshort rabsclamp rcut rcut_bsource rthresh cclamp ccut cgnd cmax kcut lshort dcut qcut vabsshort scalem scale scalefactor ishrink compatible diode_jtun_current approx auto_minductor kmax nport_bbspice_to_linear nport_default_interp nport_default_passivity nportbbsfittedfiledir nportirreuse nportwaitbbsv2 nportirfiledir nportcompress nportunusedportgmin nportunusedportrmin nportcompressfiledir nportbbsmaxwaittime hb_lowmem_default_mode noiseon_inst noiseoff_inst topcheck iccheck iccap ignshorts diagnose diagnose_start diagnose_end debugstepdrop stepdropsize checklimitfile dochecklimit asserts_silent_init checklimitdest checklimitdetails checklimit_full_duration mod_assert_expand_sub probe_compatible rampsource devcheck_stat opptcheck gmin gmindc gminfloat gminfloatdc gminfloathb dcopttol gshunt gshuntdc gmindcmax dcdampsol dcfloatnodecheck dcuseprevic dcoptfilter dcoptfiltervtol dc_auto_rforce ignore_blowup dc_ic_abstol dc_ic_reltol dccheck dc_check_multiple_solutions dc_solution_vabstol dc_solution_vreltol dc_solution_iabstol dc_solution_ireltol gmin_check fix_singular_matrix rforce rclamp_bsource va_gclamp ahdl_exp_limit value flow quantities audit inventory narrate debug info note maxnotes stver_note warn maxwarns maxwarnstologfile maxnotestologfile error digits measdgt notation cols colslog title simstat pivotdc dc_pivot_check tran_pivot_check tran_pivot_threshold checklimit_skip_subs checklimit_skip_file checklimit_skip_insts checklimit_skip_insts_file checklimit_skip_ie_connect_devices pivrel pivabs complexpivrel preorder limit_diag_pivot rebuild_matrix ckptclock param_topchange redefinedparams redefinableparams duplicateports duplicate_subckt duplicateinstance duplicatemodel rmdg_preserve warning_limit use_veriloga warning_change_severity warning_id preserve_master preserve_inst preserve_subckt preserve_assert soa_warn idovvdsclamp soa_dest BHT_New_Eval cmi_opts parasitics sensfile sensformat senstype sensfileonly sensbinparam paramrangefile minr short_bjtr cscalefactor cthresh highvoltage vrefgnd she_tol macro_mode verilogalang minstepversion max_minstep_nonconv max_approach_minstep max_consecutive_minstep discontinuity autostop large_newton_reject faultmacro soft_bin xpssdc_disable_output filter_wildcard_colon_ic filter_wildcard_terminal_ic rcr_net_vpn rcr_net_vpn_groups protect_sub protect_inst rcr_net_node_auto_res_bump rcr_net_node_fmax rcr_net_preserve_pn_ports rcr_net_preserve_ground_reg_ports rcr_net_preserve_vpn_ports rcr_net_preserve_active_word_line_ports rcr_net_preserve_idle_word_line_ports rcr_net_preserve_active_bit_line_ports rcr_net_preserve_idle_bit_line_ports rcr_net_preserve_active_state_ports rcr_net_preserve_idle_state_ports rcr_net_preserve_san_to_dout_ports rcr_net_preserve_din_to_bitline_ports rcr_net_preserve_san_ports rcr_net_preserve_active_sa_to_gnd_ports rcr_net_preserve_idle_sa_to_gnd_ports rcr_net_preserve_active_clk_to_sgc_ports rcr_net_preserve_idle_clk_to_sgc_ports rcr_net_preserve_active_heavy_load_ports rcr_net_preserve_idle_heavy_load_ports rcr_net_preserve_drain_source_signals rcr_net_preserve_idle_reg_drain_source rcr_net_preserve_active_reg_drain_source rcr_net_merge_pn_idle_state_ports rcr_net_active_word_line_conly rcr_net_idle_word_line_conly rcr_net_active_bit_line_conly rcr_net_idle_bit_line_conly rcr_net_active_state_conly rcr_net_idle_reg_conly rcr_net_idle_state_conly rcr_net_state_idle_vpn_conly rcr_net_floating1_conly rcr_net_floating2_conly rcr_net_floating3_conly rcr_net_ground_conly rcr_net_ground_reg_conly rcr_net_active_sa_to_gnd_conly rcr_net_idle_sa_to_gnd_conly rcr_net_dump_protect rcr_net_option_file rcr_fmax rcr_rshort rcr_cgnd rcr_net_cgnd mosvar_noscale tmisweep dcmatchscaling dcmatch_fitting negative_cap_opt negative_cap_opt_devices etmiprntfd dump_global_options tmiaging_remove_slash output_compact_mapping tmipath tmiflag tmimtsflag macinitforminisolver omipath omiflag omiage omisave omiinput omisort tmiage tmiinput tmisave etmiusrinput tmisort print_including annotateonalter reelaborateonalter scale_redefined printstep inlinesubcktcurrent nonconv_topnum dotprobefmt hierprobe dcmmod vthmod noisemethod vdsatmod vdsat_c vdsat_vdl vdsat_vadj ivthn ivthp ivthw ivthl ivth_vdsmin gform_vcr bin_relref optimize_bsource optimize_diode opt_diode_enhance optimize_bsimcmg enable_device_bbox memory_estimate mdlthresholds dio_allow_scaling spf dpf spef spfscale spfscaler spfscalec spfinstancesection spfxtorprefix speftriplet spfbusdelim spfinstarraydelim spfpostparam spfswapterm spfaliasterm spfpwrnet spfcnet spfrcnet spfnetcmin spfskipnetfile spfmsglimit spfskipnet spfcnetfile spfrcnetfile spfshortpin spf_probe_mode spfskipinst spfskipsubckt portmismatch_severity implicit_subckt_param mdltrigtargmode leaki_times macro_mos skip_macro_mos hier_delimiter missing_icnodeset hier_ambiguity skip podeautovdd mdlpsfoutput exprProbeSeparated mc_scalarfile_flush_gradual mc_scalarfile_stat mc_stat_list measureterm devropt preservenode probedepthcount subckt_switch duplicate_module ms_vpn ms_vpnv ms_vgnd ms_vgndv mtlinereuse mtlinecachedir mtlineemsolver disable_save_preserve mdlanalysisnames check_format mismatchlevel local_meas uwiprecision ms_part_report tmi_fast_core_data thermalmap ose_random_mod etmiIdsMod osc_output_port print_mode passfail_reverse_logic ms_vpni_start ms_vpni_stop diagnose_dump_topnum ignorevaref ignoredgref minr_mfactor rclamp_mfactor print_section rmdgccs sortinstance checktoppinconn hsfe macrocommand keeprc_conn_termcur lkmatrix detect_path_acc mtm_primitive inlinesubcktop bjt504ver check_ahdl_mode spfr2iprobe maxwildcardicreport bsimcmg_bug_fix vlog_search_parameter expr_reltol hbtmodel variation_overwrite meastype probe_depth_zero sqldb_violating_ratio dcgmethod dcpath_bulk_current dc_reverse_swp lprobe_vlth lprobe_vhth pode_inst_names pode_preserve_inst_names pode_model_names simkit_gmin_scaled expr_abstol sci_lib rel_sfe_opt outputmatchexcludeway pdkmacrosubckt tmimacro enable_dcsweep_op_info do_const_check dcic mpbusdelimiter local_tnom_primitive dc_fix_zero_diagonal allowmz
