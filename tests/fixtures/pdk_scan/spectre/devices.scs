@@ -15,4 +15,5 @@ parameters r=1k \
 r0 (p n) resistor r=r
 x0 (p n) parasitic_rc
 x1 (n p) parasitic_rc
+x2 (p n) varactor_va
 ends rhigh

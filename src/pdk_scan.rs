@@ -466,6 +466,13 @@ fn rack_devices(
             by.join(", ")
         ));
     }
+    // SpiceRack binds no instance to a Verilog-A module, so an instance of one the kit's
+    // ahdl_include loads carries an R0001 too: those masters are declared (live GF22FDX: all
+    // 28 "undeclared" were its ESD and monitor modules, It2_monitor x12 …).
+    unknown.retain(|name, _| {
+        !out.iter()
+            .any(|d| matches!(d.kind, Kind::Va) && d.target.eq_ignore_ascii_case(name))
+    });
     if !unknown.is_empty() {
         let n: usize = unknown.values().sum();
         let by: Vec<String> = unknown.iter().map(|(k, c)| format!("{k} ({c})")).collect();
