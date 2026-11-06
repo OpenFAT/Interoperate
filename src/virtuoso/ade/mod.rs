@@ -29,7 +29,7 @@
 // (values are short text). Lifetime: one call. Access: each kind is written once, in §9
 // order, after sorting. Benches are independent (parallel by bench; one bench here).
 
-use schemify_expr::{Mode, Program, Scratch, Value as XValue, write_num};
+use crate::expr::{Mode, Program, Scratch, Value as XValue, write_num};
 use schemify_format::{Document, FileKind, RecordKind};
 
 use super::ael::{self, AelName, Name};

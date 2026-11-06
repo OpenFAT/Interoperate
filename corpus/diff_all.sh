@@ -16,11 +16,8 @@ filter="${2:-}"
 [[ -d "$golden" ]] || { echo "no goldens: run corpus/fetch.sh && corpus/golden.sh" >&2; exit 2; }
 [[ -d "$ours" ]] || { echo "not a directory: $ours" >&2; exit 2; }
 
-# spicecmp is Schemify's (tools/spicecmp), installed from the core revision Cargo.toml pins.
-rev="$(sed -n 's/^schemify-spicecmp = .*rev = "\([0-9a-f]*\)".*/\1/p' "$repo/Cargo.toml")"
-cargo install -q --locked --git https://github.com/OpenFAT/Schemify --rev "$rev" schemify-spicecmp \
-  --root "$here/.cache/tools"
-cmp_bin="$here/.cache/tools/bin/spicecmp"
+# spicecmp is Schemify's (tools/spicecmp), not in its public SDK: SPICECMP names a build.
+cmp_bin="${SPICECMP:?set SPICECMP to a spicecmp binary (Schemify tools/spicecmp, not public)}"
 mkdir -p "$ours/diff"
 
 declare -A agree differ missing

@@ -815,9 +815,12 @@ fn write_schematic(
             | RecordKind::Optimize
             | RecordKind::Output
             | RecordKind::Spec
-            | RecordKind::Config
-            | RecordKind::Test
-            | RecordKind::BenchParam => {
+            | RecordKind::Config => {
+                let word = c.doc.record_word(r);
+                notes.review(word, &c.path, format!("{word} {}", c.field(r, 0)));
+            }
+            #[cfg(feature = "cadence-records")]
+            RecordKind::Test | RecordKind::BenchParam => {
                 let word = c.doc.record_word(r);
                 notes.review(word, &c.path, format!("{word} {}", c.field(r, 0)));
             }

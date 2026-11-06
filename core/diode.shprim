@@ -1,0 +1,32 @@
+schemify 1 shprim
+  doc "Diode: SPICE D element, anode p, cathode m"
+  prefix D
+  category semiconductor
+
+pin p inout 0 -30
+pin n inout 0 30
+
+param model D
+  kind string
+  doc "SPICE .model name"
+param area 1
+  doc "area factor"
+
+impl spice spice
+  format spice "{name} {p} {n} {model} area={area}"
+  format spectre "{name} ({p} {n}) {model} area={area}"
+
+line 0 -30 0 -6.25
+line 0 6.25 0 30
+
+poly -7.5 -6.25 7.5 -6.25 0 6.25
+  width 2
+  closed true
+
+line -7.5 6.25 7.5 6.25
+  width 2
+
+stext 12.5 -9 R0 {name}
+  size 0.14
+stext 12.5 0 R0 {model}
+  size 0.14

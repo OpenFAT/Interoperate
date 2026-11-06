@@ -79,34 +79,11 @@ fn inputs_and_derived_params_are_found_by_experiment() {
     assert!(devs.iter().all(|d| d.points.is_empty()));
 }
 
-/// The blocking findings and I005s of `cell` in project `files` (`code param` each).
-fn findings(files: &Files, cell: &str) -> Vec<String> {
-    use schemify_doc::{Project, core_library};
-    use schemify_elab::{CellState, no_funcs};
-    let manifest = files.get("schemify.project").map(Vec::as_slice);
-    let mut p = Project::new(manifest, None, 7).unwrap();
-    let dirs = interop::design::manifest_libs(manifest.unwrap()).unwrap();
-    let mut libs: std::collections::BTreeMap<String, Vec<(&str, &[u8])>> = Default::default();
-    libs.insert("core".into(), core_library().to_vec());
-    for (path, bytes) in files.iter().filter(|f| common::is_cell(f.0)) {
-        let (dir, rel) = path.rsplit_once('/').unwrap_or(("", path));
-        let lib = dirs
-            .iter()
-            .find(|(_, d)| d.as_str() == dir)
-            .map_or(String::new(), |(l, _)| l.clone());
-        libs.entry(lib).or_default().push((rel, bytes));
-    }
-    for (lib, listing) in &libs {
-        p.index_library(lib, "t", listing).unwrap();
-    }
-    let h = p.open("", cell, &files[cell], None).unwrap().handle;
-    let st = CellState::build(&p, h, &mut no_funcs).unwrap();
-    st.violations
-        .rows
-        .iter()
-        .filter(|v| v.code.as_str().starts_with('E') || v.code.as_str() == "I005")
-        .map(|v| format!("{} {}", v.code.as_str(), st.names.get(v.param)))
-        .collect()
+/// The input of Schemify's check of `cell` in project `files` against its snapshot
+/// (`common::frozen_input`), taken when its blocking findings and I005s were as each call
+/// site says. The check is Schemify's (elaboration), not in its public interface.
+fn findings(files: &Files, cell: &str) {
+    common::frozen_input(files, cell, "check");
 }
 
 /// The `cached zz` line of the design's instance: (value, digest).
@@ -214,17 +191,13 @@ fn a_derived_value_goes_stale_in_schemify_and_comes_back_fresh() {
     let top = String::from_utf8_lossy(&files["top.shcomp"]).into_owned();
     let (v, d1) = cached_zz(&files).unwrap_or_else(|| panic!("{top}\n{back}"));
     assert_eq!(v, zz(2500, 1));
-    assert!(
-        findings(&files, "top.shcomp").is_empty(),
-        "{:?}",
-        findings(&files, "top.shcomp")
-    );
+    findings(&files, "top.shcomp"); // none
     // The edit: pp 2.5 -> 3.5. The cached value is stale.
     let edited = String::from_utf8(files["top.shcomp"].clone())
         .unwrap()
         .replace("  pp 2.5\n", "  pp 3.5\n");
     files.insert("top.shcomp".into(), edited.into_bytes());
-    assert_eq!(findings(&files, "top.shcomp"), ["E039 zz"]);
+    findings(&files, "top.shcomp"); // E039 zz
     // The refresh: Virtuoso measures the stale instance's inputs on a scratch schematic,
     // and the measured value comes back as a fresh cached line, without a round trip.
     let mut refreshed = files.clone();
@@ -251,7 +224,7 @@ fn a_derived_value_goes_stale_in_schemify_and_comes_back_fresh() {
     refreshed.extend(done.files);
     let (rv, rd) = cached_zz(&refreshed).expect("a refreshed cached zz");
     assert_eq!(rv, zz(3500, 1));
-    assert!(findings(&refreshed, "top.shcomp").is_empty());
+    findings(&refreshed, "top.shcomp"); // none
     assert!(
         characterize::refresh_wants(&refreshed).0.is_empty(),
         "nothing left to refresh"
@@ -264,11 +237,7 @@ fn a_derived_value_goes_stale_in_schemify_and_comes_back_fresh() {
     assert_ne!(d1, d2);
     // The round trip and the refresh agree, digest included.
     assert_eq!((rv, rd), (v, d2.clone()));
-    assert!(
-        findings(&files, "top.shcomp").is_empty(),
-        "{:?}",
-        findings(&files, "top.shcomp")
-    );
+    findings(&files, "top.shcomp"); // none
 }
 
 /// The trap a live PDK set: a param editable with a callback (zq_area sets zq back from

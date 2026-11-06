@@ -1,0 +1,16 @@
+** sch_path: <tmp>/xschem_export/edited_subcell/export/lib/top.sch
+**.subckt top
+x1 IN OUT sub
+R9 OUT IN 5k m=1
+**.ends
+
+* expanding   symbol:  lib/sub.sym # of pins=2
+** sym_path: <tmp>/xschem_export/edited_subcell/export/lib/sub.sym
+** sch_path: <tmp>/xschem_export/edited_subcell/export/lib/sub.sch
+.subckt sub A Z
+*.opin Z
+*.ipin A
+R1 A Z 2k m=1
+.ends
+
+.end

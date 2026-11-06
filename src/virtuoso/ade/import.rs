@@ -300,16 +300,22 @@ pub fn check(records: &[Record]) -> Result<(), Error> {
 pub(super) const VNONE: &str = "vnone";
 
 /// Kinds that mean a test was already imported into the bench being built.
-const BENCH_KINDS: [RecordKind; 8] = [
+const BENCH_KINDS: &[RecordKind] = &[
     RecordKind::Var,
     RecordKind::Corner,
     RecordKind::Sweep,
     RecordKind::Output,
     RecordKind::Spec,
     RecordKind::Code,
+    #[cfg(feature = "cadence-records")]
     RecordKind::Test,
+    #[cfg(feature = "cadence-records")]
     RecordKind::BenchParam,
 ];
+
+/// Whether the format has the bench `test` and `param` records (Schemify's `cadence-records`
+/// format additions, not in its public SDK yet).
+const CADENCE: bool = cfg!(feature = "cadence-records");
 
 /// `v` (AEL) as a Schemify expression, `globals` the bench vars; `None` (noted
 /// `expression`) when it has none.
@@ -545,10 +551,21 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
     let params = view_params(setup.as_ref(), first, cell, notes);
     for (p, v, _) in params.iter().filter(|x| x.2.is_empty()) {
         if let Some(x) = from(v, notes) {
+            #[cfg(feature = "cadence-records")]
             push_record(
                 bench,
                 RecordKind::BenchParam,
                 &[&param_from_virtuoso(p), &x],
+            );
+            #[cfg(not(feature = "cadence-records"))]
+            notes.review(
+                "config",
+                cell,
+                format!(
+                    "param {} {x}: needs the bench `param` record, not in Schemify's public \
+                     format yet",
+                    param_from_virtuoso(p)
+                ),
             );
         }
     }
@@ -643,11 +660,37 @@ pub fn import(tests: &[&[Record]], bench: &mut Document<'static>, cell: &str, no
         off,
         ..Taken::default()
     };
-    for t in &ts {
+    // ponytail: without the `test` record a bench holds one test; the others are reported.
+    let imported = if CADENCE || !several { ts.len() } else { 1 };
+    for t in &ts[imported..] {
+        notes.review(
+            "config",
+            cell,
+            format!(
+                "maestro test {}: a second test needs the bench `test` record, not in \
+                 Schemify's public format yet",
+                t.name
+            ),
+        );
+    }
+    for t in &ts[..imported] {
         let (codes, outs) = import_test(t, &globals, bench, cell, &mut taken, notes);
         if !several {
             continue;
         }
+        if !CADENCE {
+            notes.review(
+                "config",
+                cell,
+                format!(
+                    "maestro test {}: its own vars, corners, design and enable need the bench \
+                     `test` record, not in Schemify's public format yet",
+                    t.name
+                ),
+            );
+            continue;
+        }
+        #[cfg(feature = "cadence-records")]
         push_record(bench, RecordKind::Test, &[&t.name]);
         // An empty list has no attribute form (a test record without one runs them all):
         // `vnone <key>` keeps it for the way back.

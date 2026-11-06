@@ -399,7 +399,7 @@ fn attr(out: &mut String, key: &str, vals: &[&str]) {
 /// Canonical number text (expr.md §7), exact.
 fn num(x: f64) -> String {
     let mut s = String::new();
-    schemify_expr::write_num(&mut s, x);
+    crate::expr::write_num(&mut s, x);
     s
 }
 
@@ -412,5 +412,5 @@ fn schemify_text(v: &str) -> String {
 
 /// A var value's number, when it is one (`1n`, `7`, `1.1`).
 fn number(v: &str) -> Option<f64> {
-    schemify_expr::parse_num(&schemify_text(v)).ok()
+    crate::expr::parse_num(&schemify_text(v)).ok()
 }

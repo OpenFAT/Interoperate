@@ -288,7 +288,7 @@ fn remaster(
                 continue;
             };
             let core = format!("{}.shprim", devices::DEVICES[p.device].core);
-            let new_pins = schemify_doc::core_library()
+            let new_pins = crate::core::core_library()
                 .iter()
                 .find(|(nm, _)| *nm == core)
                 .and_then(|(_, b)| Ctx::iface_of_text(b))

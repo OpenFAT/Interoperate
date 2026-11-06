@@ -164,9 +164,9 @@ proptest! {
     #[test]
     fn engineering_text_keeps_the_value(m in 1u32..10_000_000, e in -21i32..17, neg: bool) {
         let t = format!("{}{m}e{e}", if neg { "-" } else { "" });
-        let x = schemify_expr::parse_num(&t).unwrap();
+        let x = crate::expr::parse_num(&t).unwrap();
         let back = si_text(&t);
-        let y = schemify_expr::parse_num(&back)
+        let y = crate::expr::parse_num(&back)
             .unwrap_or_else(|_| panic!("{t} became unreadable {back}"));
         prop_assert!((x - y).abs() <= x.abs() * 1e-14, "{} = {} became {} = {}", t, x, back, y);
     }

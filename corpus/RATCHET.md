@@ -1,3 +1,8 @@
+> The netlist differential that produced the tables below (`tests/xschem_differential.rs`)
+> needs Schemify's netlister and spicecmp, which Schemify's public SDK does not have; it left
+> this repository with the move to the public SDK (it is in the history before that). The
+> numbers are its last record.
+
 # Netlist ratchet (xschem differential)
 
 The `netlist` row of [docs/dev/testing.md](https://github.com/OpenFAT/Schemify/blob/main/docs/dev/testing.md): every bench of

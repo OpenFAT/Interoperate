@@ -346,7 +346,7 @@ pub(super) fn stashed_computed<'a>(
     master: &'a Cell,
     over: impl Fn(&str) -> Option<&'a str>,
 ) -> Vec<(String, String)> {
-    use schemify_expr::{Mode, Program, Scratch, Value};
+    use crate::expr::{Mode, Program, Scratch, Value};
     fn value<'a>(
         m: &'a Cell,
         over: &dyn Fn(&str) -> Option<&'a str>,

@@ -464,7 +464,7 @@ impl<'a> Ctx<'a> {
     fn project_iface(&self, slib: &str, stem: &str) -> Option<Iface> {
         if slib == "core" {
             let f = format!("{stem}.shprim");
-            return schemify_doc::core_library()
+            return crate::core::core_library()
                 .iter()
                 .find(|(n, _)| *n == f)
                 .and_then(|(_, b)| Ctx::iface_of_text(b));

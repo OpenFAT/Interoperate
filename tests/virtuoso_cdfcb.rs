@@ -193,9 +193,9 @@ fn export_writes_the_rule_as_a_cel_default_that_evaluates_to_the_callbacks_value
         let e = cel
             .replace("iPar(\"w\")", &format!("({w:e})"))
             .replace("iPar(\"nf\")", &format!("({nf})"));
-        let p = schemify_expr::Program::compile(&e, schemify_expr::Mode::Scalar).unwrap();
-        let got = match p.eval(&[], &mut schemify_expr::Scratch::default()).unwrap() {
-            schemify_expr::Value::Num(x) => x,
+        let p = interop::expr::Program::compile(&e, interop::expr::Mode::Scalar).unwrap();
+        let got = match p.eval(&[], &mut interop::expr::Scratch::default()).unwrap() {
+            interop::expr::Value::Num(x) => x,
             v => panic!("{v:?}"),
         };
         assert_eq!(got, w / f64::from(nf), "{e}");

@@ -1,0 +1,89 @@
+** sch_path: <tmp>/xschem_export/gen-0/export/root/tb.sch
+**.subckt tb
+R0 b c 10k m=1
+R1 b b 10k m=1
+R2 a b 10k m=1
+R3 a a 10k m=1
+R4 0 c 10k m=1
+R5 c b 10k m=1
+R6 0 b 10k m=1
+R7 0 a 10k m=1
+C8 b 0 2p m=2
+C9 b a 2p m=2
+C10 c 0 2p m=2
+C11 b c 2p m=2
+C12 0 a 2p m=2
+C13 a 0 2p m=2
+C14 0 c 2p m=2
+C15 a a 2p m=2
+L16 c 0 3n m=1
+L17 b b 3n m=1
+L18 b c 3n m=1
+L19 0 b 3n m=1
+L20 b 0 3n m=1
+L21 b b 3n m=1
+L22 a a 3n m=1
+L23 c c 3n m=1
+V24 b c dc 1.8 ac 1
+V25 b 0 dc 1.8 ac 1
+V26 b 0 dc 1.8 ac 1
+V27 a c dc 1.8 ac 1
+V28 c 0 dc 1.8 ac 1
+V29 0 c dc 1.8 ac 1
+V30 c 0 dc 1.8 ac 1
+V31 a b dc 1.8 ac 1
+I32 b b 1m
+I33 a b 1m
+I34 c a 1m
+I35 c 0 1m
+I36 b b 1m
+I37 a 0 1m
+I38 c a 1m
+I39 b a 1m
+D40 a 0 dmod area=2
+D41 c b dmod area=2
+D42 b b dmod area=2
+D43 c c dmod area=2
+D44 0 c dmod area=2
+D45 0 b dmod area=2
+D46 b b dmod area=2
+D47 b c dmod area=2
+M48 c a b c nch w=1u l=0.5u m=1
+M49 c 0 0 0 nch w=1u l=0.5u m=1
+M50 a 0 b b nch w=1u l=0.5u m=1
+M51 0 b c 0 nch w=1u l=0.5u m=1
+M52 0 b 0 0 nch w=1u l=0.5u m=1
+M53 a a c c nch w=1u l=0.5u m=1
+M54 a 0 0 a nch w=1u l=0.5u m=1
+M55 c 0 0 c nch w=1u l=0.5u m=1
+M56 0 0 c a pmos w=4u l=0.18u m=1
+M57 0 b b b pmos w=4u l=0.18u m=1
+M58 c b c a pmos w=4u l=0.18u m=1
+M59 0 a c a pmos w=4u l=0.18u m=1
+M60 c c a b pmos w=4u l=0.18u m=1
+M61 0 0 a a pmos w=4u l=0.18u m=1
+M62 b c 0 0 pmos w=4u l=0.18u m=1
+M63 0 a a 0 pmos w=4u l=0.18u m=1
+Q64 0 0 a qmod area=1 m=1
+Q65 c c c qmod area=1 m=1
+Q66 c c c qmod area=1 m=1
+Q67 a a c qmod area=1 m=1
+Q68 b 0 b qmod area=1 m=1
+Q69 0 0 b qmod area=1 m=1
+Q70 b b 0 qmod area=1 m=1
+Q71 b a 0 qmod area=1 m=1
+E72 b c 0 c 10
+E73 0 c 0 b 10
+E74 c 0 a c 10
+E75 0 c 0 b 10
+E76 c a a a 10
+E77 c b a a 10
+E78 a b c b 10
+E79 a 0 a b 10
+**** begin user architecture code
+
+.op
+
+**** end user architecture code
+**.ends
+.end

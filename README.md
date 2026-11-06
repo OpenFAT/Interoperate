@@ -454,6 +454,7 @@ No Cadence tool runs here, so:
 | File | Does |
 |---|---|
 | `src/design.rs`, `src/nets.rs`, `src/profile.rs` | Schemify files as tables, connectivity, coordinate/orientation/name rules |
+| `src/expr/`, `src/core.rs` + `core/` | Schemify's expression language (scalar mode, calculator checks) and its built-in `core` device library: Interop's own copies until Schemify's public SDK ships them |
 | `src/sfyx.rs` | the exchange-file codec |
 | `src/virtuoso/` | `write/` (export), `read/` (import), `kinds` (the record kinds), `ael` (values), `devices` (analogLib table), `ade/` (maestro) |
 | `src/merge.rs`, `src/remap.rs`, `src/map.rs` | keeping Schemify-only data, re-mastering, `interop.map` |
@@ -464,23 +465,38 @@ No Cadence tool runs here, so:
 
 ## Development
 
-`nix develop` has the pinned Rust 1.95.0 (rust-overlay, with rust-lld), xschem, ngspice and wasmtime. The Schemify crates
-are git dependencies pinned to one core commit in `Cargo.toml`; tests read copies of the core
-fixtures in `tests/fixtures/schemify/`.
+`nix develop` has the pinned Rust 1.95.0 (rust-overlay, with rust-lld), xschem, ngspice and wasmtime. Interop builds on
+Schemify's public SDK only: `schemify-format`, `schemify-abi` and (tests) `schemify-plugin`
+from [OpenFAT/Schemify](https://github.com/OpenFAT/Schemify), pinned to one commit in
+`Cargo.toml`. Nothing else of Schemify's is linked, and the plugin never runs Schemify's
+netlister or simulator. Tests read copies of the core fixtures in `tests/fixtures/schemify/`.
+
+- **Netlists in tests.** The oracles that compared Schemify's netlist of an import with
+  Virtuoso's, xschem's or the original's now check the netlist's *input*: the cell files must
+  equal a snapshot in `tests/fixtures/netlisted/`, taken from the code whose netlists agreed
+  (`common::frozen_input`). Re-bless (`SCHEMIFY_BLESS=1`) only after netlisting the new input
+  in a Schemify development build.
+- **`cadence-records`** (feature, off by default): a multi-test Maestro view and device
+  parameters as bench `test` and `param` records. Schemify's public format does not have
+  them yet, so the default build imports the first test and reports the rest; the tests that
+  need them are ignored without the feature. To build it, patch `schemify-format` to a
+  checkout that has them (`--config 'patch."https://github.com/OpenFAT/Schemify".schemify-format.path="…"'`).
+- **`maestro-results`** refuses for now: the run directory is named by the design hash of
+  Schemify's run, which its public interface does not offer.
 
 | Command | Does |
 |---|---|
 | `cargo test --features cli` | every native test; the corpus ones skip without `SCHEMIFY_CORPUS` |
 | `./build.sh` | rebuilds `interop.wasm` (reproducible; commit it with the change) |
 | `SCHEMIFY_REQUIRE_XSCHEM=1 cargo test --features cli --test guest --test xschem_export` | the built guest through Schemify's host, the export netlisted by real xschem |
-| `corpus/fetch.sh && corpus/golden.sh` then `SCHEMIFY_CORPUS=corpus/.cache cargo test --release --test xschem_differential -- --nocapture` | the xschem differential ([corpus/README.md](corpus/README.md)) |
-| `NETLIST=none corpus/import_all.sh DIR && corpus/roundtrip.sh DIR` | the corpus through xschem → Schemify → xschem, re-netlisted by real xschem and compared with the goldens (checks the export; nightly ratchets its agree count, RATCHET.md) |
+| `corpus/fetch.sh && corpus/golden.sh && NETLIST=none corpus/import_all.sh DIR` | every corpus bench imported and checked (nightly) |
+| `SPICECMP=<spicecmp> corpus/roundtrip.sh DIR` | the corpus through xschem → Schemify → xschem, re-netlisted by real xschem and compared with the goldens (needs a spicecmp build: not in Schemify's public SDK) |
 | `determinism/run.sh <schemify-interop command> <out>` | the import every platform must write byte for byte |
 | `cd fuzz && cargo +nightly fuzz run xschem_read` | the fuzzers (`fuzz/seeds.sh` seeds them) |
 
 CI (`.github/workflows/`): `ci.yml` runs the suite on Linux, macOS and Windows, compares the
 import across them and WASI, rebuilds the guest and fails when the committed module differs;
-`nightly.yml` runs the corpus ratchet, the fuzzers, and the suite against Schemify `main`;
+`nightly.yml` imports the whole corpus, runs the fuzzers, and the suite against the public SDK's `main`;
 `release.yml` builds the CLI for every platform into a draft release on a `v*` tag.
 
 ### Parallel lanes
@@ -527,6 +543,6 @@ Rules for every lane:
   `.git/info/exclude`): a test that reads them gets its path from `common::cadence_fixture`
   and returns when it gets `None`, so it skips where they are absent.
 
-To move to a newer Schemify: set every `rev` in `Cargo.toml` to the new commit,
-`cargo update -p schemify-abi` (and the other Schemify crates), `./build.sh`, test, and commit
-`Cargo.toml`, `Cargo.lock` and `interop.wasm` together.
+To move to a newer Schemify SDK: set every `rev` in `Cargo.toml` to the new commit,
+`cargo update -p schemify-abi -p schemify-format -p schemify-plugin`, `./build.sh`, test, and
+commit `Cargo.toml`, `Cargo.lock` and `interop.wasm` together.

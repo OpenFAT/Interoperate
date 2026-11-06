@@ -1,0 +1,15 @@
+** sch_path: <tmp>/xschem_export/app-ota/export/root/ota.sch
+**.subckt ota inp inn out vbias VDD VSS
+*.ipin inp
+*.ipin inn
+*.opin out
+*.ipin vbias
+*.iopin VDD
+*.iopin VSS
+XM1 net1 inp tail VSS sky130_fd_pr__nfet_01v8 W='(3.8813910462992726e-6)/1u' L='(0.5u)/1u' nf=1
+XM2 out inn tail VSS sky130_fd_pr__nfet_01v8 W='(3.8813910462992726e-6)/1u' L='(0.5u)/1u' nf=1
+XM3 net1 net1 VDD VDD sky130_fd_pr__pfet_01v8 W='(8.84865072531957e-6)/1u' L='(1u)/1u' nf=1
+XM4 out net1 VDD VDD sky130_fd_pr__pfet_01v8 W='(8.84865072531957e-6)/1u' L='(1u)/1u' nf=1
+XM5 tail vbias VSS VSS sky130_fd_pr__nfet_01v8 W='(3.023519651188211e-6)/1u' L='(1u)/1u' nf=1
+**.ends
+.end

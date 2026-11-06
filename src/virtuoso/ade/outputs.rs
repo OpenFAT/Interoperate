@@ -544,11 +544,11 @@ fn emit<F: Fn(&str) -> Option<InstInfo>>(
 /// A number as ADE stores it, 7 significant digits, in engineering text (`632.1206m`, `1m`);
 /// any other text unchanged.
 fn ade_number(t: &str) -> String {
-    match schemify_expr::parse_num(t.trim()) {
+    match crate::expr::parse_num(t.trim()) {
         Ok(x) if x.is_finite() => {
             let r: f64 = format!("{x:.6e}").parse().unwrap_or(x);
             let mut s = String::new();
-            schemify_expr::write_num(&mut s, r);
+            crate::expr::write_num(&mut s, r);
             crate::virtuoso::read::si_text(&s)
         }
         _ => t.to_owned(),

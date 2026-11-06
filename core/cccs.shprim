@@ -1,0 +1,35 @@
+schemify 1 shprim
+  doc "Current-controlled current source: SPICE F element, i(p->m) = value * i(vnam)"
+  prefix F
+  category source
+
+pin p inout 0 -30
+pin n inout 0 30
+
+param vnam v1
+  kind string
+  doc "name of the voltage source whose current controls the output"
+param value 1
+  kind string
+  doc "current gain, or any SPICE F specification"
+
+impl spice spice
+  format spice "{name} {p} {n} {vnam} {value}"
+  format spectre "{name} ({p} {n}) cccs probe={vnam} gain={num(value)}"
+
+poly 0 -8.75 8.75 0 0 8.75 -8.75 0
+  width 2
+  closed true
+
+line 0 -30 0 -8.75
+line 0 8.75 0 30
+line 0 -5 0 0
+
+poly 0 5 -1.875 0 1.875 0
+  fill true
+  closed true
+
+stext 13.75 -9 R0 {name}
+  size 0.14
+stext 13.75 0 R0 {value}·i({vnam})
+  size 0.14

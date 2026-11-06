@@ -180,7 +180,7 @@ fn map_row(doc: &Document<'_>, r: u32, f: &[&str], line: u32) -> Result<MapRow, 
                 true
             }
             ("param", [s, t, "scale", k]) => {
-                if schemify_expr::Program::compile(k, schemify_expr::Mode::Scalar).is_err() {
+                if crate::expr::Program::compile(k, crate::expr::Mode::Scalar).is_err() {
                     errs.push(format!("line {at}: scale `{k}` is not an expression"));
                 }
                 row.params

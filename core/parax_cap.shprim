@@ -1,0 +1,29 @@
+schemify 1 shprim
+  doc "Parasitic capacitor to a reference net: SPICE C element from p to the inherited net gnd (default 0)"
+  prefix C
+  category passive
+
+pin p inout 0 -10
+pin gnd inout 0 0
+  inherit 0
+
+param value 4f
+  unit F
+  doc "capacitance (expression)"
+param m 1
+  doc "parallel multiplier"
+
+impl spice spice
+  format spice "{name} {p} {gnd} {value} m={m}"
+  format spectre "{name} ({p} {gnd}) capacitor c={value} m={m}"
+
+line 0 -10 0 -5
+line -7.5 -5 7.5 -5
+  dash 1
+line -7.5 0 7.5 0
+  dash 1
+
+stext 12.5 -14 R0 {name}
+  size 0.14
+stext 12.5 -5 R0 {eng(value)}
+  size 0.14

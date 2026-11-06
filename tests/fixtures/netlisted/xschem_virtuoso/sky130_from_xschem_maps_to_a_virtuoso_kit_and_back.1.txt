@@ -1,0 +1,104 @@
+top mylib/tb.shbench for Spectre
+== mylib/rspec.shprim
+schemify 1 shprim
+  prefix R
+  category primitive
+  provenance "xschem mylib/rspec.sym"
+  xfp 94e920e3707c66cf
+  vsym 6023306b1b245922
+
+pin P inout 0 -30
+pin M inout 0 30
+
+param r 1k
+
+impl spice spice
+  format spice "{name} {pins} rmod r={r}"
+  format spectre "{name} ( {pins} ) rmod r={r}"
+
+line 0 -30 0 30
+  layer 4
+== mylib/tb.shbench
+schemify 1 shbench
+  provenance "xschem mylib/tb.sch"
+  xfp f371d132ab2e7ddf
+  vsch 8cb57a91ef8f472e
+
+inst bkecrn sky130_fd_pr:nfet_01v8
+  at 0 0 R0
+  name M1
+  w 2e-6
+  l 5e-7
+inst d41jx3 ./rspec
+  at 200 0 R0
+  name R1
+  r 2k
+inst s5xjj6 core:res
+  at 300 0 R0
+  name R2
+  value 5k
+
+wire 58f7ek 40 0 50 0
+wire jwjcf4 -50 0 -40 0
+wire tbvjv6 0 -50 0 -40
+wire xsjdyk 0 40 0 50
+
+label 1jzdv0 300 -30 R0 G
+label 55k3je 20 30 R0 GND
+  global true
+label 5nyz55 -20 0 R0 G
+label 6f82vt -50 0 R0 G
+label 8yva0a 300 30 R0 GND
+  global true
+label drhx2r 20 -30 R0 D
+label f8kkgy 200 30 R0 G
+label fq6bdq 0 -50 R0 D
+label he0n1x 200 -30 R0 D
+label mx6ryh 50 0 R0 0
+label pkcras 20 30 R0 GND
+  global true
+label r0b6my 20 0 R0 GND
+  global true
+label rs7tb7 0 50 R0 0
+label xrszvy 20 0 R0 GND
+  global true
+== schemify.project
+schemify 1 project
+
+lib mylib path mylib
+lib sky130_fd_pr path sky130_fd_pr
+== sky130_fd_pr/nfet_01v8.shprim
+schemify 1 shprim
+  provenance "virtuoso sky130_fd_pr/nfet_01v8"
+  vibox -40 -40 40 40
+  vsym 25a1f83230558b23
+
+pin D inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin G in -40 0
+  vplabel 0 0 R0 centerLeft stick 10000
+pin S inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 40 0
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param model sky130_fd_pr__nfet_01v8
+  kind string
+  doc Model
+param w 1
+  kind string
+param l 1
+  kind string
+param nf 1
+  kind string
+param m 1
+  kind string
+
+impl spice spice
+  format spectre "{name} ({D} {G} {S} {B}) {model}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}

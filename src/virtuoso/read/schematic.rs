@@ -378,9 +378,9 @@ pub(super) fn schematic_in(
                             })
                             .filter(|t| {
                                 t.review.is_none()
-                                    && schemify_expr::Program::compile(
+                                    && crate::expr::Program::compile(
                                         &t.text,
-                                        schemify_expr::Mode::Scalar,
+                                        crate::expr::Mode::Scalar,
                                     )
                                     .is_ok()
                             })
@@ -418,9 +418,9 @@ pub(super) fn schematic_in(
                     });
                     match tr {
                         Some(tr)
-                            if schemify_expr::Program::compile(
+                            if crate::expr::Program::compile(
                                 &tr.text,
-                                schemify_expr::Mode::Scalar,
+                                crate::expr::Mode::Scalar,
                             )
                             .is_ok() =>
                         {

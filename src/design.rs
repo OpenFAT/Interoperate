@@ -166,7 +166,7 @@ pub fn manifest_libs(text: &[u8]) -> Result<BTreeMap<String, String>, Vec<String
 /// `files` must hold `schemify.project` (when any top uses `lib:cell` references) and every
 /// cell file of the closure; `absent` lists paths known not to exist (so the `.shcomp` /
 /// `.shprim` candidates of a reference can be tried in order). `core:*` cells come from
-/// `schemify_doc::core_library()`.
+/// `crate::core::core_library()`.
 ///
 /// # Errors
 ///
@@ -200,7 +200,7 @@ pub fn load(files: &Files, absent: &BTreeSet<String>, tops: &[&str]) -> Result<D
             )]));
         }
         let bytes: Vec<u8> = match path.strip_prefix("core/") {
-            Some(f) => match schemify_doc::core_library().iter().find(|(n, _)| *n == f) {
+            Some(f) => match crate::core::core_library().iter().find(|(n, _)| *n == f) {
                 Some((_, b)) => b.to_vec(),
                 None => {
                     problems.push(format!("{path}: not a bundled core cell"));

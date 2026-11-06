@@ -18,7 +18,8 @@
 #
 # Then each mapped bench is netlisted (SPICE: the cell above; CDL: the component
 # <stem>.shcomp first, as LVS checks the cell) and compared with diff_all.sh. NETLIST is
-# the command template, default the CLI built from this checkout:
+# the command template, required (Schemify's shipped command line has no netlister; a
+# development build's does):
 #   NETLIST='schemify netlist --dialect %dialect% -o %out% --allow-errors %cell%'
 # %cell% is the absolute cell path, %dialect% is ngspice or cdl, %out% the target file
 # (<out>/netlists/<bench>.spice|.cdl), run with PDK_ROOT/PDK/HOME exported as golden.sh
@@ -89,14 +90,7 @@ while read -r name rc path; do
 done < "$here/benches.txt"
 echo "wrote $map ($(wc -l < "$map") benches)"
 
-if [[ -z "${NETLIST:-}" ]]; then
-  # Schemify's CLI from the core revision Cargo.toml pins.
-  rev="$(sed -n 's/^schemify-format = .*rev = "\([0-9a-f]*\)".*/\1/p' "$repo/Cargo.toml")"
-  cargo install -q --locked --git https://github.com/OpenFAT/Schemify --rev "$rev" schemify-cli \
-    --root "$cache/tools"
-  cli="$cache/tools/bin/schemify"
-  NETLIST="$cli netlist --dialect %dialect% -o %out% --allow-errors %cell%"
-fi
+: "${NETLIST:?set NETLIST to a netlister command template, or NETLIST=none}"
 if [[ "$NETLIST" != none ]]; then
   mkdir -p "$out/netlists"
   while read -r name rc cell root pdk; do

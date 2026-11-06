@@ -11,7 +11,7 @@
 //! Nothing here guesses: anything outside the recognised idioms comes back as a
 //! [`Review`] for the caller's `needs_review` table.
 
-use schemify_expr::{Mode, Program};
+use crate::expr::{Mode, Program};
 
 /// Why a construct could not be translated; the caller turns it into a `needs_review`
 /// report item and leaves the affected field at its default.
@@ -865,7 +865,7 @@ mod tests {
         for (src, want) in rows {
             let got = convert_format(src, &ctx).unwrap_or_else(|e| panic!("{src}: {e:?}"));
             assert_eq!(&got.text, want, "{src}");
-            schemify_expr::Template::parse(&got.text).unwrap_or_else(|e| panic!("{want}: {e:?}"));
+            crate::expr::Template::parse(&got.text).unwrap_or_else(|e| panic!("{want}: {e:?}"));
         }
         // Unknown tokens become empty-default params; non-identifiers are dropped.
         let c = convert_format("@extra m=@m @gnd)", &ctx).unwrap();

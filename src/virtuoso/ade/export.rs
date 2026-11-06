@@ -73,7 +73,9 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         RecordKind::Montecarlo,
         RecordKind::Optimize,
         RecordKind::Config,
+        #[cfg(feature = "cadence-records")]
         RecordKind::Test,
+        #[cfg(feature = "cadence-records")]
         RecordKind::BenchParam,
     ];
     if !setup.iter().any(|k| c.records(*k).next().is_some()) {
@@ -84,7 +86,10 @@ pub fn export<F: Fn(&str) -> Option<InstInfo>>(
         .attr_values(0, VMAESDB)
         .get(1)
         .and_then(|x| mae_xml::Setup::from_xml(x).ok());
+    #[cfg(feature = "cadence-records")]
     let mut tests: Vec<u32> = c.records(RecordKind::Test).collect();
+    #[cfg(not(feature = "cadence-records"))]
+    let mut tests: Vec<u32> = Vec::new();
     tests.sort_by(|a, b| c.field(*a, 0).cmp(c.field(*b, 0)));
     let mut done: Vec<TestExport> = Vec::new();
     if tests.is_empty() {
@@ -508,6 +513,7 @@ fn export_test<F: Fn(&str) -> Option<InstInfo>>(
         }
     }
     // Device parameters: the bench's `param` records.
+    #[cfg(feature = "cadence-records")]
     for r in c.records(RecordKind::BenchParam) {
         let (p, e) = (c.field(r, 0), c.field(r, 1));
         match (param_to_virtuoso(p), to_ael(e, &vars, cell, notes)) {

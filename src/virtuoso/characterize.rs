@@ -315,7 +315,7 @@ pub fn mark_derived(text: &[u8], dev: &Device) -> Result<String, String> {
 /// elab writes for the value. `template`: the param is a string or a choice (its value is
 /// the text itself). `None` when the value is not a constant.
 pub fn canonical_value(text: &str, template: bool) -> Option<String> {
-    use schemify_expr::{Mode, Program, Scratch, Value};
+    use crate::expr::{Mode, Program, Scratch, Value};
     let mut out = String::new();
     let quote = |s: &str, out: &mut String| {
         out.push('"');
@@ -342,10 +342,10 @@ pub fn canonical_value(text: &str, template: bool) -> Option<String> {
         return None;
     }
     match prog.eval(&[], &mut Scratch::default()).ok()? {
-        Value::Num(x) => schemify_expr::write_num(&mut out, x),
-        Value::Int(x) => schemify_expr::write_int(&mut out, x),
+        Value::Num(x) => crate::expr::write_num(&mut out, x),
+        Value::Int(x) => crate::expr::write_int(&mut out, x),
         Value::Bool(b) => out.push_str(if b { "true" } else { "false" }),
-        Value::Str(s) => quote(s, &mut out),
+        Value::Str(s) => quote(&s, &mut out),
         _ => return None,
     }
     Some(out)

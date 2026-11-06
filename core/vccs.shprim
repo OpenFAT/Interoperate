@@ -1,0 +1,40 @@
+schemify 1 shprim
+  doc "Voltage-controlled current source: SPICE G element, i(p->m) = value * v(cp,cm)"
+  prefix G
+  category source
+
+pin p inout 0 -30
+pin n inout 0 30
+pin cp in -40 -20
+pin cn in -40 20
+
+param value 1u
+  kind string
+  doc "transconductance, or any SPICE G specification"
+
+impl spice spice
+  format spice "{name} {p} {n} {cp} {cn} {value}"
+  format spectre "{name} ({p} {n} {cp} {cn}) vccs gm={num(value)}"
+
+poly 0 -8.75 8.75 0 0 8.75 -8.75 0
+  width 2
+  closed true
+
+line 0 -30 0 -8.75
+line 0 8.75 0 30
+line 0 -5 0 0
+
+poly 0 5 -1.875 0 1.875 0
+  fill true
+  closed true
+
+line -40 -20 -30 -20
+line -27.5 -20 -22.5 -20
+line -25 -22.5 -25 -17.5
+line -40 20 -30 20
+line -27.5 20 -22.5 20
+
+stext 13.75 -9 R0 {name}
+  size 0.14
+stext 13.75 0 R0 {value}
+  size 0.14

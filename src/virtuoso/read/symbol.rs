@@ -388,7 +388,7 @@ pub(super) fn build(
             let Some(tmpl) = nlp_in(&l.text, label_set) else {
                 continue;
             };
-            let Ok(tp) = schemify_expr::Template::parse(&tmpl) else {
+            let Ok(tp) = crate::expr::Template::parse(&tmpl) else {
                 continue;
             };
             for id in tp.program().idents() {

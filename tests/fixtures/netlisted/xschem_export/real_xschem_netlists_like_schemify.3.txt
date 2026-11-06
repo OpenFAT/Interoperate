@@ -1,0 +1,22 @@
+** sch_path: <tmp>/xschem_export/app-inv/export/root/top.sch
+**.subckt top IN OUT
+*.ipin IN
+*.opin OUT
+x1 IN mid VDD VSS inv wp=4 wn=1
+x2 mid OUT VDD VSS inv wp=2 wn=1
+* noconn #net1
+**.ends
+
+* expanding   symbol:  root/inv.sym # of pins=4
+** sym_path: <tmp>/xschem_export/app-inv/export/root/inv.sym
+** sch_path: <tmp>/xschem_export/app-inv/export/root/inv.sch
+.subckt inv A Y VDD VSS  wp=2 wn=1
+*.ipin A
+*.opin Y
+*.iopin VDD
+*.iopin VSS
+MM1 Y A VDD VDD pmos W='(wp)*1u' L='(0.15)*1u'
+MM2 Y A VSS VSS nmos W='(wn)*1u' L='(0.15)*1u' nf=1
+.ends
+
+.end

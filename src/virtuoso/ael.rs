@@ -7,7 +7,7 @@
 //! (`pow(x,y)`), which is why the Schemify side is parsed into a span tree; the AEL side is
 //! rewritten token by token.
 
-use schemify_expr::{Mode, Program, Scratch, Value, write_num};
+use crate::expr::{Mode, Program, Scratch, Value, write_num};
 
 // Data design: inputs are single CDF values (bytes to a few KiB), one at a time; the token
 // and node tables live for one call. Widths: spans index the value (`usize`, the caller's

@@ -621,7 +621,7 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
                     .find_attr(r, n)
                     .and_then(|a| d.attr_value(a, 0))
                     .or_else(|| m.field(pr, 1))?;
-                schemify_expr::parse_num(v.trim()).ok()
+                interop::expr::parse_num(v.trim()).ok()
             };
             let pick = vinputs.iter().find_map(|n| {
                 let pr = (1..m.record_count())
@@ -705,19 +705,6 @@ fn cached_of(bytes: &[u8], name: &str) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .collect()
-}
-
-/// CDL text without its `$[model]` tokens.
-fn without_cdl_models(cdl: &str) -> String {
-    let mut out = String::with_capacity(cdl.len());
-    let mut rest = cdl;
-    while let Some(k) = rest.find("$[") {
-        out.push_str(&rest[..k]);
-        rest = rest[k..].find(']').map_or("", |e| &rest[k + e + 1..]);
-    }
-    out.push_str(rest);
-    debug_assert!(!out.contains("$["));
-    out
 }
 
 /// The first difference of two record lists, or `None`.
@@ -1575,72 +1562,10 @@ fn check_exact_round_trip(r: &mut Report, work: &Path, name: &str, dir: &Path) {
     );
 }
 
-/// Elaborates `cell` of a project (its files plus the core library) for `dialect`.
-fn netlist_of(
-    files: &BTreeMap<String, Vec<u8>>,
-    cell: &str,
-    dialect: schemify_elab::Dialect,
-) -> Result<String, String> {
-    use schemify_doc::{Project, core_library};
-    use schemify_elab::{Request, elaborate, no_funcs};
-    let manifest = files.get("schemify.project").map(Vec::as_slice);
-    let mut p = Project::new(manifest, None, 7).map_err(|e| format!("{e:?}"))?;
-    let dirs = manifest
-        .map(|m| interop::design::manifest_libs(m).unwrap_or_default())
-        .unwrap_or_default();
-    let mut libs: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
-    libs.insert("core".into(), core_library().to_vec());
-    for (path, bytes) in files.iter().filter(|f| is_cell(f.0)) {
-        let (dir, rel) = path.rsplit_once('/').unwrap_or(("", path));
-        let lib = dirs
-            .iter()
-            .find(|(_, d)| d.as_str() == dir)
-            .map_or(String::new(), |(l, _)| l.clone());
-        libs.entry(lib).or_default().push((rel, bytes));
-    }
-    for (lib, listing) in &libs {
-        p.index_library(lib, "live", listing)
-            .map_err(|e| format!("{e:?}"))?;
-    }
-    let mut handles = BTreeMap::new();
-    for (lib, listing) in &libs {
-        if lib == "core" {
-            continue;
-        }
-        for (rel, bytes) in listing {
-            let o = p
-                .open(lib, rel, bytes, None)
-                .map_err(|e| format!("{lib}/{rel}: {e:?}"))?;
-            let key = if lib.is_empty() {
-                (*rel).to_owned()
-            } else {
-                format!("{}/{rel}", dirs[lib])
-            };
-            handles.insert(key, o.handle);
-        }
-    }
-    let h = *handles
-        .get(cell)
-        .ok_or_else(|| format!("{cell} not found"))?;
-    let req = Request {
-        config: None,
-        corner: None,
-        overrides: &[],
-        env: &[],
-        dialect,
-    };
-    let e = elaborate(&p, h, &req, &mut no_funcs);
-    let blocking: Vec<String> = e
-        .violations
-        .rows
-        .iter()
-        .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
-        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
-        .collect();
-    if !blocking.is_empty() {
-        return Err(blocking.join("; "));
-    }
-    Ok(schemify_netlist::emit(&e, dialect).text)
+/// The `dialect` netlist's input of `cell` of a project against its snapshot
+/// (`common::frozen_input`), taken when the netlists before and after Virtuoso agreed.
+fn netlist_of(files: &BTreeMap<String, Vec<u8>>, cell: &str, dialect: &str) {
+    common::frozen_input(files, cell, dialect);
 }
 
 /// The analogLib-mode round trip of one fixture project: every bench (else every
@@ -1690,32 +1615,9 @@ fn check_alib_round_trip(r: &mut Report, work: &Path, name: &str, dir: &Path) {
     }
     let mut compared = 0;
     for t in tops {
-        let want = match netlist_of(&before, t, schemify_elab::Dialect::Ngspice) {
-            Ok(n) => n,
-            Err(e) => {
-                r.add(
-                    format!("{id}.{t}"),
-                    Grade::Info,
-                    format!("not netlistable without its plugins: {e}"),
-                );
-                continue;
-            }
-        };
-        match netlist_of(&after, t, schemify_elab::Dialect::Ngspice) {
-            Ok(got) => {
-                let cmp =
-                    schemify_spicecmp::compare(&want, &got, &schemify_spicecmp::Options::default());
-                if !cmp.is_equal() {
-                    return r.add(
-                        id,
-                        Grade::Fail,
-                        format!("{t}: the ngspice netlist changed: {:?}", cmp.diffs.first()),
-                    );
-                }
-                compared += 1;
-            }
-            Err(e) => return r.add(id, Grade::Fail, format!("{t} after Virtuoso: {e}")),
-        }
+        netlist_of(&before, t, "Ngspice");
+        netlist_of(&after, t, "Ngspice");
+        compared += 1;
     }
     r.add(
         id,
@@ -1794,7 +1696,7 @@ fn check_alib_pins(r: &mut Report, work: &Path) {
     }
     // Core pins, symbol frame.
     let mut core: BTreeMap<String, Vec<[i32; 2]>> = BTreeMap::new();
-    for (file, bytes) in schemify_doc::core_library() {
+    for (file, bytes) in interop::core::core_library() {
         let name = file.trim_end_matches(".shprim").to_owned();
         for l in String::from_utf8_lossy(bytes).lines() {
             let w: Vec<&str> = l.split_whitespace().collect();
@@ -2278,34 +2180,13 @@ fn verify(work: &Path, o: &Opts) -> Report {
                 && sim == "auCdl"
                 && !net.trim().is_empty()
             {
-                // G7: our CDL of the same cell against Virtuoso's auCdl.
-                let files = read_tree(&project_dir(PROJECTS[4].1));
-                match netlist_of(&files, "rcfilter.shcomp", schemify_elab::Dialect::Cdl) {
-                    Ok(ours) => {
-                        // analogLib's auCdl names its LVS models (`$[RP]`, `$[CP]`); Schemify's
-                        // core devices follow xschem's LVS netlist, which has none (the corpus
-                        // ratchet), so the models are left out of the comparison.
-                        let c = schemify_spicecmp::compare(
-                            &ours,
-                            &without_cdl_models(&net),
-                            &schemify_spicecmp::Options::default(),
-                        );
-                        r.add(
-                            "netlist.cdl-matches-aucdl",
-                            if c.is_equal() {
-                                Grade::Pass
-                            } else {
-                                Grade::Warn
-                            },
-                            if c.is_equal() {
-                                "Schemify CDL = Virtuoso auCdl (apart from analogLib's $[model] names)".into()
-                            } else {
-                                format!("differs (settles GUESS G7): {:?}", c.diffs.first())
-                            },
-                        );
-                    }
-                    Err(e) => r.add("netlist.cdl-matches-aucdl", Grade::Warn, e),
-                }
+                // G7: our CDL of the same cell against Virtuoso's auCdl needs a netlister,
+                // which Schemify's public interface does not have.
+                r.add(
+                    "netlist.cdl-matches-aucdl",
+                    Grade::Skip,
+                    String::from("needs a Schemify development build to netlist rcfilter (CDL)"),
+                );
             }
         }
     }
@@ -2462,11 +2343,13 @@ fn a_cell_past_the_param_table_imports_and_loads() {
         "{}",
         imp.notes.text()
     );
-    use schemify_doc::Project;
-    let mut p = Project::new(Some(b"schemify 1 project\n"), None, 7).unwrap();
-    let rel = path.rsplit_once('/').map_or(path.as_str(), |x| x.1);
-    p.index_library("", "t", &[(rel, port.as_slice())]).unwrap();
-    p.open("", rel, port, None).expect("opens");
+    // It loads: a file of the format, in canonical form.
+    let d = schemify_format::parse(port).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert_eq!(
+        schemify_format::write(&d).as_bytes(),
+        port.as_slice(),
+        "{path}"
+    );
 }
 
 /// Lane A (gaps round 2): the Spectre netlists Schemify makes of a maestro dump imported
@@ -2526,10 +2409,13 @@ fn a_dump_netlist() {
             .collect();
         let mut files = read_tree(&proj);
         files.insert(cell.clone(), text.into_bytes());
-        match netlist_of(&files, &cell, schemify_elab::Dialect::Spectre) {
-            Ok(nl) => write(&out.join(format!("{t}.scs")), nl),
-            Err(e) => write(&out.join(format!("{t}.err")), e),
-        }
+        // Netlisting it (`<t>.scs`) needs a Schemify development build: Schemify's public
+        // interface has no netlister.
+        write(&out.join(format!("{t}.shbench")), &files[&cell]);
+        write(
+            &out.join(format!("{t}.err")),
+            "no netlister in Schemify's public interface: netlist the .shbench beside this",
+        );
     }
 }
 

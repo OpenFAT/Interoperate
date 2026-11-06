@@ -1,5 +1,5 @@
 //! The table that maps xschem's `devices/<name>.sym` onto the bundled `core` library
-//! (spec `import.md` §6; the library itself is `schemify_doc::core_library`).
+//! (spec `import.md` §6), and that library itself ([`core_library`], the files in `core/`).
 //!
 //! The core cells' pin *positions* follow xschem's devices, because imported schematics
 //! connect by geometry. The map below is data: one row per mapped symbol, with the pin and
@@ -181,16 +181,63 @@ impl DeviceMap {
     }
 }
 
+macro_rules! core_files {
+    ($($name:literal),* $(,)?) => {
+        &[$(($name, include_bytes!(concat!(env!("CARGO_MANIFEST_DIR"), "/core/", $name)))),*]
+    };
+}
+
+/// The core library's files, sorted by name.
+static CORE_FILES: &[(&str, &[u8])] = core_files![
+    "ammeter.shprim",
+    "bsource.shprim",
+    "cap.shprim",
+    "cccs.shprim",
+    "ccvs.shprim",
+    "diode.shprim",
+    "gnd.shprim",
+    "ind.shprim",
+    "isource.shprim",
+    "nmos4.shprim",
+    "npn.shprim",
+    "parax_cap.shprim",
+    "pmos4.shprim",
+    "pnp.shprim",
+    "probe.shprim",
+    "res.shprim",
+    "switch.shprim",
+    "tline.shprim",
+    "vccs.shprim",
+    "vcvs.shprim",
+    "vdd.shprim",
+    "vsource.shprim",
+    "vswitch.shprim",
+];
+
+/// Returns Schemify's built-in `core` library (`lib core builtin`) as `(file name, bytes)`,
+/// sorted by file name.
+pub fn core_library() -> &'static [(&'static str, &'static [u8])] {
+    CORE_FILES
+}
+
+/// Returns the bytes of core cell `cell` (a stem: `res` for `res.shprim`).
+pub fn core_file(cell: &str) -> Option<&'static [u8]> {
+    CORE_FILES
+        .iter()
+        .find(|(n, _)| n.strip_suffix(".shprim") == Some(cell))
+        .map(|(_, b)| *b)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use schemify_doc::core_file;
 
     #[test]
     fn every_mapped_cell_exists() {
         for m in DEVICE_MAP {
             assert!(core_file(m.cell).is_some(), "{}", m.cell);
         }
+        assert!(CORE_FILES.windows(2).all(|w| w[0].0 < w[1].0));
         assert!(DEVICE_MAP.windows(2).all(|w| w[0].symbol < w[1].symbol));
         assert_eq!(device_map("res").map(|m| m.pin("M")), Some("n"));
         assert!(device_map("lab_pin").is_none());

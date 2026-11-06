@@ -1,0 +1,15 @@
+** sch_path: <tmp>/xschem_export/gen-7/export/root/tb.sch
+**.subckt tb
+D0 c b dmod area=2
+R1 b b 10k m=1
+M2 c c b a pmos w=4u l=0.18u m=1
+R3 b b 10k m=1
+L4 a a 3n m=1
+Q5 0 a b qmod area=1 m=1
+**** begin user architecture code
+
+.op
+
+**** end user architecture code
+**.ends
+.end

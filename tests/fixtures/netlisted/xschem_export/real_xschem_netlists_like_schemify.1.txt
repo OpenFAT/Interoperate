@@ -1,0 +1,18 @@
+** sch_path: <tmp>/xschem_export/app-rc/export/root/tb.sch
+**.subckt tb
+R1 in out 'R'
+C1 out 0 'C'
+**** begin user architecture code
+
+.param R=3.3k
+.param C=1u
+
+
+V1 in 0 1
+.ic v(out)=0
+.op
+.tran 1u 5m 0 1u uic
+
+**** end user architecture code
+**.ends
+.end

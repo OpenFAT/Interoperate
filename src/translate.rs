@@ -714,7 +714,7 @@ impl<'o> Tables<'o> {
         }
         let map = core::device_map(stem_of(path))?;
         let iface = self.core_ifaces.entry(map.cell).or_insert_with(|| {
-            iface_of_cell_bytes(schemify_doc::core_file(map.cell).expect("mapped cell exists"))
+            iface_of_cell_bytes(crate::core::core_file(map.cell).expect("mapped cell exists"))
         });
         let sym = &self.syms[s].iface;
         let same = sym.pins.name.len() == iface.pins.len()
@@ -3320,7 +3320,7 @@ fn stext_template(text: &str, params: &[String], spiceprefix: Option<&str>) -> O
     for u in c.unknown.iter().chain(["pins".to_owned()].iter()) {
         t = t.replace(&format!("{{{u}}}"), "");
     }
-    let parsed = schemify_expr::Template::parse(&t).ok()?;
+    let parsed = crate::expr::Template::parse(&t).ok()?;
     let ok = parsed
         .program()
         .idents()
@@ -3352,7 +3352,7 @@ fn override_text(
                 .unwrap_or(t);
             let e = template::translate_expr(inner, ExprMode::Spice, known)
                 .ok_or_else(|| fail(Reason::Expression))?;
-            debug_assert!(schemify_expr::Program::compile(&e, schemify_expr::Mode::Scalar).is_ok());
+            debug_assert!(crate::expr::Program::compile(&e, crate::expr::Mode::Scalar).is_ok());
             Ok(e)
         }
         Kind::Bool => truthy(t)
@@ -3441,7 +3441,7 @@ fn param_pairs(
             return None;
         }
         let e = template::translate_expr(&v, ExprMode::Spice, &names)?;
-        let p = schemify_expr::Program::compile(&e, schemify_expr::Mode::Scalar).ok()?;
+        let p = crate::expr::Program::compile(&e, crate::expr::Mode::Scalar).ok()?;
         if !p.idents().all(|id| names.iter().any(|n| n == id)) {
             return None;
         }

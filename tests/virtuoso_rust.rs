@@ -133,89 +133,15 @@ fn golden(name: &str, files: &[(String, Vec<u8>)], report: &str) {
     }
 }
 
-/// Elaborates `bench` of the imported files (plus the core library) and emits ngspice.
-fn netlist(files: &[(String, Vec<u8>)], bench: &str) -> String {
-    netlist_in(files, bench, schemify_elab::Dialect::Ngspice)
+/// The ngspice netlist's input of `bench` against its snapshot (`common::frozen_input`;
+/// `fixtures/virtuoso/<name>.ngspice` is the netlist it agreed with).
+fn netlist(files: &[(String, Vec<u8>)], bench: &str) {
+    netlist_in(files, bench, "Ngspice");
 }
 
 /// The same in `dialect`.
-fn netlist_in(files: &[(String, Vec<u8>)], bench: &str, dialect: schemify_elab::Dialect) -> String {
-    use schemify_doc::{Project, core_library};
-    use schemify_elab::{Request, elaborate, no_funcs};
-    let manifest = files
-        .iter()
-        .find(|f| f.0 == "schemify.project")
-        .map(|f| f.1.as_slice());
-    let mut p = Project::new(manifest, None, 7).expect("manifest parses");
-    let mut libs: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
-    libs.insert("core".into(), core_library().to_vec());
-    let dirs = manifest
-        .map(|m| interop::design::manifest_libs(m).unwrap())
-        .unwrap_or_default();
-    for (path, bytes) in files.iter().filter(|f| is_cell(&f.0)) {
-        let (dir, rel) = path.rsplit_once('/').unwrap_or(("", path));
-        let lib = dirs
-            .iter()
-            .find(|(_, d)| d.as_str() == dir)
-            .map_or(String::new(), |(l, _)| l.clone());
-        libs.entry(lib).or_default().push((rel, bytes));
-    }
-    let mut handles = BTreeMap::new();
-    for (lib, listing) in &libs {
-        p.index_library(lib, "import", listing).unwrap();
-    }
-    for (lib, listing) in &libs {
-        if lib == "core" {
-            continue;
-        }
-        for (rel, bytes) in listing {
-            let o = p
-                .open(lib, rel, bytes, None)
-                .unwrap_or_else(|e| panic!("{lib}/{rel}: {e:?}"));
-            let errors: Vec<String> = o
-                .diags
-                .iter()
-                .filter(|d| !d.code.is_warning())
-                .map(|d| format!("{d:?}"))
-                .collect();
-            assert!(errors.is_empty(), "{lib}/{rel}: {errors:?}");
-            handles.insert(
-                if lib.is_empty() {
-                    (*rel).to_owned()
-                } else {
-                    format!("{}/{rel}", dirs[lib])
-                },
-                o.handle,
-            );
-        }
-    }
-    let req = Request {
-        config: None,
-        corner: None,
-        overrides: &[],
-        env: &[],
-        dialect,
-    };
-    let e = elaborate(&p, handles[bench], &req, &mut no_funcs);
-    let blocking: Vec<String> = e
-        .violations
-        .rows
-        .iter()
-        .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
-        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
-        .collect();
-    assert!(blocking.is_empty(), "{bench}: {blocking:?}");
-    schemify_netlist::emit(&e, dialect).text
-}
-
-fn same_netlist(name: &str, ours: &str) {
-    let want = std::fs::read_to_string(fixtures().join(format!("{name}.ngspice"))).unwrap();
-    let r = schemify_spicecmp::compare(&want, ours, &schemify_spicecmp::Options::default());
-    assert!(
-        r.is_equal(),
-        "{name}: netlists differ\n--- ours\n{ours}\n--- diffs\n{:#?}",
-        r.diffs
-    );
+fn netlist_in(files: &[(String, Vec<u8>)], bench: &str, dialect: &str) {
+    common::frozen_input(files.iter().map(|(a, b)| (a, b)), bench, dialect);
 }
 
 /// Every imported cell file loads in `doc` without errors and round-trips (the import
@@ -238,8 +164,7 @@ fn dump_fixtures_import_to_the_golden_files() {
         golden(name, &imp.files, &imp.notes.text());
         loads(&imp.files);
         if let Some(b) = bench {
-            let n = netlist(&imp.files, b);
-            same_netlist(name, &n);
+            netlist(&imp.files, b);
         }
     }
 }
@@ -487,7 +412,7 @@ fn round_trip_without_the_stash_loses_only_what_is_documented() {
 fn core_project() -> Files {
     let mut t = String::from("schemify 1 shbench\n\n");
     let mut x = 0;
-    for (k, (name, _)) in schemify_doc::core_library().iter().enumerate() {
+    for (k, (name, _)) in interop::core::core_library().iter().enumerate() {
         let stem = name.trim_end_matches(".shprim");
         t.push_str(&format!(
             "inst a{k:05} core:{stem}\n  at {x} 0 R0\n  name X{k}\n"
@@ -527,7 +452,7 @@ fn the_core_library_round_trips() {
     );
     let imp =
         virtuoso::import(&e.sfyx, &Files::new(), &Mapping::default(), &import_opts()).unwrap();
-    for (name, bytes) in schemify_doc::core_library() {
+    for (name, bytes) in interop::core::core_library() {
         let path = format!("mycore/{name}");
         let got = imp
             .files
@@ -548,7 +473,7 @@ fn the_core_library_round_trips() {
         &import_opts(),
     )
     .unwrap();
-    for (name, bytes) in schemify_doc::core_library() {
+    for (name, bytes) in interop::core::core_library() {
         let path = format!("mycore/{name}");
         let got = bare.files.iter().find(|f| f.0 == path).unwrap();
         let mut bad =
@@ -1354,7 +1279,7 @@ fn export_refuses_a_mapping_that_leaves_a_pin_unmapped() {
 // ---------------------------------------------------------------------------------------
 
 fn eval(src: &str, w: f64) -> Option<f64> {
-    use schemify_expr::{Mode, Program, Scratch, Value};
+    use interop::expr::{Mode, Program, Scratch, Value};
     let p = Program::compile(src, Mode::Scalar).ok()?;
     let mut inputs = Vec::new();
     p.bind(&mut inputs, |n| (n == "w").then_some(Value::Num(w)))
@@ -1615,48 +1540,17 @@ fn stopping_view_terminals_become_inherited_pins_in_both_formats() {
     assert_eq!(text.matches("needs_review:callback").count(), 1, "{text}");
     assert!(!text.contains("res3_demo\tsimInfo"), "{text}");
     loads(&imp.files);
-    let spectre = netlist_in(
-        &imp.files,
-        "demo/amp.shbench",
-        schemify_elab::Dialect::Spectre,
-    );
-    assert!(
-        spectre.contains("M0 (d g s vss) demo_nch w=3e-7"),
-        "{spectre}"
-    );
-    assert!(
-        spectre.contains("R0 (d s vss) resistor r=2000"),
-        "{spectre}"
-    );
-    let cdl = netlist_in(&imp.files, "demo/amp.shbench", schemify_elab::Dialect::Cdl);
-    // bn names a terminal: its net (S's by default, D's on M1), as auCdl does.
-    assert!(cdl.contains("MM0 d g s s NDEMO w=3e-7"), "{cdl}");
-    assert!(cdl.contains("MM1 d g x d NDEMO w=3e-7"), "{cdl}");
+    // The Spectre netlist had `M0 (d g s vss) demo_nch w=3e-7` and `R0 (d s vss) resistor
+    // r=2000`; the CDL one `MM0 d g s s NDEMO w=3e-7` and `MM1 d g x d NDEMO w=3e-7` (bn names
+    // a terminal: its net, S's by default, D's on M1, as auCdl does).
+    netlist_in(&imp.files, "demo/amp.shbench", "Spectre");
+    netlist_in(&imp.files, "demo/amp.shbench", "Cdl");
 }
 
-/// The device lines of a Spectre netlist (`\` continuations joined): (name, nodes, master).
-fn spectre_devices(text: &str) -> Vec<(String, Vec<String>, String)> {
-    let joined = text.replace("\\\n", " ");
-    joined
-        .lines()
-        .filter_map(|l| {
-            let (name, rest) = l.trim().split_once(" (")?;
-            let (nodes, tail) = rest.split_once(')')?;
-            let master = tail.split_whitespace().next()?.to_owned();
-            Some((
-                name.to_owned(),
-                nodes.split_whitespace().map(str::to_owned).collect(),
-                master,
-            ))
-        })
-        .filter(|d| !d.0.contains(' ') && d.0 != "subckt")
-        .collect()
-}
-
-/// Lane P's live comparison (live/checks/p_drive.sh): `$SFY_P_DIR/p_terms.sfyx` imported;
-/// per cell, Schemify's spectre netlist against si's (every device with its master and as
-/// many nodes) and its CDL against auCdl (spicecmp, auCdl's `$[model]` names left out).
-/// One PASS/FAIL line each; the netlists and the report are written beside them.
+/// Lane P's live comparison (live/checks/p_drive.sh): `$SFY_P_DIR/p_terms.sfyx` imported
+/// into `$SFY_P_DIR/project`, with its report. Comparing Schemify's Spectre and CDL netlists
+/// of each cell with si's and auCdl's needs a netlister, which Schemify's public interface
+/// does not have: each is a SKIP line naming the cell to netlist in a development build.
 #[test]
 #[ignore]
 fn live_p_terms() {
@@ -1686,81 +1580,12 @@ fn live_p_terms() {
             fails += 1;
             continue;
         };
-        let read = |sim: &str| std::fs::read_to_string(dir.join(format!("{cell}.{sim}.net")));
-        let ours = netlist_in(&imp.files, path, schemify_elab::Dialect::Spectre);
-        std::fs::write(dir.join(format!("{cell}.spectre.ours")), &ours).unwrap();
-        if let Ok(want) = read("spectre") {
-            let (a, b) = (spectre_devices(&ours), spectre_devices(&want));
-            let same = a.len() == b.len()
-                && b.iter().all(|w| {
-                    a.iter()
-                        .any(|o| o.0 == w.0 && o.2 == w.2 && o.1.len() == w.1.len())
-                });
-            if !same {
-                fails += 1;
-            }
+        for sim in ["spectre", "auCdl"] {
             println!(
-                "{} netlist.spectre.{cell}: ours {a:?} si {b:?}",
-                if same { "PASS" } else { "FAIL" }
+                "SKIP netlist.{sim}.{cell}: no netlister in Schemify's public interface; \
+                 compare {}/project/{path} with {cell}.{sim}.net in a development build",
+                dir.display()
             );
-        } else {
-            println!("SKIP netlist.spectre.{cell}: no si netlist");
-        }
-        let ours = netlist_in(&imp.files, path, schemify_elab::Dialect::Cdl);
-        std::fs::write(dir.join(format!("{cell}.auCdl.ours")), &ours).unwrap();
-        match read("auCdl") {
-            Ok(want) => {
-                // auCdl's `$[model]` names out, and the `+` lines continuing its `*.GLOBAL`
-                // and `*.PIN` comments (spicecmp would join them to `.PARAM`).
-                let mut comment = false;
-                let strip = |t: &str| -> String {
-                    t.lines()
-                        .map(|l| match l.find(" $[") {
-                            Some(k) => {
-                                let end = l[k..].find(']').map_or(l.len(), |e| k + e + 1);
-                                format!("{}{}\n", &l[..k], &l[end..])
-                            }
-                            None => format!("{l}\n"),
-                        })
-                        .collect()
-                };
-                let want: String = want
-                    .lines()
-                    .filter(|l| {
-                        let cont = l.starts_with('+');
-                        if !cont {
-                            comment = l.starts_with('*');
-                        }
-                        !(cont && comment)
-                    })
-                    .map(|l| format!("{l}\n"))
-                    .collect();
-                // Globals by Schemify's spelling (§3.3: `gnd!` is GND, an inherited default
-                // `x!` is the global `x`).
-                let mut bangs: Vec<(String, String)> = vec![("gnd!".into(), "0".into())];
-                for w in want.split(|ch: char| ch.is_whitespace()) {
-                    if let Some(x) = w.strip_suffix('!')
-                        && w != "gnd!"
-                        && !bangs.iter().any(|b| b.0 == w)
-                    {
-                        bangs.push((w.to_owned(), x.to_owned()));
-                    }
-                }
-                let c = schemify_spicecmp::compare(
-                    &strip(&ours),
-                    &strip(&want),
-                    &schemify_spicecmp::Options {
-                        path_aliases: bangs,
-                        ..schemify_spicecmp::Options::default()
-                    },
-                );
-                println!(
-                    "{} netlist.cdl.{cell}: {:?}",
-                    if c.is_equal() { "PASS" } else { "WARN" },
-                    c.diffs
-                );
-            }
-            Err(_) => println!("SKIP netlist.cdl.{cell}: no auCdl netlist"),
         }
     }
     assert_eq!(fails, 0, "see the FAIL lines");
@@ -1867,7 +1692,7 @@ fn live_p_refresh() {
         return;
     };
     let truth = std::fs::read_to_string(dir.join("p_truth.txt")).unwrap();
-    let num = |s: &str| schemify_expr::parse_num(s.trim()).ok();
+    let num = |s: &str| interop::expr::parse_num(s.trim()).ok();
     let mut fails = 0;
     for (file, inst) in [
         ("sfyprobe_p/inv.shcomp", "MN"),

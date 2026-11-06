@@ -1,0 +1,20 @@
+** sch_path: <tmp>/xschem_export/elab-bus_tb/export/root/bus_tb.sch
+**.subckt bus_tb
+X[3] din[3] dout[0] inv wn=0.5 wp=2 l=0.15
+X[2] din[2] dout[1] inv wn=0.5 wp=2 l=0.15
+X[1] din[1] dout[2] inv wn=0.5 wp=2 l=0.15
+X[0] din[0] dout[3] inv wn=0.5 wp=2 l=0.15
+**.ends
+
+* expanding   symbol:  root/inv.sym # of pins=2
+** sym_path: <tmp>/xschem_export/elab-bus_tb/export/root/inv.sym
+** sch_path: <tmp>/xschem_export/elab-bus_tb/export/root/inv.sch
+.subckt inv A Y  wn=1 wp=2 l=0.15
+*.ipin A
+*.opin Y
+MMN Y A 0 0 nfet W='(wn)*1u' L='(l)*1u' nf=1 ad='((wn)*0.29)*1p'
+MMP Y A vdd! vdd! pfet W='(wp)*1u' L='(l)*1u'
+.ends
+
+.GLOBAL vdd!
+.end

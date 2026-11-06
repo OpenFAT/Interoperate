@@ -1,0 +1,63 @@
+top tb.shbench for Ngspice
+== tb.shbench
+schemify 1 shbench
+  doc "generated core bench 6"
+
+inst 000001 core:nmos4
+  at 0 0 MR0
+  name M0
+  model nch
+  l 0.5u
+inst 000007 core:npn
+  at 200 0 R270
+  name Q1
+  model qmod
+inst 000012 core:cap
+  at 400 0 MR180
+  name C2
+  value 2p
+  m 2
+inst 000016 core:isource
+  at 600 0 R0
+  name I3
+  value 1m
+inst 000020 core:vsource
+  at 800 0 MR180
+  name V4
+  value "dc 1.8 ac 1"
+inst 000025 core:nmos4
+  at 1000 0 R270
+  name M5
+  model nch
+  l 0.5u
+
+wire 000002 -20 -30 10 -40
+wire 000009 200 20 230 10
+wire 000014 400 -30 430 -40
+wire 000018 600 30 630 20
+wire 000021 800 30 830 20
+wire 000023 800 -30 830 -40
+wire 000026 970 -20 1000 -30
+wire 000028 1000 20 1030 10
+wire 000030 1030 -20 1060 -30
+
+label 000003 10 -40 R0 b
+label 000004 20 0 R0 c
+label 000005 -20 30 R0 b
+label 000006 -20 0 R0 a
+label 000008 170 -20 R0 c
+label 000010 230 10 R0 c
+label 000011 230 -20 R0 c
+label 000013 400 30 R0 0
+label 000015 430 -40 R0 0
+label 000017 600 -30 R0 b
+label 000019 630 20 R0 b
+label 000022 830 20 R0 b
+label 000024 830 -40 R0 b
+label 000027 1000 -30 R0 b
+label 000029 1030 10 R0 b
+label 000031 1060 -30 R0 a
+label 000032 1000 -20 R0 a
+
+code op spice
+  | .op

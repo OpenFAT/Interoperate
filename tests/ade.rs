@@ -275,6 +275,10 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
 // ---------------------------------------------------------------------------------------
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn generated_benches_round_trip_through_maestro_records() {
     for seed in 0..32 {
         let with_param = seed % 8 == 7;
@@ -499,6 +503,10 @@ fn fixtures() -> PathBuf {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn maestro_dumps_import_to_their_golden_benches() {
     for name in ["spice", "native", "gaps2"] {
         let text = std::fs::read_to_string(fixtures().join(format!("{name}.sfyx"))).unwrap();
@@ -767,6 +775,10 @@ fn the_exported_model_list_replaces_the_session_defaults() {
 /// both sides: dumped apart from the global, imported as the test's `set`, loaded as a
 /// test variable, so the other test of the view keeps seeing the global.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn test_variables_override_globals_in_their_test_only() {
     let (text, _) = export(&project(&canonical(&gen_bench(5, false).text)));
     // The same test twice under two names, in one maestro view.
@@ -843,6 +855,10 @@ fn test_variables_override_globals_in_their_test_only() {
 /// Gaps round 2 (lane A): simulator options, the corners a test runs and a test bound to
 /// another cell go through the loader and the dumper on the mock maestro and come back.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn sim_options_corner_runs_and_designs_cross_the_mock() {
     let bench = "schemify 1 shbench\n\nvar vdd 1.8\n\ncorner c1\n  temp 27\ncorner c2\n  temp 85\n\n\
                  test sim\n  code sim\n  corner c1\ntest t2\n  code sim\n  design ./other\n\n\

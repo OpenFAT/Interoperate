@@ -94,17 +94,14 @@ pub(super) fn cell_value(d: &Design, ci: usize, src: &str) -> Option<f64> {
         let mut inputs = Vec::new();
         let mut k = 0;
         p.bind(&mut inputs, |_| {
-            let v = vals[k].map(schemify_expr::Value::Num);
+            let v = vals[k].map(crate::expr::Value::Num);
             k += 1;
             v
         })
         .ok()?;
-        match p
-            .eval(&inputs, &mut schemify_expr::Scratch::default())
-            .ok()?
-        {
-            schemify_expr::Value::Num(x) => Some(x),
-            schemify_expr::Value::Int(i) => Some(i as f64),
+        match p.eval(&inputs, &mut crate::expr::Scratch::default()).ok()? {
+            crate::expr::Value::Num(x) => Some(x),
+            crate::expr::Value::Int(i) => Some(i as f64),
             _ => None,
         }
     }

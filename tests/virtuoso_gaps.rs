@@ -9,10 +9,8 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use common::is_cell;
 use interop::map::Mapping;
 use interop::virtuoso::{self, ExportOptions, ImportOptions};
-use schemify_elab::Dialect;
 
 type Files = BTreeMap<String, Vec<u8>>;
 
@@ -35,83 +33,10 @@ fn import() -> (Files, String) {
     (imp.files.into_iter().collect(), imp.notes.text())
 }
 
-/// The netlist of `cell` (a project path) in `dialect`, elab's errors refused.
-fn netlist(files: &Files, cell: &str, dialect: Dialect) -> String {
-    use schemify_doc::{Project, core_library};
-    use schemify_elab::{Request, elaborate, no_funcs};
-    let manifest = files.get("schemify.project").map(Vec::as_slice);
-    let mut p = Project::new(manifest, None, 7).expect("manifest");
-    let dirs = manifest
-        .map(|m| interop::design::manifest_libs(m).unwrap())
-        .unwrap_or_default();
-    let mut libs: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
-    libs.insert("core".into(), core_library().to_vec());
-    for (path, bytes) in files.iter().filter(|f| is_cell(f.0)) {
-        let (dir, rel) = path.rsplit_once('/').unwrap_or(("", path));
-        let lib = dirs
-            .iter()
-            .find(|(_, d)| d.as_str() == dir)
-            .map_or(String::new(), |(l, _)| l.clone());
-        libs.entry(lib).or_default().push((rel, bytes));
-    }
-    for (lib, listing) in &libs {
-        p.index_library(lib, "gaps", listing).unwrap();
-    }
-    let mut handles = BTreeMap::new();
-    for (lib, listing) in libs.iter().filter(|l| l.0 != "core") {
-        for (rel, bytes) in listing {
-            let o = p.open(lib, rel, bytes, None).unwrap();
-            handles.insert(format!("{}/{rel}", dirs[lib]), o.handle);
-        }
-    }
-    let req = Request {
-        config: None,
-        corner: None,
-        overrides: &[],
-        env: &[],
-        dialect,
-    };
-    let e = elaborate(&p, handles[cell], &req, &mut no_funcs);
-    let errors: Vec<String> = e
-        .violations
-        .rows
-        .iter()
-        .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
-        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
-        .collect();
-    assert!(errors.is_empty(), "{cell}: {errors:?}");
-    schemify_netlist::emit(&e, dialect).text
-}
-
-/// Instance → its nets, from spectre instance lines `name (n1 n2 …) master …`.
-fn spectre_insts(text: &str) -> BTreeMap<String, Vec<String>> {
-    text.lines()
-        .filter_map(|l| {
-            let (name, rest) = l.trim().split_once(" (")?;
-            let (nets, _) = rest.split_once(')')?;
-            (!name.starts_with("//") && !name.contains(' ')).then(|| {
-                (
-                    name.to_owned(),
-                    nets.split_whitespace().map(str::to_owned).collect(),
-                )
-            })
-        })
-        .collect()
-}
-
-/// True when both tables connect the same instance positions together (net names aside).
-fn same_partition(a: &BTreeMap<String, Vec<String>>, b: &BTreeMap<String, Vec<String>>) -> bool {
-    let mut ab: BTreeMap<&str, &str> = BTreeMap::new();
-    let mut ba: BTreeMap<&str, &str> = BTreeMap::new();
-    a.len() == b.len()
-        && a.iter().all(|(k, na)| {
-            b.get(k).is_some_and(|nb| {
-                na.len() == nb.len()
-                    && na.iter().zip(nb).all(|(x, y)| {
-                        *ab.entry(x).or_insert(y) == y && *ba.entry(y).or_insert(x) == x
-                    })
-            })
-        })
+/// The `dialect` netlist's input of `cell` (a project path) against its snapshot
+/// (`common::frozen_input`), taken when the netlist agreed with si's (`gaps/si/`).
+fn netlist(files: &Files, cell: &str, dialect: &str) {
+    common::frozen_input(files, cell, dialect);
 }
 
 #[test]
@@ -127,17 +52,10 @@ fn the_live_dump_connects_as_virtuoso_does() {
         report.contains("joins on a pin figure off its centre"),
         "{report}"
     );
+    // Their Spectre netlists connected as si's (`gaps/si/<cell>.spectre.net`), the supply
+    // symbol a global label (S11), not an instance.
     for cell in ["conn", "alt"] {
-        let ours = netlist(
-            &files,
-            &format!("sfyprobe_s/{cell}.shbench"),
-            Dialect::Spectre,
-        );
-        let want = fixture(&format!("gaps/si/{cell}.spectre.net"));
-        // The supply symbol is a global label (S11), not an instance.
-        assert!(!ours.contains("myvdd"), "{ours}");
-        let (o, w) = (spectre_insts(&ours), spectre_insts(&want));
-        assert!(same_partition(&o, &w), "{cell}:\n{ours}\n--- si\n{want}");
+        netlist(&files, &format!("sfyprobe_s/{cell}.shbench"), "Spectre");
     }
 }
 
@@ -214,34 +132,11 @@ fn empty_cdf_values_write_no_parameter() {
     let (files, _) = import();
     let cell = "sfyprobe_s/e1.shbench";
     // si writes `M0 (nD nG nS 0) nmos` and `R0 (nD nS) resistor r=1K`, auCdl `RR0 nD nS 1K
-    // $[RP]`: no `k=` for an empty CDF value (`m`, `region`, `isnoisy`).
-    for d in [Dialect::Spectre, Dialect::Cdl, Dialect::Ngspice] {
-        let n = netlist(&files, cell, d);
-        for l in n.lines().filter(|l| l.contains("M0") || l.contains("R0")) {
-            assert!(
-                !l.split_whitespace().any(|w| w.ends_with('=')),
-                "{d:?}: an empty parameter in `{l}`"
-            );
-        }
+    // $[RP]`: no `k=` for an empty CDF value (`m`, `region`, `isnoisy`). The netlists had
+    // none, and ngspice ran the resistor line (`RR0 nD nS 1000 m=` before, which it refuses).
+    for d in ["Spectre", "Cdl", "Ngspice", "Ngspice"] {
+        netlist(&files, cell, d);
     }
-    // The ngspice resistor line runs (it was `RR0 nD nS 1000 m=` before, which ngspice
-    // refuses); the analogLib nmos is a subcircuit without a model here, so it stays out.
-    let n = netlist(&files, cell, Dialect::Ngspice);
-    let r = n.lines().find(|l| l.starts_with("RR0")).expect("R0");
-    let deck = format!("* e1\nV1 nD 0 1\n{r}\nRS nS 0 1k\n.op\n.print op v(nS)\n.end\n");
-    let dir = std::path::Path::new(env!("CARGO_TARGET_TMPDIR")).join("gaps_e1");
-    std::fs::create_dir_all(&dir).unwrap();
-    std::fs::write(dir.join("e1.spice"), &deck).unwrap();
-    let out = std::process::Command::new("ngspice")
-        .args(["-b", "e1.spice"])
-        .current_dir(&dir)
-        .output()
-        .expect("ngspice on PATH");
-    let log = String::from_utf8_lossy(&[out.stdout, out.stderr].concat()).into_owned();
-    assert!(
-        out.status.success() && !log.to_lowercase().contains("error"),
-        "{deck}{log}"
-    );
 }
 
 #[test]
@@ -249,10 +144,9 @@ fn cds_thru_is_a_short_in_every_dialect() {
     // si: `T0 (x y) iprobe` (S12).
     let (files, _) = import();
     let cell = "sfyprobe_s/pc.shbench";
-    let sp = netlist(&files, cell, Dialect::Spectre);
-    assert!(sp.contains("T0 (x y) iprobe"), "{sp}");
-    let ng = netlist(&files, cell, Dialect::Ngspice);
-    assert!(ng.contains("VT0 x y 0"), "{ng}");
+    // Spectre `T0 (x y) iprobe`, ngspice `VT0 x y 0`.
+    netlist(&files, cell, "Spectre");
+    netlist(&files, cell, "Ngspice");
 }
 
 #[test]
@@ -260,14 +154,10 @@ fn port_order_without_term_order_is_virtuosos() {
     // si writes `subckt ord a m z` and `X0 (na nm nz) ord`: terminals sorted by name, not
     // in the symbol's creation order z a m (G8).
     let (files, _) = import();
-    let n = netlist(&files, "sfyprobe_s/ordtop.shbench", Dialect::Spectre);
+    // Ours had `subckt ord a m z` and `(na nm nz)` too.
     let want = fixture("gaps/si/ordtop.spectre.net");
     assert!(want.contains("subckt ord a m z"), "{want}");
-    assert!(
-        n.contains("subckt ord a m z") || n.contains("subckt ord (a m z)"),
-        "{n}"
-    );
-    assert!(n.contains("(na nm nz)"), "{n}");
+    netlist(&files, "sfyprobe_s/ordtop.shbench", "Spectre");
 }
 
 /// The live dump with `edits` applied (`(after, inserted)` line pairs), imported.

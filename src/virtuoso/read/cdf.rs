@@ -535,7 +535,7 @@ pub(crate) fn callback_rules(cdf: &Cdf, p: &CdfParam) -> Result<Vec<Rule>, Strin
         if out.iter().any(|r| r.target == target) {
             return Err(format!("it assigns {target} twice"));
         }
-        if schemify_expr::Program::compile(&expr, schemify_expr::Mode::Scalar).is_err() {
+        if crate::expr::Program::compile(&expr, crate::expr::Mode::Scalar).is_err() {
             return Err(format!("`{expr}` does not compile"));
         }
         reads.sort();
@@ -755,7 +755,7 @@ fn own_default(def: &str, names: &[&str]) -> Option<String> {
     if t.review.is_some() {
         return None;
     }
-    let p = schemify_expr::Program::compile(&t.text, schemify_expr::Mode::Scalar).ok()?;
+    let p = crate::expr::Program::compile(&t.text, crate::expr::Mode::Scalar).ok()?;
     p.idents()
         .all(|i| names.contains(&i))
         .then(|| si_text(&t.text))
@@ -766,7 +766,7 @@ fn own_default(def: &str, names: &[&str]) -> Option<String> {
 /// (live ICADVM20.1 run: `0.15u` came back `150.00n`), so both sides of the stash
 /// comparison (§7.3) read them through this.
 pub fn si_text(t: &str) -> String {
-    let Ok(x) = schemify_expr::parse_num(t.trim()) else {
+    let Ok(x) = crate::expr::parse_num(t.trim()) else {
         return t.to_owned();
     };
     if x == 0.0 || !x.is_finite() {

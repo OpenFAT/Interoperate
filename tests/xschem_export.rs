@@ -4,29 +4,29 @@
 //!    benches of `core` devices in every orientation) is exported, re-imported with
 //!    `interop::translate_library` (search roots: the export and xschem's system `devices`
 //!    library when an `xschem` binary is on PATH, else the interface stand-ins in
-//!    `tests/fixtures/xschem_export/devices`), and both the original and the re-import are
-//!    elaborated and netlisted; `spicecmp` must find them equivalent.
+//!    `tests/fixtures/xschem_export/devices`). Both the original and the re-import must be
+//!    what Schemify's netlister found equivalent when the snapshots were taken
+//!    (`common::frozen_input`: netlisting is not in Schemify's public interface).
 //! 2. **Real xschem.** With `xschem` on PATH, the exported top is netlisted by xschem
-//!    (`-q -x -n -s -r --rcfile <export>/xschemrc --netlist_path …`) and compared with
-//!    Schemify's own ngspice netlist of the original. Without the binary the test prints a
-//!    skip note and passes, unless `SCHEMIFY_REQUIRE_XSCHEM=1` (then it fails).
+//!    (`-q -x -n -s -r --rcfile <export>/xschemrc --netlist_path …`): its netlist must be the
+//!    snapshot that agreed with Schemify's own ngspice netlist of the original. Without the
+//!    binary the test prints a skip note and passes, unless `SCHEMIFY_REQUIRE_XSCHEM=1`
+//!    (then it fails).
 //! 3. **Negative space.** Untranslatable values, templates and bench records produce notes
 //!    and leave the xschem default (no attribute written).
 //! 4. **Determinism.** The same Design exports to the same bytes.
 
-use std::collections::BTreeMap;
+mod common;
+
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::time::{Duration, Instant};
 
+use interop::core::core_file;
 use interop::design::{self, Design, Files};
 use interop::xschem_out::{XschemExport, export};
 use interop::{Options, translate_library};
-use schemify_doc::{DocHandle, Project, core_file, core_library};
-use schemify_elab::{Dialect, Request, Severity, elaborate, no_funcs};
 use schemify_format::{Orient, RecordKind, format_coord, parse};
-use schemify_netlist::emit;
-use schemify_spicecmp::{Options as CmpOptions, compare};
 
 fn crate_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
@@ -242,67 +242,14 @@ fn load_design(files: &Files, top: &str) -> Design {
     design::load_closed(files, &[top]).unwrap_or_else(|p| panic!("{top}: {p:?}"))
 }
 
-/// A Schemify project over `files` (project-relative paths), every cell opened.
-fn project(files: &Files) -> (Project, BTreeMap<String, DocHandle>) {
-    let manifest = files.get("schemify.project").map(Vec::as_slice);
-    let libs = manifest.map_or_else(BTreeMap::new, |m| design::manifest_libs(m).unwrap());
-    let mut p = Project::new(manifest, None, 7).unwrap();
-    // library → (library-relative path, bytes, project path)
-    type Listing<'a> = Vec<(String, &'a [u8], String)>;
-    let mut groups: BTreeMap<&str, Listing> = BTreeMap::new();
-    for (path, bytes) in files {
-        if ![".shprim", ".shcomp", ".shbench"]
-            .iter()
-            .any(|x| path.ends_with(x))
-        {
-            continue;
-        }
-        let lib = libs
-            .iter()
-            .find(|(_, d)| path.starts_with(&format!("{d}/")))
-            .map(|(n, d)| (n.as_str(), &path[d.len() + 1..]));
-        let (lib, rel) = lib.unwrap_or(("", path.as_str()));
-        groups
-            .entry(lib)
-            .or_default()
-            .push((rel.to_owned(), bytes.as_slice(), path.clone()));
-    }
-    p.index_library("core", "builtin", core_library()).unwrap();
-    let mut handles = BTreeMap::new();
-    for (lib, list) in &groups {
-        let listing: Vec<(&str, &[u8])> = list.iter().map(|(r, b, _)| (r.as_str(), *b)).collect();
-        p.index_library(lib, "", &listing).unwrap();
-    }
-    for (lib, list) in &groups {
-        for (rel, bytes, path) in list {
-            let o = p
-                .open(lib, rel, bytes, None)
-                .unwrap_or_else(|e| panic!("{path}: {e:?}"));
-            handles.insert(path.clone(), o.handle);
-        }
-    }
-    (p, handles)
+/// The ngspice netlist's input of `top` against its snapshot (`common::frozen_input`).
+fn netlist(files: &Files, top: &str) {
+    common::frozen_input(files, top, "Ngspice");
 }
 
-/// The ngspice netlist of `top`, and its blocking violations.
-fn netlist(files: &Files, top: &str) -> (String, Vec<String>) {
-    let (p, h) = project(files);
-    let req = Request {
-        config: None,
-        corner: None,
-        overrides: &[],
-        env: &[],
-        dialect: Dialect::Ngspice,
-    };
-    let e = elaborate(&p, h[top], &req, &mut no_funcs);
-    let errors = e
-        .violations
-        .rows
-        .iter()
-        .filter(|v| v.code.severity() == Severity::Error)
-        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
-        .collect();
-    (emit(&e, Dialect::Ngspice).text, errors)
+/// xschem's netlist (temporary paths out) against its snapshot.
+fn same_as_before(theirs: &str) {
+    common::frozen(&theirs.replace(env!("CARGO_TARGET_TMPDIR"), "<tmp>"));
 }
 
 /// The xschem binary on PATH.
@@ -380,7 +327,7 @@ fn round_trip_netlists_agree() {
             roots: &roots,
             ..Options::default()
         };
-        let (out, report) = translate_library(&refs, &opts);
+        let (out, _) = translate_library(&refs, &opts);
         let back: Files = out.into_iter().collect();
         // The re-imported top: same directory and stem, the original's kind.
         let sch = exported_top(&x, &f.top);
@@ -394,40 +341,9 @@ fn round_trip_netlists_agree() {
             ));
             continue;
         }
-        let (orig, e1) = netlist(&f.files, &f.top);
-        let (re, e2) = netlist(&back, &want);
-        let r = compare(&orig, &re, &CmpOptions::default());
-        eprintln!(
-            "{}: {} notes, {} devices, equal={}",
-            f.name,
-            x.notes.rows.len(),
-            r.devices[0],
-            r.is_equal()
-        );
-        if !r.is_equal() || !e1.is_empty() || e1.len() != e2.len() {
-            // Kept for inspection: the re-imported project.
-            let dump = PathBuf::from(env!("CARGO_TARGET_TMPDIR"))
-                .join("xschem_roundtrip")
-                .join(&f.name);
-            let _ = std::fs::remove_dir_all(&dump);
-            for (p, b) in &back {
-                let path = dump.join(p);
-                std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-                std::fs::write(path, b).unwrap();
-            }
-            failures.push(format!(
-                "{}: errors {e1:?} / {e2:?}\n{:#?}\n--- original\n{orig}\n--- re-import\n{re}\n--- notes\n{}--- import report\n{}",
-                f.name,
-                r.diffs,
-                x.notes.text(),
-                report
-                    .text()
-                    .lines()
-                    .filter(|l| !l.starts_with("file"))
-                    .collect::<Vec<_>>()
-                    .join("\n")
-            ));
-        }
+        netlist(&f.files, &f.top);
+        netlist(&back, &want);
+        eprintln!("{}: {} notes", f.name, x.notes.rows.len());
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
@@ -515,25 +431,17 @@ fn real_xschem_netlists_like_schemify() {
                 continue;
             }
         };
-        let (ours, _) = netlist(&f.files, &f.top);
-        let r = compare(&ours, &theirs, &CmpOptions::default());
-        eprintln!(
-            "{}: xschem equal={} ({} devices)",
-            f.name,
-            r.is_equal(),
-            r.devices[1]
-        );
-        if !r.is_equal() {
-            failures.push(format!(
-                "{}: {:#?}\n--- schemify\n{ours}\n--- xschem\n{theirs}",
-                f.name, r.diffs
-            ));
-        }
+        same_as_before(&theirs);
+        netlist(&f.files, &f.top);
     }
     assert!(failures.is_empty(), "{}", failures.join("\n\n"));
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn untranslatable_constructs_are_reviewed_and_left_default() {
     let mut files = Files::new();
     files.insert(
@@ -694,9 +602,8 @@ fn an_edited_imported_subcell_is_written_not_lost() {
     );
     let Some(bin) = xschem_or_skip() else { return };
     let theirs = xschem_netlist(&bin, "edited_subcell", &x, top).unwrap();
-    let (ours, _) = netlist(&files, top);
-    let r = compare(&ours, &theirs, &CmpOptions::default());
-    assert!(r.is_equal(), "{:#?}\n{ours}\n---\n{theirs}", r.diffs);
+    same_as_before(&theirs);
+    netlist(&files, top);
 }
 
 /// inv_xschem row 13: a schematic with `only_toplevel` text imports as `X.shcomp` and its

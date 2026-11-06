@@ -1,0 +1,230 @@
+top top.shcomp for check
+== schemify.project
+schemify 1 project
+
+lib zpdk path zpdk
+== top.shcomp
+schemify 1 shcomp
+  vsym d833373bb1e67938
+  vsch 74da7129cf6de51f
+  vcdf d833373bb1e67938
+
+pin A inout 0 0
+
+impl schematic schematic
+
+inst 0x0001 zpdk:chaos
+  at 0 0 R0
+  name X1
+  pp 3.5
+  cached zz "\"5\"" 9f49fd4092bda55c
+
+port 0p0001 0 0 R0 A
+== zpdk/ar.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/ar"
+  vibox -40 -40 40 40
+  vsym 0d6270b93aef47bc
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param zq 1u
+param nn 1
+  kind int
+param zq_area 200f
+param qa 200f
+
+impl spice spice
+  format spectre "{name} ({A} {B}) ar zq={zq} nn={nn} zq_area={zq_area} qa={qa}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/chaos.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/chaos"
+  vibox -40 -40 40 40
+  vinputs pp qq
+  vsym 4e6c269e590af810
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param pp 1.5
+param qq 1
+  kind int
+param zz 8
+  kind string
+  vderived true
+
+impl spice spice
+  format spectre "{name} ({A} {B}) chaos pp={pp} qq={qq}{zz != \"\" ? \" zz=\" + zz : \"\"}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/fing.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/fing"
+  vibox -40 -40 40 40
+  vsym 1cb6a8242f121091
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param w 80n
+param nf 1
+  kind int
+param ad 6.4f
+
+impl spice spice
+  format spectre "{name} ({A} {B}) fing w={w} nf={nf} adx={ad}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/sel.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/sel"
+  vibox -40 -40 40 40
+  vsym b3eed7dde288a0bb
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param gx 2u
+param mode a
+  kind choice
+  choices a b c
+param dbl false
+  kind bool
+param pz 6u
+param qz 2u
+
+impl spice spice
+  format spectre "{name} ({A} {B}) sel gx={gx}{mode != \"\" ? \" mode=\" + mode : \"\"} dbl={dbl} pz={pz} qz={qz}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/tab.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/tab"
+  vibox -40 -40 40 40
+  vsym 9d0acf0507fa083e
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param mu 1u
+param nu 3
+  kind string
+
+impl spice spice
+  format spectre "{name} ({A} {B}) tab mu={mu}{nu != \"\" ? \" nu=\" + nu : \"\"}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/wide.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/wide"
+  vibox -40 -40 40 40
+  vsym e00daed30725fef9
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param w 1u
+param l 20n
+param o1 false
+  kind bool
+param o2 false
+  kind bool
+param o3 false
+  kind bool
+param o4 false
+  kind bool
+param o5 false
+  kind bool
+param o6 false
+  kind bool
+param o7 false
+  kind bool
+param o8 false
+  kind bool
+param o9 false
+  kind bool
+param o10 false
+  kind bool
+param o11 false
+  kind bool
+param o12 false
+  kind bool
+param ad 50f
+param lx 0
+  kind string
+
+impl spice spice
+  format spectre "{name} ({A} {B}) wide w={w} l={l} ad={ad}{lx != \"\" ? \" lx=\" + lx : \"\"}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== zpdk/zeta.shprim
+schemify 1 shprim
+  provenance "virtuoso zpdk/zeta"
+  vibox -40 -40 40 40
+  vsym 8430352bf4c9f135
+
+pin A inout 0 -40
+  vplabel 0 0 R0 centerLeft stick 10000
+pin B inout 0 40
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param zq 50n
+param kappa 10n
+param ct 1
+  kind int
+param flip false
+  kind bool
+param knob 0
+  kind string
+param memo hi
+  kind string
+param rho 2.5f
+param sig 200n
+
+impl spice spice
+  format spectre "{name} ({A} {B}) zeta zq={zq} kappa={kappa} ct={ct} rho={rho} sig={sig}"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
