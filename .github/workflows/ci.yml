@@ -15,6 +15,9 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: 1
+  # Debug test threads get 2 MB by default; the expression parser's 256-deep nesting test
+  # (the spec's limit) needs more in a debug build on macOS. Release frames are much smaller.
+  RUST_MIN_STACK: "8388608"
   # = rust-version in Cargo.toml and Schemify's CI: clippy cannot turn main red overnight.
   RUST_TOOLCHAIN: "1.95.0"
 

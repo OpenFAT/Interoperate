@@ -263,15 +263,9 @@ fn xschem_bin() -> Option<PathBuf> {
 /// xschem's system `devices` library: `(root path, files)` as import inputs, or the
 /// stand-ins this test ships.
 fn devices() -> (String, Vec<(String, Vec<u8>)>) {
-    let system = xschem_bin()
-        .and_then(|b| std::fs::canonicalize(b).ok())
-        .map(|b| {
-            b.parent()
-                .unwrap()
-                .join("../share/xschem/xschem_library/devices")
-        })
-        .filter(|d| d.is_dir());
-    let dir = system.unwrap_or_else(|| crate_dir().join("tests/fixtures/xschem_export/devices"));
+    // Always the bundled copy: the frozen netlist inputs below must be the same on every
+    // machine, with or without an installed xschem (whose library differs by version).
+    let dir = crate_dir().join("tests/fixtures/xschem_export/devices");
     let mut files: Vec<(String, Vec<u8>)> = std::fs::read_dir(&dir)
         .unwrap()
         .flatten()
