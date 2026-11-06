@@ -72,6 +72,22 @@ pub const KINDS: &[(&str, Scope)] = &[
     // so they have no row)
     ("varenable", Scope::Maestro),
     ("outenable", Scope::Maestro),
+    // ---- gaps round 2, lane A: a test's simulator options, the corners it runs, a design
+    // on another cell, and the settings no record carries (reported by the import)
+    ("simoption", Scope::Maestro),
+    ("cornerrun", Scope::Maestro),
+    ("testdesign", Scope::Maestro),
+    ("maenote", Scope::Maestro),
+    // ---- G2 lane S: Virtuoso's connectivity (`tnet`, the import's oracle) and the count of
+    // each object kind the dumper left out (`skipped`)
+    ("tnet", Scope::Object),
+    ("skipped", Scope::Object),
+    // CDF attributes beyond paramLabelSet and the param flags (`cdfattr`, `paramattr`), a
+    // view the dump does not carry (`skipview`), a library's CDF and libInit.il (`libcdf`)
+    ("cdfattr", Scope::Cell),
+    ("paramattr", Scope::Cell),
+    ("skipview", Scope::Cell),
+    ("libcdf", Scope::File),
 ];
 
 /// The scope of record kind `tag`; `None` for a tag no row names.

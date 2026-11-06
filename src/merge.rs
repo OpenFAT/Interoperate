@@ -312,6 +312,7 @@ pub fn schemify_owned(k: RecordKind, fk: FileKind, maestro: bool) -> bool {
         RecordKind::Corner | RecordKind::Sweep | RecordKind::Output | RecordKind::Spec => !maestro,
         RecordKind::Body => true,
         // Neither maps to maestro (ade.rs reports them), so a re-import keeps them.
+        #[cfg(feature = "cadence-records")]
         RecordKind::Test | RecordKind::BenchParam => true,
         _ => false, // the header, rank 1 to 3: the cellviews'
     }
@@ -494,6 +495,7 @@ pub fn merge(
                 .all(|a| src.attr_value(a, 0).is_some_and(|m| ids.contains(m))),
             RecordKind::Body => impls.contains(src.field(r, 0).unwrap_or("")),
             // ponytail: a bench param whose instance is gone stays; elab reports its path.
+            #[cfg(feature = "cadence-records")]
             RecordKind::Test | RecordKind::BenchParam => true,
             _ => true, // no subject
         };

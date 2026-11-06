@@ -1,0 +1,194 @@
+top root/inv_tb.shbench for Ngspice
+== root/cap.shprim
+schemify 1 shprim
+  prefix C
+  category primitive
+  provenance "xschem root/cap.sym"
+  xfp d2b0a6b4d81521ca
+
+pin P inout 0 -20
+pin N inout 0 20
+
+param C 1p
+
+impl spice spice
+  format spice "C{name} {P} {N} {C}"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/inv.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/inv.sym"
+  xfp a4f20ac7bedac797
+
+pin A in -40 0
+pin Y out 40 0
+
+param wn 1
+param wp 2
+param l 0.15
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -40 0 -20 0
+  layer 4
+line 20 0 40 0
+  layer 4
+
+inst dfp34e ./pmos
+  at 0 -60 R0
+  name MP
+  W wp
+  L l
+inst y287ds ./nmos
+  at 0 60 R0
+  name MN
+  W wn
+  L l
+
+wire cgxvbz -20 -60 -20 60
+wire cvcx5p -60 0 -20 0
+wire f7tqca 20 -30 20 30
+wire zq2q34 20 0 60 0
+
+label 1rt9q5 20 60 R0 0
+label 6a5y81 20 -60 R0 vdd!
+  global true
+label damm8g 20 90 R0 0
+label f2kfcv 20 -90 R0 vdd!
+  global true
+
+port 3cvwgn -60 0 R0 A
+port 642gv3 60 0 R0 Y
+== root/inv_tb.shbench
+schemify 1 shbench
+  provenance "xschem root/inv_tb.sch"
+  xfp aedc3f4821a4d166
+
+inst 2wkyjt ./vsource
+  at -200 0 R0
+  name VDD
+  dc vdd
+inst dyf2xa ./cap
+  at 100 0 R0
+  name CL
+  C 10f
+inst fftrn1 ./vsource
+  at -100 0 R0
+  name VIN
+  dc vdd/2
+inst w1cby4 ./inv
+  at 0 0 R0
+  name X1
+  wn 0.5
+
+wire 6qzme6 100 -20 100 0
+wire s8d5ys 40 0 100 0
+
+label 07584q -200 -30 R0 vdd!
+  global true
+label 2pavhd -200 30 R0 0
+label 7ahapm 100 20 R0 0
+label 9zhxjh -100 -30 R0 in
+label gpy5d8 40 0 R0 out
+label q1qfpj -100 30 R0 0
+label q8d2d2 -40 0 R0 in
+
+var vdd 1.8
+
+code corner spice
+  | .lib models.lib tt
+  | .temp 27
+code params spice
+code tran spice
+  | .tran 1p 1n
+== root/nmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/nmos.sym"
+  xfp 61d3fe40784dc67a
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B inout 20 0
+
+param W 1
+param L 0.15
+param nf 1
+param model nfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u' nf={nf} ad='(({W})*0.29)*1p'"
+  format cdl "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/pmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/pmos.sym"
+  xfp 6856cdf866bba1a2
+
+pin D inout 20 30
+pin G in -20 0
+pin S inout 20 -30
+pin B inout 20 0
+
+param W 2
+param L 0.15
+param model pfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/vsource.shprim
+schemify 1 shprim
+  prefix V
+  category primitive
+  provenance "xschem root/vsource.sym"
+  xfp bc7afef549666fbf
+
+pin P inout 0 -30
+pin N inout 0 30
+
+param dc 0
+
+impl spice spice
+  format spice "V{name} {P} {N} dc {dc}"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== schemify.project
+schemify 1 project
+
+lib root path root

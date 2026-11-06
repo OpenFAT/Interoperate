@@ -1,0 +1,223 @@
+top root/top.shcomp for Ngspice
+== dev/nmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem dev/nmos.sym"
+  xfp c24fef8732e0c3cb
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B in 20 0
+
+param W 1
+param L 0.15
+param nf 1
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} nmos W='({W})*1u' L='({L})*1u' nf={nf}"
+
+line 20 -30 20 -15
+  layer 4
+line 20 15 20 30
+  layer 4
+line 4 -15 20 -15
+  layer 4
+line 4 15 20 15
+  layer 4
+line 4 -15 4 15
+  layer 4
+line 0 -10 0 10
+  layer 4
+line -20 0 0 0
+  layer 4
+line 4 0 20 0
+  layer 4
+
+poly 12 15 16 12 16 18
+  layer 4
+  closed true
+
+stext 25 -27 R0 {name}
+  size 0.2
+  layer 3
+stext 25 12 R0 W={W}
+  size 0.15
+  layer 3
+== dev/pmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem dev/pmos.sym"
+  xfp 3396fbb7b3d38267
+
+pin D inout 20 30
+pin G in -20 0
+pin S inout 20 -30
+pin B in 20 0
+
+param W 2
+param L 0.15
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} pmos W='({W})*1u' L='({L})*1u'"
+
+line 20 -30 20 -15
+  layer 4
+line 20 15 20 30
+  layer 4
+line 4 -15 20 -15
+  layer 4
+line 4 15 20 15
+  layer 4
+line 4 -15 4 15
+  layer 4
+line 0 -10 0 10
+  layer 4
+line -20 0 -5 0
+  layer 4
+line 4 0 20 0
+  layer 4
+
+circle -2.5 0 2.5
+  layer 4
+
+stext 25 -27 R0 {name}
+  size 0.2
+  layer 3
+stext 25 12 R0 W={W}
+  size 0.15
+  layer 3
+== root/inv.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/inv.sym"
+  xfp b55b83468640d02c
+
+pin A in -40 0
+pin Y out 40 0
+pin VDD inout 0 -30
+pin VSS inout 0 30
+
+param wp 2
+param wn 1
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -40 0 -20 0
+  layer 4
+line 21 0 40 0
+  layer 4
+line 0 -30 0 -11
+  layer 4
+line 0 11 0 30
+  layer 4
+
+poly -20 -20 15 0 -20 20
+  layer 4
+  closed true
+
+circle 18 0 3
+  layer 4
+
+stext -20 -38 R0 {name}
+  size 0.25
+  layer 3
+stext -17 -5 R0 inv
+  size 0.18
+  layer 3
+
+inst dfp34e dev:nmos
+  at 0 50 R0
+  name M2
+  W wn
+inst y287ds dev:pmos
+  at 0 -50 R0
+  name M1
+  W wp
+
+wire 1rt9q5 20 50 50 50
+wire 6a5y81 20 80 20 110
+wire cgxvbz -20 -50 -20 50
+wire cvcx5p -60 0 -20 0
+wire damm8g 20 -50 50 -50
+wire f2kfcv 20 -110 20 -80
+wire f7tqca 20 -20 20 20
+wire zq2q34 20 0 80 0
+
+label 3cvwgn 50 -50 R0 VDD
+label 642gv3 50 50 R0 VSS
+
+port 7h9xmv 80 0 R180 Y
+port 8vqbrj 20 110 R270 VSS
+port g53zxm -60 0 R0 A
+port hx8m1q 20 -110 R90 VDD
+
+text yekjma -60 -150 R0 "CMOS inverter"
+  size 0.4
+== root/top.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/top.sym"
+  xfp c6f980e0350f2d3d
+
+pin IN in -40 0
+pin OUT out 40 0
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -40 0 -20 0
+  layer 4
+line 20 0 40 0
+  layer 4
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -28 R0 {name}
+  size 0.25
+  layer 3
+stext -14 -5 R0 buf2
+  size 0.18
+  layer 3
+
+inst 8vaky9 ./inv
+  at 140 0 R0
+  name x2
+inst h2e9pf ./inv
+  at 0 0 R0
+  name x1
+  wp 4
+
+wire 0w8g6f -80 0 -40 0
+wire 6bgdtw 40 0 100 0
+wire 7d6zw1 140 30 140 70
+wire 8n6htq 0 70 140 70
+wire h2weg4 0 -70 140 -70
+wire jjshgb 0 30 0 70
+wire k2ym4z 140 -70 140 -30
+wire keemy7 180 0 240 0
+wire vxgtkg 0 -70 0 -30
+
+label 33jvsy 70 -70 R0 VDD
+label n4xwm4 70 0 R0 mid
+label wmxad8 70 70 R0 VSS
+
+port 1kvbk1 240 0 R180 OUT
+port w548a5 -80 0 R0 IN
+
+noconn z59wm5 260 40
+
+text 9sc2wa -80 -130 R0 "Two-inverter buffer: x1 and x2 are the hierarchical sub-cell inv"
+  size 0.3
+== schemify.project
+schemify 1 project
+
+lib dev path dev
+lib root path root

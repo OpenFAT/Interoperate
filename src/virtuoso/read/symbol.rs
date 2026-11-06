@@ -25,6 +25,7 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
     let mut out = Vec::new();
     for t in terms {
         let net = net_from_virtuoso(&t.name);
+        let name = term_pin(sym, t);
         if net.review {
             notes.review(
                 "name",
@@ -33,7 +34,8 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
             );
         }
         let dir = profile::dir_from_virtuoso(&t.dir);
-        let inherit = parse_netexpr(&t.netexpr).map(|(_, d)| d);
+        let inherit =
+            parse_netexpr(&t.netexpr).map(|(prop, d)| netset_default(c, &prop, notes).unwrap_or(d));
         let figs: Vec<&PinFig> = sym.pinfigs.iter().filter(|f| f.term == t.name).collect();
         let main = figs
             .iter()
@@ -43,7 +45,7 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
             centre(f.b, sym.upi, &format!("pin {}", t.name), &cell, notes)
         });
         out.push(PinRow {
-            name: net.text.clone(),
+            name: name.clone(),
             dir: dir.into(),
             at,
             inherit,
@@ -55,22 +57,73 @@ pub(super) fn pins_in(c: &DCell, sym: &Cv, notes: &mut Notes) -> Vec<PinRow> {
                 continue;
             }
             n += 1;
-            let name = sym
+            let alias = sym
                 .prop(f.r, "schemifyPin")
-                .map_or(format!("{}_{n}", net.text), str::to_owned);
+                .map_or(format!("{name}_{n}"), str::to_owned);
             out.push(PinRow {
-                name,
+                name: alias,
                 dir: dir.into(),
                 at: centre(f.b, sym.upi, &format!("pin {}", t.name), &cell, notes),
                 inherit: None,
-                alias: Some(net.text.clone()),
+                alias: Some(name.clone()),
             });
         }
     }
     out
 }
 
-/// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `GND`, §3.3).
+/// The Schemify pin of symbol terminal `t`: a pinless inherited one (a stopping view's,
+/// SfyStopTerms) is named by its net expression's property (GF22-style nfet `b`
+/// `[@lSup:%:VSS!]` → `lSup`), the name instances set and export writes back (§6.2), unless
+/// another terminal has that name; any other by its own name.
+pub(super) fn term_pin(sym: &Cv, t: &Term) -> String {
+    let pinless = !sym.pinfigs.iter().any(|f| f.term == t.name);
+    match parse_netexpr(&t.netexpr) {
+        // A drawn inherited terminal keeps its name; its property goes to `vinherit`.
+        // ponytail: two inheriting one property would give two pins of one name.
+        Some((p, _)) if pinless && !sym.terms.iter().any(|x| x.name == p) => {
+            net_from_virtuoso(&p).text
+        }
+        _ => net_from_virtuoso(&t.name).text,
+    }
+}
+
+/// The default net of inherited property `prop` from a netSet CDF param of that name,
+/// which every instance stores (storeDefault). A default that is itself a net expression
+/// (a GF22-style resistor's `resbulk` `[@lSup:%:VSS!]`: the bulk follows lSup) gives its
+/// default net, reported: Schemify's `inherit` has no chained connection.
+fn netset_default(c: &DCell, prop: &str, notes: &mut Notes) -> Option<String> {
+    let p = c
+        .cdf
+        .as_ref()?
+        .params
+        .iter()
+        .find(|p| p.ty == "netSet" && p.name == prop && !p.def.trim().is_empty())?;
+    if let Some((q, d)) = parse_netexpr(&p.def) {
+        notes.review(
+            "inherit",
+            &format!("{}/{}", c.lib, c.name),
+            format!(
+                "{prop} defaults to the inherited {q} ({}): the default net {d} only",
+                p.def
+            ),
+        );
+        return Some(d);
+    }
+    parse_netexpr(&format!("[@{prop}:%:{}]", p.def.trim())).map(|x| x.1)
+}
+
+/// The property instances override inherited pin `pin` by, when it is not the pin's own
+/// name: a drawn terminal whose net expression names another property (kept as the pin's
+/// `vinherit`, so import reads such an instance property as `inherit` and export writes
+/// it back).
+pub(super) fn inherit_prop(sym: &Cv, pin: &str) -> Option<String> {
+    let t = sym.terms.iter().find(|t| term_pin(sym, t) == pin)?;
+    let (p, _) = parse_netexpr(&t.netexpr)?;
+    (crate::virtuoso::write::vname(pin) != p).then_some(p)
+}
+
+/// `[@p:%:d!]` → `(p, d)` with the default's `!` dropped (`gnd!` → `0`, §3.3).
 pub(super) fn parse_netexpr(e: &str) -> Option<(String, String)> {
     let inner = e.trim().strip_prefix("[@")?.strip_suffix(']')?;
     let mut parts = inner.splitn(3, ':');
@@ -275,7 +328,7 @@ pub(super) fn build(
     let kind = t.kind.expect("only written cells are built");
     let cell = format!("{}/{}", c.lib, c.name);
     let mut doc = Document::new(kind);
-    let sym = c.cv("symbol");
+    let sym = c.symbol();
     let sch = c.cv("schematic");
     // Header.
     // The symbol's selection box as drawn (`vibox <x0> <y0> <x1> <y1>`, or `none`): export
@@ -325,7 +378,7 @@ pub(super) fn build(
     // Cadence's sample library shows `[@w]/[@l]` on cells without a CDF). Such a name becomes
     // an empty string param, so the label template and instances that set it stay valid.
     if let Some(sv) = sym.filter(|_| kind != FileKind::Shbench) {
-        let label_set = c.cdf.as_ref().map_or("", |d| d.label_set.as_str());
+        let label_set = c.cdf.as_ref().map_or("", Cdf::cds_param_set);
         let mut extra: BTreeSet<String> = BTreeSet::new();
         for l in sv
             .labels
@@ -335,7 +388,7 @@ pub(super) fn build(
             let Some(tmpl) = nlp_in(&l.text, label_set) else {
                 continue;
             };
-            let Ok(tp) = schemify_expr::Template::parse(&tmpl) else {
+            let Ok(tp) = crate::expr::Template::parse(&tmpl) else {
                 continue;
             };
             for id in tp.program().idents() {
@@ -366,6 +419,7 @@ pub(super) fn build(
             });
         }
     }
+    cap_params(c, &mut params, &cell, notes);
     let mut pins: Vec<PinRow> = match (sym, sch) {
         (Some(sv), _) => pins_in(c, sv, notes),
         (None, Some(sv)) if kind == FileKind::Shcomp => derived_pins(sv),
@@ -401,10 +455,16 @@ pub(super) fn build(
             let mut formats = Vec::new();
             if let Some(cdf) = &c.cdf {
                 if let Some(si) = cdf.sim("spectre") {
-                    formats.push(("spectre".to_owned(), spectre_format(c, si, &params, &pins)));
+                    formats.push((
+                        "spectre".to_owned(),
+                        spectre_format(c, si, &params, &pins, notes),
+                    ));
                 }
                 if let Some(si) = cdf.sim("auCdl") {
                     formats.push(("cdl".to_owned(), cdl_format(c, si, &params, &pins, notes)));
+                }
+                if let Some(why) = siminfo_not_carried(cdf) {
+                    notes.review("format", &cell, why);
                 }
             }
             let spice = ctx
@@ -419,6 +479,27 @@ pub(super) fn build(
             if let Some(s) = spice {
                 formats.insert(0, ("spice".into(), s));
             }
+            for f in &mut formats {
+                f.1 = optional_strings(&f.1, &params);
+            }
+            // A spectre `iprobe` (basic's cds_thru, live ICADVM20.1: `T0 (x y) iprobe`) is a
+            // 0 V source in SPICE: the same short, and the same probe of its current.
+            let probe = formats
+                .iter()
+                .find(|f| f.0 == "spectre")
+                .and_then(|f| f.1.strip_prefix("{name} (")?.strip_suffix(") iprobe"))
+                .map(|pins| format!("V{{name}} {pins} 0"));
+            if let Some(p) = probe.filter(|_| !formats.iter().any(|f| f.0 == "spice")) {
+                formats.insert(0, ("spice".into(), p));
+            }
+            if formats.is_empty() {
+                // basic's patch has no simInfo (live ICADVM20.1): si renames nets by it.
+                notes.review(
+                    "format",
+                    &cell,
+                    "no simInfo for spectre or auCdl: no netlist format (E013 when netlisted)",
+                );
+            }
             impls.push(("spice".into(), "spice".into(), formats, None));
         }
         _ => {}
@@ -428,7 +509,18 @@ pub(super) fn build(
             "veriloga" => ("veriloga", "veriloga"),
             "functional" | "verilog" => ("verilog", "verilog"),
             other => {
-                notes.review("format", &cell, format!("text view {other} not imported"));
+                // A spectre or auCdl text view is the netlist Virtuoso stops at: a library
+                // made from this import gets a symbol copy there instead (gaps2 S4).
+                let stop = if matches!(other, "spectre" | "auCdl") {
+                    ": a new library gets the symbol as this stop view, not this netlist"
+                } else {
+                    ""
+                };
+                notes.review(
+                    "format",
+                    &cell,
+                    format!("text view {other} ({}) not imported{stop}", tv.file),
+                );
                 continue;
             }
         };
@@ -450,6 +542,9 @@ pub(super) fn build(
         doc.push_field_coord(p.at[1]);
         if let Some(i) = &p.inherit {
             push_attr(&mut doc, "inherit", &[i]);
+            if let Some(v) = sym.and_then(|sv| inherit_prop(sv, &p.name)) {
+                push_attr(&mut doc, "vinherit", &[&v]);
+            }
         }
         if let Some(a) = &p.alias {
             push_attr(&mut doc, "alias", &[a]);
@@ -496,6 +591,14 @@ pub(super) fn build(
             if p.kind == "choice" && !p.choices.is_empty() {
                 push_attr(&mut doc, "choices", &p.choices);
             }
+            // A radio CDF param is a choice drawn as radio buttons (`vradio`, gaps2 S17), so
+            // export writes radio, not cyclic, for an edited cell too.
+            if c.cdf
+                .as_ref()
+                .is_some_and(|d| d.params.iter().any(|q| q.name == p.name && q.ty == "radio"))
+            {
+                push_attr(&mut doc, "vradio", &["true"]);
+            }
             if let Some(d) = &p.doc {
                 push_attr(&mut doc, "doc", &[d]);
             }
@@ -517,7 +620,7 @@ pub(super) fn build(
     if let Some(sv) = sym {
         let mut tally = Tally::default();
         tally.out += sv.terms.len() + sv.pinfigs.len();
-        let label_set = c.cdf.as_ref().map_or("", |d| d.label_set.as_str());
+        let label_set = c.cdf.as_ref().map_or("", Cdf::cds_param_set);
         let body: Vec<&Shape> = sv
             .shapes
             .iter()
@@ -559,13 +662,55 @@ pub(super) fn build(
             };
             tally.out += 1;
             let Some(tmpl) = tmpl.filter(|t| !t.is_empty()) else {
+                let mode = c
+                    .cdf
+                    .as_ref()
+                    .and_then(|d| d.attrs.iter().find(|a| a.0 == "paramDisplayMode"))
+                    .filter(|_| l.text.starts_with("cdsParam("));
                 notes.review(
                     "template",
                     &cell,
-                    format!("symbol label `{}` dropped", l.text),
+                    match mode {
+                        Some((_, m)) => format!(
+                            "symbol label `{}` dropped (paramDisplayMode {m}: no params shown)",
+                            l.text
+                        ),
+                        None => format!("symbol label `{}` dropped", l.text),
+                    },
                 );
                 continue;
             };
+            // A group's fallback (`[@w:w=%:w?]`) is what Virtuoso shows for an unset value;
+            // the template has no such branch (live ICADVM20.1: no SKILL evaluates NLP
+            // labels, so the drawn text goes back as it was, `vlabel`).
+            let fb = if l.kind == "NLP" {
+                nlp_fallbacks(&l.text)
+            } else {
+                Vec::new()
+            };
+            if !fb.is_empty() {
+                notes.review(
+                    "template",
+                    &cell,
+                    format!(
+                        "`{}` → `{tmpl}`: the fallback(s) `{}` for an unset value not shown",
+                        l.text,
+                        fb.join("`, `")
+                    ),
+                );
+            }
+            // Virtuoso writes `w:7u` for a value at the CDF default and `w=7u` for one the
+            // instance sets (skcompref cdsParam); the template has one form.
+            if l.text.starts_with("cdsParam(") && tmpl.contains('=') {
+                notes.review(
+                    "template",
+                    &cell,
+                    format!(
+                        "`{}` → `{tmpl}`: Virtuoso shows `:` for a value at its default",
+                        l.text
+                    ),
+                );
+            }
             let at = pt(l.xy, sv.upi, "label", &cell, notes);
             doc.begin_record(RecordKind::Stext);
             doc.push_field_coord(at[0]);
@@ -714,4 +859,64 @@ pub(super) fn main_pin_fig<'a>(sv: &'a Cv, name: &str) -> Option<&'a PinFig> {
         .find(|f| net_from_virtuoso(&f.term).text == name && !alias_fig(f.r));
     debug_assert!(fig.is_none_or(|f| f.dir.is_empty()), "a symbol pin figure");
     fig
+}
+
+/// Params a Schemify cell holds at most (its doc table capacity: a load past it panics,
+/// `Params exceeds its capacity`; analogLib `port` has 421 CDF params, live).
+pub(super) const PARAMS_MAX: usize = 1 << 8;
+
+/// Cuts `params` to [`PARAMS_MAX`], in CDF order, keeping first those a netlist or label
+/// reads (any simulator's `instParameters`/`otherParameters`, `paramLabelSet`, a computed
+/// rule), then those with a default; the rest are reported `dropped:param` (an instance
+/// setting one keeps its override, as for any undeclared name).
+fn cap_params(c: &DCell, params: &mut Vec<ParamIn>, cell: &str, notes: &mut Notes) {
+    if params.len() <= PARAMS_MAX {
+        return;
+    }
+    let mut read: BTreeSet<&str> = BTreeSet::new();
+    if let Some(cdf) = &c.cdf {
+        for si in &cdf.siminfo {
+            for k in ["instParameters", "otherParameters"] {
+                if let Some(SimVal::List(l)) = si.get(k) {
+                    read.extend(l.iter().map(String::as_str));
+                }
+            }
+        }
+        read.extend(cdf.label_set.split_whitespace());
+    }
+    let rank = |p: &ParamIn| {
+        if read.contains(p.name.as_str()) || p.computed.is_some() {
+            0
+        } else if !p.default.is_empty() {
+            1
+        } else {
+            2
+        }
+    };
+    let mut order: Vec<usize> = (0..params.len()).collect();
+    order.sort_by_key(|&k| rank(&params[k]));
+    let mut keep = vec![false; params.len()];
+    for &k in &order[..PARAMS_MAX] {
+        keep[k] = true;
+    }
+    let mut k = 0;
+    let mut gone: Vec<String> = Vec::new();
+    params.retain(|p| {
+        k += 1;
+        if !keep[k - 1] {
+            gone.push(p.name.clone());
+        }
+        keep[k - 1]
+    });
+    assert_eq!(params.len(), PARAMS_MAX);
+    notes.dropped(
+        "param",
+        cell,
+        format!(
+            "{} CDF params past Schemify's {PARAMS_MAX} per cell (unread by any netlist, \
+             label or rule first): {}",
+            gone.len(),
+            gone.join(" ")
+        ),
+    );
 }

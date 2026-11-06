@@ -178,11 +178,13 @@
     '(("sfyx" "is") ("lib" "s") ("cell" "ss") ("cdf" "x") ("param" "sssssllx")
       ("siminfo" "sl") ("cv" "ssi") ("prop" "isss") ("inst" "issssiis") ("wire" "ili")
       ("label" "iisiisssisss") ("spin" "isssssiis") ("term" "sss") ("pinfig" "isiiii")
-      ("shape" "isssli") ("td" "issssiisssiiiiii") ("conn" "iss") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
+      ("shape" "isssli") ("td" "issssiisssiiiiii") ("conn" "iss") ("tnet" "iss") ("skipped" "si") ("cdfattr" "ss") ("paramattr" "sss")
+      ("skipview" "ss") ("libcdf" "ii") ("textview" "ssx") ("config" "sx") ("maestro" "sssss")
       ("var" "sss") ("analysis" "sil") ("corner" "si") ("model" "sss") ("output" "sss")
       ("spec" "sss") ("defn" "sx") ("maesdb" "xl") ("maestate" "sx") ("testvar" "ss")
       ("testenable" "i") ("parameter" "sss") ("varenable" "si") ("outenable" "si")
-      ("maefile" "sx") ("end" "")))))
+      ("maefile" "sx") ("simoption" "ss") ("cornerrun" "si") ("testdesign" "ss")
+      ("maenote" "ss") ("end" "")))))
 
 ;; nil when x is .sfyx data (strings, 32-bit integers, lists of them), else what is wrong.
 (procedure (SfyCheckData x depth)
@@ -304,7 +306,7 @@
     schCreateWireLabel schCreateNetExpression schCreatePin schCreateNoteLabel schGlueLabel
     schCheck schSolder cdfGetBaseCellCDF cdfCreateBaseCellCDF cdfDeleteCDF cdfCreateParam
     cdfSaveCDF cdfGetInstCDF cdfFindParamByName cdfGetCellCDF cdfUpdateInstParam
-    cdfParseFloatString dbCreateTextDisplay
+    cdfParseFloatString dbCreateTextDisplay cdfGetBaseLibCDF
     maeOpenSetup maeCloseSession
     maeSaveSetup maeGetSetup maeCreateTest maeDeleteTest maeSetAnalysis
     maeGetEnabledAnalysis maeGetAnalysis maeSetVar maeGetVar maeSetCorner maeAddOutput
@@ -313,7 +315,8 @@
     axlGetModel axlPutModel axlGetModelFile axlGetModelSection axlSetModelFile
     axlSetModelSection axlGetVars axlGetVar axlGetVarValue axlGetSpecData axlExportSetup
     axlImportSetup axlGetSpec axlGetSpecWeight maeGetCurrentRunMode maeSetCurrentRunMode
-    axlGetTestToolArgs hdbOpen hdbSetTopCellViewName hdbSave hdbClose getDirFiles isDir system
+    axlGetTestToolArgs axlGetCornerDisabledTests axlGetModelGroups
+    hdbOpen hdbSetTopCellViewName hdbSave hdbClose getDirFiles isDir system
     envGetVal maeSetSetup maeSetParameter axlSetEnabled
     axlGetHistoryEntry axlGetHistoryResults axlGetPointPsfDir openResults results
     selectResult outputs v i drGetWaveformXVec drGetWaveformYVec drVectorLength drGetElem

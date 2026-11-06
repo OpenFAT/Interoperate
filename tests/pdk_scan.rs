@@ -541,3 +541,34 @@ fn the_remote_script_serves_a_spectre_kit() {
     assert_eq!(parse(&out).0, parse(&direct).0, "{out}");
     assert_eq!(out.lines().nth(1), direct.lines().nth(1), "same version");
 }
+
+/// The issue lines name what a kit does not declare (gaps2 P16, shaped like a commercial
+/// kit's ESD part): an instance of a Verilog-A module the kit loads is declared (SpiceRack
+/// binds none), any other undeclared master is named with its count; a parameter declared
+/// twice is served once.
+#[test]
+fn undeclared_masters_are_named_and_verilog_a_ones_are_not_undeclared() {
+    let r = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/pdk_scan/spectre2");
+    let (out, code) = scan(
+        &[
+            "--root",
+            r.to_str().unwrap(),
+            "--entry",
+            "top.scs",
+            "--dialect",
+            "spectre",
+        ],
+        b"",
+    );
+    assert_eq!(code, 0, "{out}");
+    let (files, lines) = parse(&out);
+    let prot = &files.iter().find(|f| f.0 == "prot.shprim").unwrap().1;
+    assert_eq!(prot.matches("param w \"\"").count(), 1, "{prot}");
+    assert!(files.iter().any(|f| f.0 == "mon_va.shprim"), "{out}");
+    let issues: Vec<&String> = lines.iter().filter(|l| l.starts_with("issue ")).collect();
+    assert_eq!(
+        issues,
+        ["issue 2 instance(s) whose master the kit does not declare: parasitic_rc (2)"],
+        "{out}"
+    );
+}

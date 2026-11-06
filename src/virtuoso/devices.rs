@@ -694,7 +694,7 @@ mod tests {
         for d in DEVICES {
             assert_eq!(d.alib.len(), d.ngspice.len(), "{}", d.core);
             if !d.alib.is_empty() {
-                let core = schemify_doc::core_library()
+                let core = crate::core::core_library()
                     .iter()
                     .find(|(n, _)| *n == format!("{}.shprim", d.core))
                     .unwrap_or_else(|| panic!("core cell {}", d.core));

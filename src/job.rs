@@ -429,7 +429,37 @@ impl Job {
             .iter()
             .filter_map(|p| Some((p.as_str(), self.files.get(p)?.as_slice())))
             .collect();
-        let (outputs, report) = translate_library(&inputs, &opts);
+        let (mut outputs, mut report) = translate_library(&inputs, &opts);
+        // The rcs' netlister settings are not applied: one row each, in the written report.
+        let mut settings = false;
+        for rc in &x.rcs {
+            let text = String::from_utf8_lossy(&self.files[rc]);
+            for (line, set) in tcl::netlist_settings(&text) {
+                if !report.files.contains(rc) {
+                    report.files.push(rc.clone());
+                    report.records_in.push(0);
+                    report.records_out.push(0);
+                }
+                let file = report.files.iter().position(|f| f == rc).expect("pushed") as u32;
+                report.items.push(crate::report::Item {
+                    file,
+                    line,
+                    class: crate::report::Class::Review(crate::template::Reason::Unsupported),
+                    records: 0,
+                    detail: format!("{set}: an xschem netlister setting the import does not apply"),
+                });
+                settings = true;
+            }
+        }
+        if settings {
+            for (p, b) in &mut outputs {
+                match p.as_str() {
+                    "import-report.md" => *b = report.markdown().into_bytes(),
+                    "import-report.txt" => *b = report.text().into_bytes(),
+                    _ => {}
+                }
+            }
+        }
         let dir = x.out_dir.trim_end_matches('/');
         let join = |p: &str| {
             if dir.is_empty() {
@@ -557,6 +587,35 @@ mod tests {
         };
         assert!(writes.iter().any(|w| w.0 == "imp/schemify.project"));
         assert!(j.imported().is_some());
+        // An xschemrc netlister setting is a report row (inv_xschem row 18).
+        let mut j = x(&["lib"]);
+        if let Command::XschemImport(c) = &mut j.command {
+            c.rcs.push("rc".into());
+            c.models.clear();
+        }
+        j.step();
+        j.supply("lib", Some(b"a.sym\n".to_vec()));
+        j.step();
+        j.supply(
+            "lib/a.sym",
+            Some(b"v {xschem version=3.4.4 file_version=1.2}\n".to_vec()),
+        );
+        j.supply("rc", Some(b"set PDK sky130A\nset top_subckt 1\n".to_vec()));
+        let Step::Done { writes, .. } = j.step() else {
+            panic!()
+        };
+        let txt = &writes
+            .iter()
+            .find(|w| w.0 == "imp/import-report.txt")
+            .unwrap()
+            .1;
+        assert!(
+            String::from_utf8_lossy(txt).contains(
+                "needs_review:unsupported\trc\t2\t0\tset top_subckt 1: an xschem netlister setting"
+            ),
+            "{}",
+            String::from_utf8_lossy(txt)
+        );
         let mut j = x(&["gone"]);
         assert!(matches!(j.step(), Step::List(_)));
         j.supply("gone", None);

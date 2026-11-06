@@ -1,16 +1,15 @@
-//! The translation oracle (docs/dev/testing.md `import` row): every generated cell file loads
-//! in `doc` with zero errors and round-trips byte for byte, every cell reference
-//! resolves through the generated manifest, and every expression and template compiles
-//! with only identifiers its scope defines.
+//! The translation oracle (docs/dev/testing.md `import` row): every generated cell file parses
+//! with zero errors and is in canonical form, no library holds two kinds of one cell, every
+//! cell reference resolves through the generated manifest, and every expression and template
+//! compiles with only identifiers its scope defines.
 
 use std::collections::{BTreeMap, HashMap};
 
-use schemify_doc::Project;
-use schemify_expr::{Mode, Program, Template};
-use schemify_format::{Document, RecordKind, parse};
+use crate::expr::{Mode, Program, Template};
+use schemify_format::{Document, FileKind, RecordKind, parse, write};
 
+use crate::core::core_library;
 use crate::template::BUILTINS;
-use schemify_doc::core_library;
 
 /// Checks translated outputs (`(path, bytes)` as [`crate::translate_library`] returns
 /// them). Returns one line per problem; empty means every check passed.
@@ -20,14 +19,19 @@ use schemify_doc::core_library;
 /// O(total bytes) plus one expression compile per parameter, override and template.
 pub fn check_output(files: &[(String, Vec<u8>)]) -> Vec<String> {
     let mut problems = Vec::new();
-    let manifest = files
-        .iter()
-        .find(|f| f.0 == "schemify.project")
-        .map(|f| f.1.as_slice());
-    let mut project = match Project::new(manifest, None, 0) {
-        Ok(p) => p,
-        Err(e) => return vec![format!("schemify.project: {e:?}")],
-    };
+    // The manifest's library names (format spec §4); `core` is the implicit builtin.
+    let mut declared = vec!["core".to_owned()];
+    if let Some((_, m)) = files.iter().find(|f| f.0 == "schemify.project") {
+        match parse(m) {
+            Ok(d) if d.kind() == FileKind::Project => declared.extend(
+                (1..d.record_count())
+                    .filter(|&r| d.record_kind(r) == RecordKind::Lib)
+                    .map(|r| d.field(r, 0).unwrap_or("").to_owned()),
+            ),
+            Ok(_) => return vec!["schemify.project: not a project manifest".into()],
+            Err(e) => return vec![format!("schemify.project: {e}")],
+        }
+    }
     let core: Vec<(&str, &[u8])> = core_library().to_vec();
     let mut libs: BTreeMap<&str, Vec<(&str, &[u8])>> = BTreeMap::new();
     libs.insert("core", core);
@@ -45,48 +49,50 @@ pub fn check_output(files: &[(String, Vec<u8>)]) -> Vec<String> {
     // (lib, cell) → bytes, for parameter kinds of instance targets.
     let mut cells: HashMap<(&str, &str), &[u8]> = HashMap::new();
     for (lib, listing) in &libs {
+        if !declared.iter().any(|d| d == lib) {
+            problems.push(format!("library {lib}: not in the manifest"));
+        }
         for (rel, bytes) in listing {
             let stem = rel.rsplit_once('.').map_or(*rel, |(s, _)| s);
-            cells.insert((lib, stem), bytes);
-        }
-        match project.index_library(lib, "import", listing) {
-            Ok((_, diags)) => {
-                for (p, d) in diags.into_iter().filter(|(_, d)| !d.code.is_warning()) {
-                    problems.push(format!("{lib}/{p}:{}: {} {}", d.line, d.code, d.detail));
-                }
+            if cells.insert((lib, stem), bytes).is_some() {
+                problems.push(format!("{lib}/{stem}: two kinds of one cell (E020)"));
             }
-            Err(c) => problems.push(format!("library {lib}: {c} (not in the manifest)")),
         }
     }
     for (lib, listing) in &libs {
+        if *lib == "core" {
+            continue;
+        }
         for (rel, bytes) in listing {
             let at = format!("{lib}/{rel}");
-            match project.open(lib, rel, bytes, None) {
-                Ok(o) => {
-                    for d in o.diags.iter().filter(|d| !d.code.is_warning()) {
+            let model = match parse(bytes) {
+                Ok(m) => m,
+                Err(e) => {
+                    for d in e.diagnostics.iter().filter(|d| !d.code.is_warning()) {
                         problems.push(format!("{at}:{}: {} {}", d.line, d.code, d.detail));
                     }
-                    let doc = project.doc(o.handle).expect("just opened");
-                    if doc.canonical().as_bytes() != *bytes {
-                        problems.push(format!("{at}: does not round-trip through doc"));
-                    }
-                    let model = parse(bytes).expect("doc parsed it");
-                    for r in 1..model.record_count() {
-                        if model.record_kind(r) == RecordKind::Inst {
-                            let cellref = model.field(r, 1).unwrap_or("");
-                            if let Err(c) = project.resolve(o.handle, cellref) {
-                                problems.push(format!(
-                                    "{at}:{}: {c} unresolved cell {cellref}",
-                                    model.record_line(r)
-                                ));
-                            }
-                        }
-                    }
-                    check_expressions(&at, lib, &model, &cells, &mut problems);
-                    project.close(o.handle).expect("live handle");
+                    continue;
                 }
-                Err(e) => problems.push(format!("{at}: does not load: {e:?}")),
+            };
+            if write(&model).as_bytes() != *bytes {
+                problems.push(format!("{at}: is not in canonical form"));
             }
+            for r in 1..model.record_count() {
+                if model.record_kind(r) == RecordKind::Inst {
+                    let cellref = model.field(r, 1).unwrap_or("");
+                    let (tlib, cell) = match cellref.strip_prefix("./") {
+                        Some(c) => (*lib, c),
+                        None => cellref.split_once(':').unwrap_or(("", cellref)),
+                    };
+                    if !cells.contains_key(&(tlib, cell)) {
+                        problems.push(format!(
+                            "{at}:{}: unresolved cell {cellref}",
+                            model.record_line(r)
+                        ));
+                    }
+                }
+            }
+            check_expressions(&at, lib, &model, &cells, &mut problems);
         }
     }
     problems
@@ -104,6 +110,15 @@ fn params_of(d: &Document) -> Vec<(String, String)> {
             (d.field(r, 0).unwrap_or("").to_owned(), kind.to_owned())
         })
         .collect()
+}
+
+/// Whether `d`'s param `name` is `computed` (an instance may not override it).
+fn computed(d: &Document, name: &str) -> bool {
+    (1..d.record_count()).any(|r| {
+        d.record_kind(r) == RecordKind::Param
+            && d.field(r, 0) == Some(name)
+            && d.find_attr(r, "computed").is_some()
+    })
 }
 
 /// A cell's pin names as a template names them: a bus pin `y[5:2]` by its base `y` (elab).
@@ -214,7 +229,13 @@ fn check_expressions(
                 let scope = |i: &str| is_param(i) || vars.iter().any(|v| v == i);
                 for a in d.attrs(r) {
                     let key = d.attr_key(a);
-                    if matches!(key, "at" | "name" | "ignore" | "inherit") {
+                    // Interop's own attributes (§7.5, `xsprop` the kept xschem value), not
+                    // overrides.
+                    if matches!(
+                        key,
+                        "at" | "name" | "ignore" | "inherit" | "vview" | "vprop" | "vtd"
+                    ) || key == crate::xschem_out::XSPROP
+                    {
                         continue;
                     }
                     let v = d.attr_value(a, 0).unwrap_or("");
@@ -222,6 +243,15 @@ fn check_expressions(
                         fail(line, "override of unknown param", key, cellref.to_owned());
                         continue;
                     };
+                    if computed(&target, key) {
+                        fail(
+                            line,
+                            "override of computed param (E030)",
+                            key,
+                            cellref.to_owned(),
+                        );
+                        continue;
+                    }
                     let res = match kind.as_str() {
                         "string" | "choice" => template(v, scope),
                         // Number overrides may name bench `.param`s kept in code blocks:
@@ -235,8 +265,6 @@ fn check_expressions(
                     }
                 }
             }
-            // No converter writes either (a maestro test maps to the bench's own records).
-            RecordKind::Test | RecordKind::BenchParam => {}
             _ => {} // no expression of its own
         }
     }
@@ -257,16 +285,6 @@ mod tests {
                 *bytes,
                 "{name} is not canonical"
             );
-        }
-    }
-
-    #[test]
-    fn core_cells_round_trip_through_doc() {
-        let mut project = Project::new(None, None, 0).unwrap();
-        for (name, bytes) in core_library() {
-            let o = project.open("core", name, bytes, None).unwrap();
-            let canon = project.doc(o.handle).unwrap().canonical();
-            assert_eq!(canon, std::str::from_utf8(bytes).unwrap(), "{name}");
         }
     }
 

@@ -1,0 +1,89 @@
+top root/tb.shbench for Ngspice
+== root/tb.shbench
+schemify 1 shbench
+  provenance "xschem root/tb.sch"
+  xfp b3c746da2a34ac5e
+
+inst bh7wnm core:pmos4
+  at 1400 0 MR90
+  name M7
+  w 4u
+inst d5d493 core:nmos4
+  at 600 0 R180
+  name M3
+  model nch
+  l 0.5u
+inst djz6at core:pmos4
+  at 1000 0 MR0
+  name M5
+  w 4u
+inst h123f1 core:ind
+  at 400 0 MR270
+  name L2
+  value 3n
+inst j2yqx6 core:vsource
+  at 1200 0 MR0
+  name V6
+  value "dc 1.8 ac 1"
+inst jzc32a core:diode
+  at 800 0 R90
+  name D4
+  model dmod
+  area 2
+inst nmsaab core:nmos4
+  at 200 0 R0
+  name M1
+  model nch
+  l 0.5u
+inst wd97eg core:pmos4
+  at 0 0 R0
+  name M0
+  w 4u
+
+wire 0n8rrn 20 0 50 -10
+wire 1rtv25 220 30 250 20
+wire 1stza7 220 0 250 -10
+wire 42vskc 20 30 50 20
+wire 567842 980 30 1010 20
+wire 8nfq6v 180 0 210 -10
+wire cwsnw4 770 0 800 -10
+wire hr0e0f 1370 -20 1400 -30
+wire k6w65v 580 0 610 -10
+wire q7phy0 430 0 460 -10
+wire rqhtrw 980 0 1010 -10
+wire rxpd9m -20 0 10 -10
+wire z5sxb2 980 -30 1010 -40
+
+label 0d57cs 1400 -20 R0 b
+label 5cz2z3 250 20 R0 b
+label 66agfv 250 -10 R0 c
+label 6zjh0p 1430 -20 R0 b
+label 71ckde 830 0 R0 a
+label be7pxe 20 -30 R0 b
+label cgvc1b 50 -10 R0 a
+label dj5sab 10 -10 R0 c
+label djmv70 800 -10 R0 a
+label dw6pjb 370 0 R0 c
+label e0b33c 1010 -40 R0 b
+label hvvfs5 460 -10 R0 a
+label jt5g3a 50 20 R0 a
+label jwbjgj 580 30 R0 b
+label kqndtc 210 -10 R0 a
+label kz600c 1400 -30 R0 b
+label mgvc2c 1200 30 R0 a
+label n1y9h2 1010 -10 R0 b
+label pqpdfz 620 0 R0 b
+label qemxvf 580 -30 R0 0
+label qxanbb 1200 -30 R0 c
+label tswfpb 1400 20 R0 b
+label vfhxqj 610 -10 R0 c
+label x3s09z 1010 20 R0 c
+label x92dwh 220 -30 R0 c
+label zepew5 1020 0 R0 c
+
+code op spice
+  | .op
+== schemify.project
+schemify 1 project
+
+lib root path root

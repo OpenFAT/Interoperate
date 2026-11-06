@@ -1,0 +1,127 @@
+top tb.shbench for Ngspice
+== cap.shprim
+schemify 1 shprim
+  doc "Capacitor (run fixture)"
+  prefix C
+  vsym 4b1ffa204463a9d5
+
+pin A inout 0 -30
+pin B inout 0 30
+
+param C 1p
+  unit F
+
+impl spice spice
+  format spice "{name} {A} {B} {C}"
+
+line 0 -30 0 -4
+line 0 4 0 30
+line -12 -4 12 -4
+line -12 4 12 4
+
+stext 16 -12 R0 {name}
+  size 0.2
+stext 16 2 R0 C={eng(C)}
+  size 0.18
+== res.shprim
+schemify 1 shprim
+  doc "Resistor (run fixture)"
+  prefix R
+  vsym 3b32237a5945e7a3
+
+pin A inout 0 -30
+pin B inout 0 30
+
+param R 1k
+  unit Ohm
+
+impl spice spice
+  format spice "{name} {A} {B} {R}"
+
+line 0 -30 0 -15
+line 0 15 0 30
+
+rect -5 -15 5 15
+
+stext 10 -12 R0 {name}
+  size 0.2
+stext 10 2 R0 R={eng(R)}
+  size 0.18
+== schemify.project
+schemify 1 project
+== tb.shbench
+schemify 1 shbench
+  doc "RC low-pass step response: a 1 V step charges C through R"
+  corner tt
+  vmaesdb tran "<?xml version=\"1.0\"?>\n<setupdb version=\"6\">maesdb\n\t<active>Active Setup\n\t\t<corners>\n\t\t\t<corner enabled=\"1\">_default</corner>\n\t\t\t<corner enabled=\"1\">tt\n\t\t\t\t<vars>\n\t\t\t\t\t<var>C\n\t\t\t\t\t\t<value>1u</value>\n\t\t\t\t\t</var>\n\t\t\t\t</vars>\n\t\t\t</corner>\n\t\t</corners>\n\t\t<tests>\n\t\t\t<test>tran\n\t\t\t\t<tool>ADE</tool>\n\t\t\t\t<tooloptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rc</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>path\n\t\t\t\t\t\t<value>$AXL_SETUPDB_DIR</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>state\n\t\t\t\t\t\t<value>active</value>\n\t\t\t\t\t</option>\n\t\t\t\t</tooloptions>\n\t\t\t\t<origoptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rc</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t</origoptions>\n\t\t\t</test>\n\t\t</tests>\n\t\t<vars>\n\t\t\t<var>C\n\t\t\t\t<value>1u</value>\n\t\t\t</var>\n\t\t\t<var>R\n\t\t\t\t<value>3.3k</value>\n\t\t\t</var>\n\t\t</vars>\n\t\t<specs>\n\t\t\t<spec>tran.v1m\n\t\t\t\t<testname>tran</testname>\n\t\t\t\t<resname>v1m</resname>\n\t\t\t\t<specType>range</specType>\n\t\t\t\t<min>0.3</min>\n\t\t\t\t<max>0.9</max>\n\t\t\t\t<target></target>\n\t\t\t\t<tol></tol>\n\t\t\t</spec>\n\t\t</specs>\n\t</active>\n</setupdb>\n"
+  vmaestate tran "\t<Test Name=\"tran\">\n\t\t<mock>((\"sfya_rc\" \"tb\" \"schematic\" \"spectre\") ((\"dc\" \"1\" ((\"saveOppoint\" t)))) ((\"tau\" \"point\" nil \"cross(VDC(\\\"/out\\\") 0.6321205588285577 1 \\\"either\\\")\") (\"v1m\" \"point\" nil \"value(VDC(\\\"/out\\\") 1m)\")) ((\"modelFiles\" nil)) nil)</mock>\n\t\t<field Name=\"outputList\" Type=\"skillList\">\n\t\t\t<field Name=\"outputList_0\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"tau\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t\t<field Name=\"outputList_1\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"v1m\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t</field>\n\t</Test>\n"
+  vmaerec e99033db5a7a9532 maestro tran
+  vmaerec af343a8f1278a570 var C ""
+  vmaerec ecc08875c6fa552c var R ""
+  vmaerec 796b56add0d74596 analysis dc
+  vmaerec 8553721e32d6892c corner tt
+  vmaerec 0447ee9a548276b0 var C tt
+  vmaerec e928b7bae12bf5c1 output tau
+  vmaerec a94f7b2d5f47fe2e output v1m
+  vmaerec b8e7aa9cd7e74b65 spec v1m gt
+  vmaerec 0259a633642ccfe2 spec v1m lt
+  vsch 4681bd24cc5185f8
+  vmaefile active.state text "<?xml version=\"1.0\"?>\n<statedb version=\"5\">active\n\t<Test Name=\"tran\">\n\t\t<mock>((\"sfya_rc\" \"tb\" \"schematic\" \"spectre\") ((\"dc\" \"1\" ((\"saveOppoint\" t)))) ((\"tau\" \"point\" nil \"cross(VDC(\\\"/out\\\") 0.6321205588285577 1 \\\"either\\\")\") (\"v1m\" \"point\" nil \"value(VDC(\\\"/out\\\") 1m)\")) ((\"modelFiles\" nil)) nil)</mock>\n\t\t<field Name=\"outputList\" Type=\"skillList\">\n\t\t\t<field Name=\"outputList_0\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"tau\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t\t<field Name=\"outputList_1\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"v1m\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t</field>\n\t</Test>\n</statedb>\n"
+  vmaefile maestro.sdb text "<?xml version=\"1.0\"?>\n<setupdb version=\"6\">maestro\n\t<active>Active Setup\n\t\t<corners>\n\t\t\t<corner enabled=\"1\">_default</corner>\n\t\t\t<corner enabled=\"1\">tt\n\t\t\t\t<vars>\n\t\t\t\t\t<var>C\n\t\t\t\t\t\t<value>1u</value>\n\t\t\t\t\t</var>\n\t\t\t\t</vars>\n\t\t\t</corner>\n\t\t</corners>\n\t\t<tests>\n\t\t\t<test>tran\n\t\t\t\t<tool>ADE</tool>\n\t\t\t\t<tooloptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rc</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>path\n\t\t\t\t\t\t<value>$AXL_SETUPDB_DIR</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>state\n\t\t\t\t\t\t<value>active</value>\n\t\t\t\t\t</option>\n\t\t\t\t</tooloptions>\n\t\t\t\t<origoptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rc</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t</origoptions>\n\t\t\t</test>\n\t\t</tests>\n\t\t<vars>\n\t\t\t<var>C\n\t\t\t\t<value>1u</value>\n\t\t\t</var>\n\t\t\t<var>R\n\t\t\t\t<value>3.3k</value>\n\t\t\t</var>\n\t\t</vars>\n\t\t<specs>\n\t\t\t<spec>tran.v1m\n\t\t\t\t<testname>tran</testname>\n\t\t\t\t<resname>v1m</resname>\n\t\t\t\t<specType>range</specType>\n\t\t\t\t<min>0.3</min>\n\t\t\t\t<max>0.9</max>\n\t\t\t\t<target></target>\n\t\t\t\t<tol></tol>\n\t\t\t</spec>\n\t\t</specs>\n\t</active>\n</setupdb>\n"
+  vmaefiles 5215c4414bcb8007
+
+inst 0aaaaa ./res
+  at 0 0 R0
+  name R1
+  R R
+inst 0aaaab ./cap
+  at 0 90 R0
+  name C1
+  C C
+
+wire 0ccccc 0 30 0 60
+
+label 0bbbba 0 -30 R0 in
+label 0bbbbb 0 30 R0 out
+label 0bbbbd 0 120 R0 0
+
+text 0eeeee -60 -80 R0 "RC low-pass: V1 in 0 1 (code block), tau = R C"
+  size 0.3
+
+prose 0ddddd
+  | # RC low-pass
+  |
+  | A 1 V step charges $C$ through $R$: $v_{out} = 1 - e^{-t/\tau}$ with $\tau = RC$.
+  |
+  | ```plot
+  | v(out)
+  | ```
+
+var R 3.3k
+  unit Ohm
+  min 100
+  max 10k
+var C 1u
+  unit F
+
+corner tt
+  set C 1u
+
+optimize fit
+  algo nelder-mead
+  goal tau target 1m
+  vary R
+  budget 12
+
+output tau "cross(v(out), 0.6321205588285577)"
+output v1m "at(v(out), 1m)"
+
+spec v1m
+  min 0.3
+  max 0.9
+
+code tran spice
+  | V1 in 0 1
+  | .ic v(out)=0
+  | .op
+  | .tran 1u 5m 0 1u uic

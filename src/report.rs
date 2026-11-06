@@ -213,7 +213,8 @@ impl Report {
         self.table(&mut s, |c| matches!(c, Class::Rounding));
         let _ = writeln!(
             s,
-            "\n## Unused instance attributes\n\n| Key | Count |\n|---|---|"
+            "\n## Unused attributes\n\nInstance keys; `symbol <key>`: a symbol's netlist text for a \
+             netlister Schemify has no dialect for (VHDL, tEDAx).\n\n| Key | Count |\n|---|---|"
         );
         for (k, n) in &self.unused_attrs {
             let _ = writeln!(s, "| `{}` | {n} |", k.replace('|', "\\|"));

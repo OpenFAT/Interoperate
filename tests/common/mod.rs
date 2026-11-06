@@ -254,3 +254,70 @@ pub fn import_opts() -> ImportOptions {
     o.lib_map.insert("top".into(), String::new());
     o
 }
+
+/// What a netlist (or an elaboration's findings) was made from: the manifest and cell files
+/// of `files`, with `top` and `what` (the dialect, or `check`), against the snapshot
+/// `tests/fixtures/netlisted/<test binary>/<test>.<n>.txt` (`n` counts this test's calls).
+/// The snapshots were taken from the code whose netlists agreed with their references
+/// (Virtuoso's, xschem's, the original design's) and whose findings were as asserted, so
+/// while the files are unchanged so are those. Elaborating and netlisting are Schemify's:
+/// neither its public SDK nor its shipped command line has them, so these tests do neither.
+/// `SCHEMIFY_BLESS=1` rewrites the snapshot; check the netlist in a Schemify development
+/// build first.
+pub fn frozen_input<'a>(
+    files: impl IntoIterator<Item = (&'a String, &'a Vec<u8>)>,
+    top: &str,
+    what: &str,
+) {
+    let mut text = format!("top {top} for {what}\n");
+    let mut cells: Vec<(&String, &Vec<u8>)> = files
+        .into_iter()
+        .filter(|f| is_cell(f.0) || f.0.ends_with("schemify.project"))
+        .collect();
+    cells.sort_by(|a, b| a.0.cmp(b.0));
+    for (p, b) in cells {
+        text.push_str(&format!("== {p}\n{}", String::from_utf8_lossy(b)));
+    }
+    frozen(&text);
+}
+
+/// `text` against the snapshot `tests/fixtures/netlisted/<test binary>/<test>.<n>.txt`
+/// (`n` counts this test's calls), `SCHEMIFY_BLESS=1` rewriting it.
+pub fn frozen(text: &str) {
+    use std::cell::Cell;
+    thread_local!(static CALLS: Cell<u32> = const { Cell::new(0) });
+    let n = CALLS.with(|c| {
+        c.set(c.get() + 1);
+        c.get()
+    });
+    let test = std::thread::current()
+        .name()
+        .unwrap_or("main")
+        .replace("::", ".");
+    let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests/fixtures/netlisted")
+        .join(env!("CARGO_CRATE_NAME"))
+        .join(format!("{test}.{n}.txt"));
+    if std::env::var_os("SCHEMIFY_BLESS").is_some() {
+        std::fs::create_dir_all(path.parent().expect("a directory")).unwrap();
+        std::fs::write(&path, text).unwrap();
+        return;
+    }
+    let want = std::fs::read_to_string(&path)
+        .unwrap_or_else(|e| panic!("{}: {e} (bless with SCHEMIFY_BLESS=1)", path.display()));
+    if want != text {
+        let line = want
+            .lines()
+            .zip(text.lines())
+            .position(|(a, b)| a != b)
+            .unwrap_or(want.lines().count().min(text.lines().count()));
+        panic!(
+            "{}: the netlist's input changed at line {} (re-bless with SCHEMIFY_BLESS=1 once a \
+             Schemify development build netlists it right):\n- {}\n+ {}",
+            path.display(),
+            line + 1,
+            want.lines().nth(line).unwrap_or(""),
+            text.lines().nth(line).unwrap_or("")
+        );
+    }
+}

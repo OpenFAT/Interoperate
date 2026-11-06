@@ -16,9 +16,11 @@ crate-type = ["cdylib", "rlib"]
 [features]
 # The native command line (`src/cli/`, `schemify-interop`): file system access, so never
 # part of the wasm guest. SpiceRack reads the PDK model files `pdk-scan` serves.
-# `maestro-results` hashes the design as `schemify run` does (run.md §4): the run crate's
-# `design`, over elab (both Schemify crates of the pinned revision; no third-party crate).
-cli = ["dep:spicerack", "dep:schemify-run", "dep:schemify-elab"]
+cli = ["dep:spicerack"]
+# Schemify's `cadence-records` format additions (bench `test` and `param` records): a multi-test
+# Maestro view and device parameters import and export as records. Needs a `schemify-format`
+# that has them, which the public SDK does not yet: build with a local `[patch]` of it.
+cadence-records = []
 
 [[bin]]
 name = "schemify-interop"
@@ -26,23 +28,16 @@ path = "src/bin/schemify-interop.rs"
 required-features = ["cli"]
 
 [dependencies]
+# Schemify's public SDK only: the file format and the plugin ABI (its guest SDK).
 schemify-abi.workspace = true
 schemify-format.workspace = true
-schemify-doc.workspace = true
-schemify-expr.workspace = true
+# Bit-identical transcendentals on every target for `expr` (D32).
+libm = "0.2"
 # SpiceRack's IR, readers and writers (no simulator backends): the PDK store and model
 # conversion (CLI only). Pinned like the Schemify crates.
 spicerack = { git = "https://github.com/OpenFAT/SpiceRack", rev = "f7fbf3b26806b0e0493412fcee40862a49ccf047", default-features = false, optional = true }
-schemify-run = { workspace = true, optional = true }
-schemify-elab = { workspace = true, optional = true }
 
 [dev-dependencies]
-# The xschem differential (tests/xschem_differential.rs): import → elaborate → netlist →
-# compare with xschem's golden netlist through spicecmp, and ngspice results through wave.
-schemify-elab.workspace = true
-schemify-netlist.workspace = true
-schemify-spicecmp.workspace = true
-schemify-wave.workspace = true
 # The built guest through the real host (tests/guest.rs).
 schemify-plugin.workspace = true
 # `std` only: no fork/timeout runners (rusty-fork, tempfile) or bit-set strategies used.
@@ -54,19 +49,14 @@ proptest = { version = "1", default-features = false, features = ["std"] }
 resolver = "3"
 exclude = ["fuzz"]
 
-# Schemify's crates, pinned to one core revision. `nightly.yml` builds against `main` too, so
-# core drift shows up within a day; bump the rev here and in every entry together.
+# Schemify's public SDK (https://github.com/OpenFAT/Schemify), pinned to one revision.
+# `nightly.yml` builds against `main` too, so SDK drift shows up within a day; bump the rev
+# here in every entry together. Netlisting, checking and running are the installed `schemify`
+# command line's (tests and `maestro-results` call it), never a build dependency.
 [workspace.dependencies]
-schemify-abi = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d", features = ["guest"] }
-schemify-format = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-doc = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-expr = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-elab = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-netlist = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-wave = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
-schemify-run = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d", default-features = false }
-schemify-spicecmp = { git = "https://github.com/OpenFAT/Schemify", rev = "c5db29e178f5504a81d538e7311d5969f1c7512d" }
+schemify-abi = { git = "https://github.com/OpenFAT/Schemify", rev = "39da966d2ae77d7dbb0325d32c0b80d136f0262e", features = ["guest"] }
+schemify-format = { git = "https://github.com/OpenFAT/Schemify", rev = "39da966d2ae77d7dbb0325d32c0b80d136f0262e" }
+schemify-plugin = { git = "https://github.com/OpenFAT/Schemify", rev = "39da966d2ae77d7dbb0325d32c0b80d136f0262e" }
 
 # Small module: size over speed, no unwinding (a panic is a trap the host reports).
 [profile.release]

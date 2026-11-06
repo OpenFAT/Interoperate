@@ -1,0 +1,685 @@
+top root/tb.shbench for Ngspice
+== root/tb.shbench
+schemify 1 shbench
+  provenance "xschem root/tb.sch"
+  xfp e1b23eaa9e3802e4
+
+inst 0d57cs core:diode
+  at 1200 800 MR180
+  name D46
+  model dmod
+  area 2
+inst 0n8rrn core:cap
+  at 0 200 R180
+  name C10
+  value 2p
+  m 2
+inst 1rtv25 core:cap
+  at 400 200 MR0
+  name C12
+  value 2p
+  m 2
+inst 1stza7 core:cap
+  at 600 200 MR90
+  name C13
+  value 2p
+  m 2
+inst 42vskc core:cap
+  at 1600 0 R0
+  name C8
+  value 2p
+  m 2
+inst 46jx3t core:npn
+  at 1400 1200 R270
+  name Q67
+  model qmod
+inst 567842 core:ind
+  at 1400 200 R90
+  name L17
+  value 3n
+inst 5a8v48 core:vcvs
+  at 600 1400 R90
+  name E73
+  value 10
+inst 5cz2z3 core:vsource
+  at 1400 400 R270
+  name V27
+  value "dc 1.8 ac 1"
+inst 64z7qe core:vcvs
+  at 400 1400 R0
+  name E72
+  value 10
+inst 66agfv core:vsource
+  at 1600 400 MR0
+  name V28
+  value "dc 1.8 ac 1"
+inst 67s86v core:pmos4
+  at 1600 1000 R180
+  name M58
+  w 4u
+inst 6ega93 core:npn
+  at 200 1400 MR270
+  name Q71
+  model qmod
+inst 6q7vf6 core:npn
+  at 800 1200 R0
+  name Q64
+  model qmod
+inst 6zjh0p core:diode
+  at 1000 800 MR90
+  name D45
+  model dmod
+  area 2
+inst 71ckde core:isource
+  at 1000 600 R270
+  name I35
+  value 1m
+inst 7ahy71 core:nmos4
+  at 1000 1000 MR270
+  name M55
+  model nch
+  l 0.5u
+inst 8nfq6v core:cap
+  at 200 200 R270
+  name C11
+  value 2p
+  m 2
+inst 9dqyzj core:vcvs
+  at 1000 1400 R270
+  name E75
+  value 10
+inst a03sn8 core:nmos4
+  at 1800 800 R90
+  name M49
+  model nch
+  l 0.5u
+inst a2c9q8 core:nmos4
+  at 400 1000 MR0
+  name M52
+  model nch
+  l 0.5u
+inst a98mfa core:nmos4
+  at 1600 800 R0
+  name M48
+  model nch
+  l 0.5u
+inst be7pxe core:ind
+  at 600 400 MR270
+  name L23
+  value 3n
+inst bh7wnm core:res
+  at 1400 0 MR270
+  name R7
+  value 10k
+inst cbxrs4 core:pmos4
+  at 1800 1000 R270
+  name M59
+  w 4u
+inst cgvc1b core:vsource
+  at 800 400 R0
+  name V24
+  value "dc 1.8 ac 1"
+inst cwsnw4 core:ind
+  at 1200 200 R0
+  name L16
+  value 3n
+inst d3schg core:vcvs
+  at 1600 1400 MR180
+  name E78
+  value 10
+inst d5d493 core:res
+  at 600 0 R270
+  name R3
+  value 10k
+inst d5wfxm core:nmos4
+  at 600 1000 MR90
+  name M53
+  model nch
+  l 0.5u
+inst dhj4gg core:nmos4
+  at 800 1000 MR180
+  name M54
+  model nch
+  l 0.5u
+inst dj5sab core:ind
+  at 400 400 MR180
+  name L22
+  value 3n
+inst djmv70 core:isource
+  at 1200 600 MR0
+  name I36
+  value 1m
+inst djz6at core:res
+  at 1000 0 MR90
+  name R5
+  value 10k
+inst dswac9 core:pmos4
+  at 1200 1000 R0
+  name M56
+  w 4u
+inst dw6pjb core:vsource
+  at 1800 400 MR90
+  name V29
+  value "dc 1.8 ac 1"
+inst e0b33c core:isource
+  at 1800 600 MR270
+  name I39
+  value 1m
+inst ev7p51 core:npn
+  at 1000 1200 R90
+  name Q65
+  model qmod
+inst fjd9e9 core:npn
+  at 1600 1200 MR0
+  name Q68
+  model qmod
+inst h123f1 core:res
+  at 400 0 R180
+  name R2
+  value 10k
+inst hr0e0f core:ind
+  at 0 400 MR0
+  name L20
+  value 3n
+inst hvvfs5 core:vsource
+  at 0 600 MR180
+  name V30
+  value "dc 1.8 ac 1"
+inst j2yqx6 core:res
+  at 1200 0 MR180
+  name R6
+  value 10k
+inst jp6mgk core:pmos4
+  at 200 1200 MR90
+  name M61
+  w 4u
+inst jt5g3a core:ind
+  at 200 400 MR90
+  name L21
+  value 3n
+inst jwbjgj core:vsource
+  at 200 600 MR270
+  name V31
+  value "dc 1.8 ac 1"
+inst jzc32a core:res
+  at 800 0 MR0
+  name R4
+  value 10k
+inst k6w65v core:cap
+  at 1000 200 MR270
+  name C15
+  value 2p
+  m 2
+inst ka86x3 core:pmos4
+  at 0 1200 MR0
+  name M60
+  w 4u
+inst kqndtc core:vsource
+  at 1200 400 R180
+  name V26
+  value "dc 1.8 ac 1"
+inst kz600c core:diode
+  at 600 800 R270
+  name D43
+  model dmod
+  area 2
+inst m38d4g core:nmos4
+  at 200 1000 R270
+  name M51
+  model nch
+  l 0.5u
+inst mgvc2c core:diode
+  at 400 800 R180
+  name D42
+  model dmod
+  area 2
+inst myyere core:nmos4
+  at 0 1000 R180
+  name M50
+  model nch
+  l 0.5u
+inst n1y9h2 core:diode
+  at 0 800 R0
+  name D40
+  model dmod
+  area 2
+inst nmsaab core:res
+  at 200 0 R90
+  name R1
+  value 10k
+inst pqpdfz core:isource
+  at 400 600 R0
+  name I32
+  value 1m
+inst q7phy0 core:cap
+  at 800 200 MR180
+  name C14
+  value 2p
+  m 2
+inst qdyqm2 core:npn
+  at 0 1400 MR180
+  name Q70
+  model qmod
+inst qemxvf core:isource
+  at 600 600 R90
+  name I33
+  value 1m
+inst qmxypx core:vcvs
+  at 1200 1400 MR0
+  name E76
+  value 10
+inst qxanbb core:diode
+  at 200 800 R90
+  name D41
+  model dmod
+  area 2
+inst rm3d00 core:vcvs
+  at 1400 1400 MR90
+  name E77
+  value 10
+inst rqhtrw core:ind
+  at 1800 200 R270
+  name L19
+  value 3n
+inst rxpd9m core:cap
+  at 1800 0 R90
+  name C9
+  value 2p
+  m 2
+inst tswfpb core:diode
+  at 800 800 MR0
+  name D44
+  model dmod
+  area 2
+inst v532cm core:pmos4
+  at 400 1200 MR180
+  name M62
+  w 4u
+inst vfhxqj core:isource
+  at 800 600 R180
+  name I34
+  value 1m
+inst wd97eg core:res
+  at 0 0 R0
+  name R0
+  value 10k
+inst x3s09z core:isource
+  at 1400 600 MR90
+  name I37
+  value 1m
+inst x92dwh core:vsource
+  at 1000 400 R90
+  name V25
+  value "dc 1.8 ac 1"
+inst xn8wrq core:npn
+  at 1200 1200 R180
+  name Q66
+  model qmod
+inst xwk3cv core:diode
+  at 1400 800 MR270
+  name D47
+  model dmod
+  area 2
+inst y81ee7 core:pmos4
+  at 600 1200 MR270
+  name M63
+  w 4u
+inst y8rdqm core:pmos4
+  at 1400 1000 R90
+  name M57
+  w 4u
+inst yvb319 core:vcvs
+  at 1800 1400 MR270
+  name E79
+  value 10
+inst yx8nvr core:vcvs
+  at 800 1400 R180
+  name E74
+  value 10
+inst z5sxb2 core:ind
+  at 1600 200 R180
+  name L18
+  value 3n
+inst z71zp9 core:npn
+  at 1800 1200 MR90
+  name Q69
+  model qmod
+inst zepew5 core:isource
+  at 1600 600 MR180
+  name I38
+  value 1m
+
+wire 0ct2er 230 0 260 -10
+wire 0grz3j 630 600 660 590
+wire 124qsh -20 1000 10 990
+wire 14q4yw 0 170 30 160
+wire 1a1jcp 400 430 430 420
+wire 1reqdq 230 1420 260 1410
+wire 2760vq 360 1380 390 1370
+wire 2hxc7v 1000 1180 1030 1170
+wire 2kwzj8 1400 980 1430 970
+wire 3gs45f 630 980 660 970
+wire 4ejmnc 600 980 630 970
+wire 4jddv2 1370 1180 1400 1170
+wire 4p8hzb 570 1400 600 1390
+wire 4xxdje 820 1230 850 1220
+wire 52vab3 1430 400 1460 390
+wire 54dnkm 1770 200 1800 190
+wire 5jym8e 0 630 30 620
+wire 5ntrgw 400 170 430 160
+wire 7xkfpq 570 1220 600 1210
+wire 8057wt 1830 980 1860 970
+wire 88ng5x 1600 30 1630 20
+wire 8byjec 420 1170 450 1160
+wire 8krmbb 20 1430 50 1420
+wire 8tvmb0 400 770 430 760
+wire aa7qp0 1580 970 1610 960
+wire ajm94a 800 830 830 820
+wire ajrqjv 1830 600 1860 590
+wire ajsp6v 1600 370 1630 360
+wire axj2zd 1200 170 1230 160
+wire b177f3 1240 1420 1270 1410
+wire bbabq2 600 1180 630 1170
+wire bfpykz 1030 0 1060 -10
+wire bvy1fp 800 370 830 360
+wire by4zmn 1370 1020 1400 1010
+wire c1nbkd 1200 1430 1230 1420
+wire c3gry4 230 600 260 590
+wire ccca14 200 1180 230 1170
+wire ce2rps 970 1020 1000 1010
+wire d4et1b -20 970 10 960
+wire d6wjrd 1430 800 1460 790
+wire d7a9cn 1180 1000 1210 990
+wire dd46wv 400 30 430 20
+wire eaxpy0 970 1400 1000 1390
+wire ed21df 1830 1180 1860 1170
+wire fappcs 20 1200 50 1190
+wire ff7958 630 1220 660 1210
+wire gefgbp 400 370 430 360
+wire ggv4nh 1600 1430 1630 1420
+wire gzsyaz 1770 0 1800 -10
+wire j9mrg3 170 1420 200 1410
+wire jaz6hf 570 600 600 590
+wire jd6mfb 800 570 830 560
+wire jpz8bg -20 1200 10 1190
+wire k7n9cm 1600 -30 1630 -40
+wire ksnmkb 1800 1020 1830 1010
+wire m0jkav 820 1000 850 990
+wire m8dac0 800 170 830 160
+wire mepzf5 230 200 260 190
+wire mmwxer -20 1400 10 1390
+wire ms79ac 360 1420 390 1410
+wire mtezpb 630 200 660 190
+wire mtryhh 1200 830 1230 820
+wire n0ftbt 0 430 30 420
+wire n93mfj 1620 770 1650 760
+wire nmzt6e 1800 1220 1830 1210
+wire ntxrz4 1600 430 1630 420
+wire p47j0r 1220 970 1250 960
+wire p53g99 0 570 30 560
+wire p8vdd2 400 630 430 620
+wire pe7903 1370 800 1400 790
+wire peffqn 1030 1220 1060 1210
+wire pjcmxf 1600 630 1630 620
+wire pvk93f 1000 1020 1030 1010
+wire pxr0kg 1770 1400 1800 1390
+wire qak03j 170 400 200 390
+wire qgyvag 1800 980 1830 970
+wire qnxr90 1200 370 1230 360
+wire r98g40 400 570 430 560
+wire rc4j6r 380 1000 410 990
+wire rdfcd7 980 1440 1010 1430
+wire rf534k 1830 400 1860 390
+wire rt8xv3 1770 980 1800 970
+wire s5tm3q 170 200 200 190
+wire s80bvy -20 1230 10 1220
+wire sfbhke 580 1360 610 1350
+wire sha5pm 400 -30 430 -40
+wire srm9fm 1580 1230 1610 1220
+wire tcw27q 630 400 660 390
+wire ttnnh7 570 0 600 -10
+wire twthmg 20 1370 50 1360
+wire tyh24a 970 0 1000 -10
+wire tyvdh1 970 800 1000 790
+wire v242k3 800 230 830 220
+wire w6b82v 820 1030 850 1020
+wire whhm9e 1620 1200 1650 1190
+wire x140sy 1830 820 1860 810
+wire x4gyba 570 980 600 970
+wire x7qayc 1560 1380 1590 1370
+wire xvqyn1 1580 800 1610 790
+wire yhm0c6 0 770 30 760
+wire yqyx8j 420 1230 450 1220
+wire yvejar 1600 570 1630 560
+wire z1a639 1430 600 1460 590
+wire z228zd 970 400 1000 390
+wire z4ea68 800 30 830 20
+wire z6a535 1370 0 1400 -10
+wire zc56vt 1430 0 1460 -10
+wire zqa4hx 1200 570 1230 560
+wire zs22fd 1370 1400 1400 1390
+wire zyzgnr 1600 1370 1630 1360
+
+label 0080dx 970 600 R0 c
+label 01d4p8 850 1220 R0 a
+label 07hbef 600 1020 R0 a
+label 0dqs2c 230 1170 R0 a
+label 0e855a 1830 970 R0 a
+label 0k3cze 1400 1170 R0 a
+label 0txa2s 1030 1020 R0 0
+label 16391e 1010 1430 R0 0
+label 18wf40 1240 1380 R0 a
+label 1kty6b 0 830 R0 0
+label 1v4aj0 1030 400 R0 b
+label 1xh647 420 1200 R0 0
+label 1znzst 260 -10 R0 b
+label 20x3k8 1560 1420 R0 c
+label 25w7s2 200 190 R0 b
+label 29kfxh 660 390 R0 c
+label 2scmmw 830 820 R0 c
+label 2t4jdk 1800 1390 R0 a
+label 2tynk4 390 1410 R0 c
+label 2x1bz2 800 630 R0 c
+label 301afs 570 200 R0 0
+label 30h7rs 620 1360 R0 0
+label 3203v5 30 760 R0 a
+label 34ymrz 1000 790 R0 b
+label 354q00 1770 820 R0 0
+label 35a950 1610 1220 R0 b
+label 3ckm2h 1060 -10 R0 c
+label 3n0tt6 1250 960 R0 c
+label 3wyehs 630 1400 R0 0
+label 3y28hq 800 1370 R0 0
+label 40njhp 1860 970 R0 0
+label 4ghpk5 -20 1170 R0 a
+label 4nqx49 1800 820 R0 0
+label 4ntj6x 0 -30 R0 b
+label 4nv1wc 1820 1360 R0 b
+label 4rn5g9 820 1170 R0 0
+label 4zrh02 1230 360 R0 0
+label 5152f6 1000 1390 R0 0
+label 5sbcfs 1630 1360 R0 b
+label 6c8rbn 400 230 R0 a
+label 6neqca 50 1360 R0 0
+label 6rejpm 170 0 R0 b
+label 6ve8ma 400 1430 R0 c
+label 6w9ty9 0 370 R0 b
+label 74g1ky 1060 1210 R0 c
+label 7fwa9x 800 1430 R0 c
+label 7jkkh3 400 1370 R0 b
+label 7km00x 1650 1190 R0 0
+label 7sa41t 1800 -10 R0 a
+label 7tr01d 0 230 R0 c
+label 7vzp4d 1600 230 R0 b
+label 7wy3dv 1860 390 R0 0
+label 7zvfbb 200 390 R0 b
+label 869cyf 1630 -40 R0 b
+label 8a91ar 10 960 R0 b
+label 8bhjf8 10 1220 R0 c
+label 8byh9v 780 1000 R0 0
+label 8gvt2s 410 990 R0 0
+label 8kbzzj 1830 200 R0 b
+label 8q4964 1430 200 R0 b
+label 8qqntz 840 1380 R0 c
+label 8sj5a2 390 1370 R0 0
+label 8x4ssy 800 430 R0 c
+label 9bmaxd 1400 -10 R0 0
+label 9qy68b 970 200 R0 a
+label 9tphns 1030 1400 R0 c
+label 9xzkg6 230 400 R0 b
+label 9zhmq1 1030 600 R0 0
+label a09qkq 380 1030 R0 0
+label a1p9xb 1000 390 R0 0
+label aasd9q 1800 190 R0 0
+label abb6va 230 980 R0 c
+label actch4 230 1180 R0 a
+label aekshv 200 1380 R0 a
+label agazsc 50 1420 R0 b
+label b0c7wp 1630 620 R0 c
+label b15sr7 1220 1000 R0 a
+label b7t807 830 160 R0 c
+label babcxn 850 990 R0 a
+label bdqgxg 10 990 R0 b
+label bfw4b1 1200 770 R0 b
+label bqe54d 1000 -10 R0 b
+label bqvqw8 1620 830 R0 b
+label bs99bk 430 20 R0 a
+label bsybcx 1460 590 R0 a
+label bwyz2k 1230 560 R0 b
+label by1k80 1200 630 R0 b
+label c21a4f 170 980 R0 0
+label ch04s4 170 800 R0 b
+label d27b2c 1860 1170 R0 0
+label d652k5 230 800 R0 c
+label d6mnz6 1830 1400 R0 0
+label d8etbz 1460 790 R0 c
+label dghdks 170 1180 R0 0
+label dqxqsk 430 620 R0 b
+label drf5hx 970 1220 R0 c
+label e073b2 1020 1440 R0 b
+label e1zywh 1610 960 R0 c
+label e9t9ay 1630 360 R0 c
+label em0wdj 1430 1180 R0 c
+label es1v2q 430 -40 R0 b
+label f4g98q 820 970 R0 0
+label fmsfmn 30 160 R0 0
+label fxk7nx 1800 970 R0 c
+label g6p3w5 430 760 R0 b
+label g7xdnn 630 800 R0 c
+label g97d9h 430 360 R0 a
+label gb9mmq 450 1160 R0 b
+label gct7y9 1620 800 R0 c
+label gj2y55 1180 1230 R0 c
+label gmqhh8 1430 1020 R0 b
+label gpwhan 430 560 R0 b
+label grnf49 1210 990 R0 0
+label h05dqb 1400 1390 R0 b
+label h06q1a 420 1000 R0 b
+label h767j0 200 980 R0 0
+label h8g28j 660 190 R0 a
+label hcm2cv 1200 -30 R0 b
+label hd8aq1 50 1190 R0 c
+label hdqhyx 1580 1170 R0 b
+label hdr80y 1860 590 R0 a
+label j3mmps 1650 760 R0 c
+label j3sea9 380 970 R0 0
+label ja1k5k 1860 810 R0 c
+label je1sec 200 1020 R0 b
+label jfn76b 1200 230 R0 0
+label jxzwcj 1580 1030 R0 c
+label k5vxq1 1220 1030 R0 0
+label k5yvkf 1400 1010 R0 0
+label k9qm1w 1420 1440 R0 a
+label kbyzzt 260 1410 R0 0
+label ke8sht 1400 1220 R0 a
+label keggne 1400 1020 R0 b
+label kw2gah 830 20 R0 c
+label mdw3rm -20 1030 R0 a
+label mmexd9 1580 1000 R0 a
+label mnpndz 1780 1360 R0 a
+label mqg33j 200 1410 R0 b
+label mqv5gr 1600 170 R0 c
+label myh9ss 660 970 R0 a
+label myv9gk 1230 1420 R0 a
+label mzm079 660 590 R0 a
+label n0f63m 1370 600 R0 0
+label n97px9 1630 560 R0 a
+label n9nynk 800 770 R0 0
+label navp6v 1220 1200 R0 c
+label nk2hwb 30 420 R0 0
+label nsbd4h 600 -10 R0 a
+label nxw9j3 1770 1180 R0 b
+label ny14a0 1430 970 R0 b
+label p6xktd 1630 1420 R0 a
+label patfr9 1460 390 R0 c
+label pe5rsw 450 1220 R0 0
+label pyy5zd 600 1210 R0 a
+label q0vg7e 1830 0 R0 b
+label q13eg3 830 360 R0 b
+label q3cfrx 1000 1010 R0 c
+label q3wkzy 1770 600 R0 b
+label q75jn6 1430 1400 R0 c
+label q9j6zt 850 1020 R0 a
+label q9qy7n 1590 1370 R0 b
+label qbm4qs 30 560 R0 0
+label qdnn5t 1200 30 R0 0
+label qemmqv 1000 980 R0 0
+label qwb4j8 10 1390 R0 b
+label r41ekk 830 220 R0 0
+label r629nv 1200 430 R0 b
+label rc8jmw 630 1170 R0 a
+label rh0ek2 780 1200 R0 0
+label rq96g5 1030 1010 R0 c
+label s7zpez 200 1220 R0 0
+label sekqyy 600 590 R0 b
+label shhwrg 1200 1370 R0 c
+label smw02h 600 1220 R0 0
+label sqbes0 1030 1170 R0 c
+label sshf08 260 590 R0 b
+label svhjd9 600 970 R0 c
+label sxcgma 1030 200 R0 a
+label sxrz5c 10 1190 R0 b
+label sz0k1e 380 1200 R0 c
+label t8qmtr 800 -30 R0 0
+label tjmqs1 1830 1010 R0 a
+label tq6v0e 1380 1440 R0 a
+label tsy4t1 1400 790 R0 b
+label tzxy76 1770 400 R0 c
+label v7e62a 20 1000 R0 0
+label vcp557 1460 -10 R0 a
+label vfskzj 1620 1000 R0 b
+label vja95z 1230 160 R0 c
+label vrw8cb 0 30 R0 c
+label vspnr1 1230 820 R0 b
+label vswa9w 260 190 R0 c
+label vvge04 600 1390 R0 c
+label w5hkcx 660 1210 R0 0
+label w7zfmm 1800 780 R0 0
+label wjbywh 570 800 R0 c
+label wrjwnq 1630 420 R0 0
+label ws2d02 630 970 R0 c
+label wstd9a 1370 400 R0 a
+label ww8mxb 1630 20 R0 0
+label x54rpv 430 420 R0 a
+label xt22vy 570 400 R0 c
+label xta1m6 430 160 R0 0
+label xyx7jp 1180 1170 R0 c
+label y70xqq 840 1420 R0 a
+label y71frw 400 830 R0 b
+label y8qk0s 1270 1410 R0 a
+label yd3bd7 630 0 R0 a
+label ynqt9p 830 560 R0 a
+label ypvbk2 1610 790 R0 a
+label yz7j3h 170 600 R0 a
+label z1mzjg 30 620 R0 c
+label z580zq 610 1350 R0 b
+label zak6dk 1030 800 R0 0
+label zk3daj 1370 200 R0 b
+label zvsfky 1830 1210 R0 0
+
+code op spice
+  | .op
+== schemify.project
+schemify 1 project
+
+lib root path root

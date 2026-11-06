@@ -3,7 +3,7 @@
 
 use super::*;
 use crate::virtuoso::results::{self, History, wave};
-use schemify_doc::{Assignment, DocHandle, LibSource, Project};
+use schemify_format::{RecordKind, parse};
 
 const USAGE: &str = "usage: schemify-interop maestro-results <project-dir> <dump.sfyx> <bench.shbench>   (paths relative to <project-dir>)";
 
@@ -68,54 +68,23 @@ pub(super) fn maestro_results(args: &[String]) -> u8 {
 
 /// Writes the run of `h` for `bench` and returns its directory.
 fn import(root: &Path, bench: &str, base: &Path, h: &History) -> Result<PathBuf, (u8, String)> {
-    let (mut project, top, name) = open_project(root, bench).map_err(|e| (2, e))?;
-    let plan = schemify_run::Plan::read(project.doc(top).expect("open"))
-        .map_err(|e| (1, format!("{bench}: {e}")))?;
-    let mut jobs = schemify_run::Jobs::new();
-    for j in &h.jobs {
-        let sets: Vec<Assignment<&str>> = j
-            .sets
-            .iter()
-            .map(|(n, v)| Assignment {
-                name: n.as_str(),
-                value: v.as_str(),
-            })
-            .collect();
-        jobs.push(None, j.corner.as_deref(), schemify_run::NO_SAMPLE, &sets)
-            .map_err(|e| (1, e.to_string()))?;
-    }
-    // run.md §4: the environment is part of the hash, as `schemify run` passes it.
-    let mut env: Vec<(String, String)> = std::env::vars().collect();
-    env.sort_unstable();
-    let env: Vec<Assignment<&str>> = env
+    let path = root.join(bench);
+    let bytes = std::fs::read(&path).map_err(|e| (2, format!("{}: {e}", path.display())))?;
+    let doc = parse(&bytes).map_err(|e| (1, format!("{bench}: {e}")))?;
+    let name = bench_name(root, bench)?;
+    // run.md §4 job key lines: `<config|-> <corner|-> <sample|-> var=value …`.
+    let keys: Vec<String> = h
+        .jobs
         .iter()
-        .map(|(n, v)| Assignment {
-            name: n.as_str(),
-            value: v.as_str(),
+        .map(|j| {
+            let mut k = format!("- {} -", j.corner.as_deref().unwrap_or("-"));
+            for (n, v) in &j.sets {
+                k.push_str(&format!(" {n}={v}"));
+            }
+            k
         })
         .collect();
-    // ponytail: open what elaboration asks for, at most once per row.
-    let digest = loop {
-        match schemify_run::design(
-            &project,
-            top,
-            &jobs,
-            &env,
-            schemify_elab::Dialect::Spectre,
-            &mut schemify_elab::no_funcs,
-        ) {
-            Ok(d) => break d,
-            Err(schemify_run::Blocked::NeedsOpen(rows)) => {
-                for r in rows {
-                    open_row(&mut project, root, r as usize).map_err(|e| (1, e))?;
-                }
-            }
-            Err(schemify_run::Blocked::Violations(v)) => {
-                return Err((1, format!("{bench} does not elaborate: {}", v.join("; "))));
-            }
-        }
-    };
-    let hex = schemify_doc::hex(&digest);
+    let hex = design_hash(root, bench, &keys)?;
     let dir = root.join(".schemify/runs").join(format!("v{}", &hex[..16]));
     let source = format!(
         "  source virtuoso {}/{}/{} ",
@@ -134,15 +103,17 @@ fn import(root: &Path, bench: &str, base: &Path, h: &History) -> Result<PathBuf,
             ),
         ));
     }
-    let names = |v: Vec<&str>| v.into_iter().map(str::to_owned).collect::<Vec<_>>();
-    let outputs = names(plan.outputs.iter().map(|o| o.name.as_str()).collect());
-    let specs = names(
-        plan.specs
-            .iter()
-            .map(|s| plan.outputs[usize::from(s.output)].name.as_str())
-            .collect(),
+    let names = |kind: RecordKind| -> Vec<String> {
+        (1..doc.record_count())
+            .filter(|&r| doc.record_kind(r) == kind)
+            .map(|r| doc.field(r, 0).unwrap_or("").to_owned())
+            .collect()
+    };
+    let (outputs, specs, vars) = (
+        names(RecordKind::Output),
+        names(RecordKind::Spec),
+        names(RecordKind::Var),
     );
-    let vars = names(plan.vars.iter().map(|v| v.name.as_str()).collect());
     let text = results::results_file(h, &hex, &outputs, &specs, &vars);
     let io = |p: &Path, e: std::io::Error| (2, format!("{}: {e}", p.display()));
     let write = |p: &Path, b: &[u8]| {
@@ -157,6 +128,15 @@ fn import(root: &Path, bench: &str, base: &Path, h: &History) -> Result<PathBuf,
         let t = std::fs::read_to_string(&src).map_err(|e| io(&src, e))?;
         let a = wave::parse(&t).map_err(|e| (2, format!("{}: {e}", src.display())))?;
         write(&dir.join(j.to_string()).join("out.raw"), &wave::raw(&a))?;
+        let skipped = wave::skipped(&t);
+        if !skipped.is_empty() {
+            println!(
+                "note: point {j}: {} result value(s) are no waveform and are not mapped (the \
+                 operating point and noise summaries come from Schemify's own run): {}",
+                skipped.len(),
+                skipped.join(" ")
+            );
+        }
     }
     for (from, to) in [(&h.dump.rdb, "maestro.rdb"), (&h.dump.setup, "history.zip")] {
         if !from.is_empty() {
@@ -172,125 +152,39 @@ fn import(root: &Path, bench: &str, base: &Path, h: &History) -> Result<PathBuf,
     Ok(dir)
 }
 
-/// The project at `root` loaded as `schemify run` loads it (manifest, lockfile, every
-/// local library indexed from its directory), with `bench` open: (project, bench handle,
-/// the bench's name for the run's `bench` sidecar, `lib:stem` or `stem`).
-fn open_project(root: &Path, bench: &str) -> Result<(Project, DocHandle, String), String> {
-    let manifest = std::fs::read(root.join("schemify.project")).ok();
-    let lock = std::fs::read(root.join("schemify.lock")).ok();
-    let mut p = Project::new(manifest.as_deref(), lock.as_deref(), 0)
-        .map_err(|e| format!("schemify.project: {e:?}"))?;
-    let dirs = lib_dirs(&p, root);
-    let nested: Vec<&PathBuf> = dirs.iter().skip(1).flatten().collect();
-    let want = root.join(bench);
-    let mut top = None;
-    for (row, dir) in dirs.iter().enumerate() {
-        let Some(dir) = dir else { continue };
-        let mut files = Vec::new();
-        list(dir, 0, &nested, dir, &mut files);
-        let mut listed = Vec::new();
-        for (rel, path) in &files {
-            listed.push((
-                rel.as_str(),
-                std::fs::read(path).map_err(|e| format!("{}: {e}", path.display()))?,
-            ));
-        }
-        let lib = p.libs().name[row].clone();
-        let refs: Vec<(&str, &[u8])> = listed.iter().map(|(r, b)| (*r, b.as_slice())).collect();
-        p.index_library(&lib, &dir.display().to_string(), &refs)
-            .map_err(|c| format!("lib {lib}: {c}"))?;
-        if let Some((rel, b)) = files
-            .iter()
-            .zip(&listed)
-            .find(|(f, _)| f.1 == want)
-            .map(|(f, l)| (&f.0, &l.1))
+/// The design hash Schemify's run gives `bench` with these job key lines (run.md §4).
+///
+/// # Errors
+///
+/// Always, for now: the hash needs elaboration (the cells each config reaches), and neither
+/// Schemify's public SDK nor its shipped command line offers it.
+// ponytail: refuses until the plugin ABI can import a run (the host hashes the design and
+// writes `.schemify/runs/v<hash>/`, as Simulate does); every other step below is in place.
+fn design_hash(_root: &Path, bench: &str, _keys: &[String]) -> Result<String, (u8, String)> {
+    Err((
+        2,
+        format!(
+            "{bench}: maestro-results needs the design hash of Schemify's run (run.md §4), \
+             which Schemify's public interface does not offer yet"
+        ),
+    ))
+}
+
+/// The bench's display name for the run's `bench` sidecar: `lib:dir/stem`, or `dir/stem` in
+/// the project library (a `lib … path` directory of the manifest holds it, else the project).
+fn bench_name(root: &Path, bench: &str) -> Result<String, (u8, String)> {
+    let manifest = std::fs::read(root.join("schemify.project"))
+        .map_err(|e| (2, format!("schemify.project: {e}")))?;
+    let libs = crate::design::manifest_libs(&manifest).unwrap_or_default();
+    let bench = bench.replace('\\', "/");
+    let stem = bench.rsplit_once('.').map_or(bench.as_str(), |(s, _)| s);
+    for (lib, dir) in &libs {
+        if let Some(rel) = stem
+            .strip_prefix(dir.as_str())
+            .and_then(|r| r.strip_prefix('/'))
         {
-            let o = p
-                .open(&lib, rel, b, None)
-                .map_err(|e| format!("{bench}: {e:?}"))?;
-            let stem = rel.rsplit_once('.').map_or(rel.as_str(), |(s, _)| s);
-            let name = if lib.is_empty() {
-                stem.to_owned()
-            } else {
-                format!("{lib}:{stem}")
-            };
-            top = Some((o.handle, name));
+            return Ok(format!("{lib}:{rel}"));
         }
     }
-    // D10: the implicit `lib core builtin`, indexed from the binary under the name the
-    // Schemify CLI gives it (`libs::BUILTIN_DIR`).
-    if p.libs()
-        .find("core")
-        .is_some_and(|r| p.libs().source[r] == LibSource::Builtin)
-    {
-        p.index_library("core", "<builtin>/core", schemify_doc::core_library())
-            .map_err(|c| format!("lib core: {c}"))?;
-    }
-    let (h, name) = top.ok_or_else(|| format!("{bench}: no library of the project holds it"))?;
-    Ok((p, h, name))
-}
-
-/// Each library row's directory (`None`: builtin, or a source not on disk).
-fn lib_dirs(p: &Project, root: &Path) -> Vec<Option<PathBuf>> {
-    let l = p.libs();
-    (0..l.name.len())
-        .map(|r| match &l.source[r] {
-            LibSource::Project => Some(root.to_path_buf()),
-            LibSource::Path { path } => {
-                let d = root.join(path);
-                Some(l.subdir[r].as_ref().map_or(d.clone(), |s| d.join(s)))
-            }
-            _ => None,
-        })
-        .collect()
-}
-
-/// Cell files under `dir` (relative to `lib`), sorted, skipping hidden entries, `target`
-/// and other libraries' directories, as the Schemify CLI lists a library.
-fn list(dir: &Path, depth: u32, skip: &[&PathBuf], lib: &Path, out: &mut Vec<(String, PathBuf)>) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut paths: Vec<PathBuf> = entries.flatten().map(|e| e.path()).collect();
-    paths.sort();
-    for p in paths {
-        let name = p.file_name().and_then(|n| n.to_str()).unwrap_or(".");
-        if name.starts_with('.') || name == "target" || skip.iter().any(|s| **s == p) {
-            continue;
-        }
-        if p.is_dir() {
-            if depth < 64 {
-                list(&p, depth + 1, skip, lib, out);
-            }
-        } else if [".shprim", ".shcomp", ".shbench"]
-            .iter()
-            .any(|e| name.ends_with(e))
-            && let Ok(rel) = p.strip_prefix(lib)
-        {
-            out.push((slash(rel), p.clone()));
-        }
-    }
-}
-
-/// Opens indexed cell `row` (its file, or the bundled core cell).
-fn open_row(p: &mut Project, root: &Path, row: usize) -> Result<(), String> {
-    let c = p.cells();
-    let s = p.strings();
-    let (dir, stem) = (s.get(c.dir[row]).to_owned(), s.get(c.stem[row]).to_owned());
-    let rel = if dir.is_empty() {
-        format!("{stem}.{}", c.kind[row].as_str())
-    } else {
-        format!("{dir}/{stem}.{}", c.kind[row].as_str())
-    };
-    let lib = usize::from(c.lib[row]);
-    let name = p.libs().name[lib].clone();
-    let bytes = match &lib_dirs(p, root)[lib] {
-        Some(d) => std::fs::read(d.join(&rel)).map_err(|e| format!("{name}/{rel}: {e}"))?,
-        None => schemify_doc::core_file(&stem)
-            .ok_or_else(|| format!("{name}:{stem}: not on disk"))?
-            .to_vec(),
-    };
-    p.open(&name, &rel, &bytes, None)
-        .map(|_| ())
-        .map_err(|e| format!("{name}/{rel}: {e:?}"))
+    Ok(stem.to_owned())
 }

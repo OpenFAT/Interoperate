@@ -1,0 +1,38 @@
+schemify 1 shbench
+  doc "Lane A live check (live/checks/a_ade.il): noise, dc, ac lin, simulator options and the settle and max outputs through Maestro, ADE's netlist, Spectre and OCEAN"
+
+inst v00001 core:vsource
+  at -120 30 R0
+  name V1
+  value "PULSE(0 1 0 1n 1n 10m 20m)"
+inst x00001 ./rcfilter
+  at 0 0 R0
+  name X1
+  R R
+  C C
+
+wire w00001 -120 0 -40 0
+wire w00002 -120 60 -120 80
+wire w00003 0 40 0 80
+wire w00004 -120 80 0 80
+wire w00005 40 0 80 0
+
+label n00001 80 0 R0 out
+label n00002 -80 0 R0 in
+label n00003 -60 80 R0 0
+
+var R 1k
+  unit Ohm
+var C 1u
+  unit F
+
+output tau "cross(v(out), 0.6321205588285577)"
+output st "settle(v(out), 10m)"
+output mx "max(ymax(v(out)), 0.5)"
+
+code sim spice
+  | .tran 1u 5m
+  | .ac lin 5 1 5
+  | .dc V1 0 1 0.1
+  | .noise v(out) V1 dec 10 1 1meg
+  | .options reltol=1e-5 gmin=1e-14

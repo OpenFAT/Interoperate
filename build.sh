@@ -5,7 +5,8 @@
 # (the format, doc, expr crates and every converter are linked in). The limit is Interop's own
 # budget, not the plugin ABI's: wasmi, native and web, sets no module-size cap. It guards
 # against accidental bloat and web load time. It was 1500 KB (2e263a7) until the lanes adding
-# Maestro, ADE L, results and layout support grew the module by design.
+# Maestro, ADE L, results and layout support grew the module by design, and 2048 KB until
+# the gaps2 lanes (connectivity table, ADE's analysis forms table, the SKILL they ship) did.
 #
 # Needs the wasm32-unknown-unknown std (rust-toolchain.toml; `nix develop` has Rust 1.95.0 with
 # it and rust-lld). A toolchain without rust-lld (nixpkgs' rustc) links with wasm-ld instead,
@@ -35,7 +36,7 @@ target="${CARGO_TARGET_DIR:-$here/target}"
 cargo build --manifest-path "$here/Cargo.toml" --locked --release --target wasm32-unknown-unknown
 
 wasm="$target/wasm32-unknown-unknown/release/interop.wasm"
-limit=2048
+limit=2304
 size=$(wc -c <"$wasm")
 if (( size >= limit * 1024 )); then
   echo "error: interop.wasm is $size bytes (limit $limit KB)" >&2

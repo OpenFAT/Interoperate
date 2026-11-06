@@ -1,0 +1,197 @@
+top top.shcomp for Ngspice
+== dev/nmos.shprim
+schemify 1 shprim
+  doc "NMOS transistor (editor fixture)"
+  prefix M
+  vsym f5f4766a46adddf7
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B in 20 0
+
+param W 1
+  unit um
+param L 0.15
+  unit um
+param nf 1
+  kind int
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} nmos W={W}u L={L}u nf={nf}"
+
+line 20 -30 20 -15
+line 20 15 20 30
+line 4 -15 20 -15
+line 4 15 20 15
+line 4 -15 4 15
+line 0 -10 0 10
+line -20 0 0 0
+line 4 0 20 0
+
+poly 12 15 16 12 16 18 12 15
+  closed true
+
+stext 25 -27 R0 {name}
+  size 0.2
+stext 25 12 R0 W={W}
+  size 0.15
+== dev/pmos.shprim
+schemify 1 shprim
+  doc "PMOS transistor (editor fixture)"
+  prefix M
+  vsym f8e9411f7d94325b
+
+pin D inout 20 30
+pin G in -20 0
+pin S inout 20 -30
+pin B in 20 0
+
+param W 2
+  unit um
+param L 0.15
+  unit um
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} pmos W={W}u L={L}u"
+
+line 20 -30 20 -15
+line 20 15 20 30
+line 4 -15 20 -15
+line 4 15 20 15
+line 4 -15 4 15
+line 0 -10 0 10
+line -20 0 -5 0
+
+circle -2.5 0 2.5
+
+line 4 0 20 0
+
+stext 25 -27 R0 {name}
+  size 0.2
+stext 25 12 R0 W={W}
+  size 0.15
+== inv.shcomp
+schemify 1 shcomp
+  doc "CMOS inverter (editor fixture)"
+  prefix x
+  vsym 3765ee9924fdb063
+  vsch 9f59b8e30c3ebcfb
+  vcdf 393abafb700fb87b
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"param\" \"wp\" \"string\" \"2\" \"wp\" \"\" (\"parseAsNumber\" \"parseAsCEL\") () \"\")"
+  vcdfrec "(\"param\" \"wn\" \"string\" \"1\" \"wn\" \"\" (\"parseAsNumber\" \"parseAsCEL\") () \"\")"
+  vcdfrec "(\"siminfo\" \"auCdl\" ((\"instParameters\" (\"wp\" \"wn\")) (\"namePrefix\" \"X\") (\"netlistProcedure\" \"ansCdlSubcktCall\") (\"termOrder\" (\"A\" \"Y\" \"VDD\" \"VSS\"))))"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"instParameters\" (\"wp\" \"wn\")) (\"termOrder\" (\"A\" \"Y\" \"VDD\" \"VSS\"))))"
+
+pin A in -40 0
+pin Y out 40 0
+pin VDD inout 0 -30
+pin VSS inout 0 30
+
+param wp 2
+  unit um
+param wn 1
+  unit um
+
+impl sch schematic
+
+poly -20 -20 15 0 -20 20 -20 -20
+  closed true
+
+circle 18 0 3
+
+line -40 0 -20 0
+line 21 0 40 0
+line 0 -30 0 -11
+line 0 11 0 30
+
+stext -20 -38 R0 {name}
+  size 0.25
+stext -17 -5 R0 inv
+  size 0.18
+
+inst m00001 dev:pmos
+  at 0 -50 R0
+  name M1
+  W wp
+inst m00002 dev:nmos
+  at 0 50 R0
+  name M2
+  W wn
+
+wire w00001 20 -20 20 20
+wire w00002 20 0 80 0
+wire w00003 -20 -50 -20 50
+wire w00004 -60 0 -20 0
+wire w00005 20 -110 20 -80
+wire w00006 20 80 20 110
+wire w00007 20 -50 50 -50
+wire w00008 20 50 50 50
+
+label n00001 50 -50 R0 VDD
+label n00002 50 50 R0 VSS
+
+port p00001 -60 0 R0 A
+port p00002 80 0 R180 Y
+port p00003 20 -110 R90 VDD
+port p00004 20 110 R270 VSS
+
+text t00001 -60 -150 R0 "CMOS inverter"
+  size 0.4
+== schemify.project
+schemify 1 project
+
+lib dev path dev
+== top.shcomp
+schemify 1 shcomp
+  doc "Two-inverter buffer: an inverter cell used as a hierarchical sub-cell"
+  prefix x
+  vsym ac1abc5bad4f292e
+  vsch bdcff5bf1153b3cb
+  vcdf 5b20fb207c893c7e
+
+pin IN in -40 0
+pin OUT out 40 0
+
+impl sch schematic
+
+rect -20 -20 20 20
+
+line -40 0 -20 0
+line 20 0 40 0
+
+stext -20 -28 R0 {name}
+  size 0.25
+stext -14 -5 R0 buf2
+  size 0.18
+
+inst x00001 ./inv
+  at 0 0 R0
+  name x1
+  wp 4
+inst x00002 ./inv
+  at 140 0 R0
+  name x2
+
+wire w00001 40 0 100 0
+wire w00002 -80 0 -40 0
+wire w00003 180 0 240 0
+wire w00004 0 -70 0 -30
+wire w00005 140 -70 140 -30
+wire w00006 0 -70 140 -70
+wire w00007 0 30 0 70
+wire w00008 140 30 140 70
+wire w00009 0 70 140 70
+
+label n00001 70 0 R0 mid
+label n00002 70 -70 R0 VDD
+label n00003 70 70 R0 VSS
+
+port p00001 -80 0 R0 IN
+port p00002 240 0 R180 OUT
+
+noconn c00001 260 40
+
+text t00001 -80 -130 R0 "Two-inverter buffer: x1 and x2 are the hierarchical sub-cell inv"
+  size 0.3

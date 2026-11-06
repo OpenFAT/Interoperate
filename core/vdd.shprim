@@ -1,0 +1,21 @@
+schemify 1 shprim
+  doc "Supply: a net-label shorthand, not a device. Placing it names the net at p after lab (global); the importer and the editor write a label record instead of an instance"
+  prefix S
+  category label
+
+pin p inout 0 0
+
+param lab VDD
+  kind string
+  doc "global net name"
+
+impl spice spice
+  ignore true
+
+line 0 0 0 -10
+line -7.5 -10 7.5 -10
+  width 2
+
+stext 0 -20 R0 {lab}
+  size 0.14
+  hcenter

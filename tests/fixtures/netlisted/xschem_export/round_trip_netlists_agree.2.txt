@@ -1,0 +1,97 @@
+top root/tb.shbench for Ngspice
+== root/cap.shprim
+schemify 1 shprim
+  prefix C
+  category primitive
+  provenance "xschem root/cap.sym"
+  xfp 8dc98d88fbd7ee9b
+
+pin A inout 0 -30
+pin B inout 0 30
+
+param C 1p
+
+impl spice spice
+  format spice "{name} {A} {B} {C}"
+
+line 0 -30 0 -4
+  layer 4
+line 0 4 0 30
+  layer 4
+line -12 -4 12 -4
+  layer 4
+line -12 4 12 4
+  layer 4
+
+stext 16 -12 R0 {name}
+  size 0.2
+  layer 3
+stext 16 2 R0 C=
+  size 0.18
+  layer 3
+== root/res.shprim
+schemify 1 shprim
+  prefix R
+  category primitive
+  provenance "xschem root/res.sym"
+  xfp 9795c6304861d25d
+
+pin A inout 0 -30
+pin B inout 0 30
+
+param R 1k
+
+impl spice spice
+  format spice "{name} {A} {B} {R}"
+
+line 0 -30 0 -15
+  layer 4
+line 0 15 0 30
+  layer 4
+
+rect -5 -15 5 15
+  layer 4
+  fill false
+
+stext 10 -12 R0 {name}
+  size 0.2
+  layer 3
+stext 10 2 R0 R=
+  size 0.18
+  layer 3
+== root/tb.shbench
+schemify 1 shbench
+  provenance "xschem root/tb.sch"
+  xfp e68b33b6b8f33212
+
+inst nmsaab ./cap
+  at 0 90 R0
+  name C1
+  C C
+inst wd97eg ./res
+  at 0 0 R0
+  name R1
+  R R
+
+wire h123f1 0 30 0 60
+
+label d5d493 0 -30 R0 in
+label djz6at 0 120 R0 0
+label jzc32a 0 30 R0 out
+
+text j2yqx6 -60 -80 R0 "RC low-pass: V1 in 0 1 (code block), tau = R C"
+  size 0.3
+
+var R 3.3k
+var C 1u
+
+code params spice
+code tran spice
+  | V1 in 0 1
+  | .ic v(out)=0
+  | .op
+  | .tran 1u 5m 0 1u uic
+== schemify.project
+schemify 1 project
+
+lib root path root

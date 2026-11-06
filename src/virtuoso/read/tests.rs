@@ -82,7 +82,7 @@ proptest! {
         let names: Vec<String> = pins.iter().map(|p| net_from_virtuoso(p).text).collect();
         let rows: Vec<PinRow> = names.iter().map(|p| pin(p)).collect();
         let params: Vec<ParamIn> = ps.iter().map(|x| param(&x.1, x.2)).collect();
-        let t = spectre_format(&DCell::default(), &si, &params, &rows);
+        let t = spectre_format(&DCell::default(), &si, &params, &rows, &mut Notes::default());
         let kinds: Vec<(String, String)> =
             params.iter().map(|p| (p.name.clone(), p.kind.clone())).collect();
         prop_assert_eq!(spectre_siminfo(&t, &names, &kinds), Some(si), "via {}", t);
@@ -164,9 +164,9 @@ proptest! {
     #[test]
     fn engineering_text_keeps_the_value(m in 1u32..10_000_000, e in -21i32..17, neg: bool) {
         let t = format!("{}{m}e{e}", if neg { "-" } else { "" });
-        let x = schemify_expr::parse_num(&t).unwrap();
+        let x = crate::expr::parse_num(&t).unwrap();
         let back = si_text(&t);
-        let y = schemify_expr::parse_num(&back)
+        let y = crate::expr::parse_num(&back)
             .unwrap_or_else(|_| panic!("{t} became unreadable {back}"));
         prop_assert!((x - y).abs() <= x.abs() * 1e-14, "{} = {} became {} = {}", t, x, back, y);
     }

@@ -1,0 +1,115 @@
+top demo/tb_buf4.shbench for Ngspice
+== analogLib/res.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/res"
+  vibox none
+  vsym 1101032df2f5824a
+
+pin PLUS inout 0 -30
+  vplabel none
+pin MINUS inout 0 30
+  vplabel none
+
+param r 1k
+  unit Ohm
+  doc Resistance
+param m 1
+  doc Multiplier
+
+impl spice spice
+  format spice "R{name} {PLUS} {MINUS} {r} m={m}"
+  format spectre "{name} ({PLUS} {MINUS}) resistor r={r} m={m}"
+
+rect -6 -20 6 20
+== demo/buf.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym 11571711a55fd511
+  vsch 496fd5c900f5bdf9
+  vcdf 3b9a1185d1fdbb4b
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\" \"Y\"))))"
+
+pin A in -40 0
+  vplabel none
+pin Y out 40 0
+  vplabel none
+
+impl schematic schematic
+
+rect -20 -20 20 20
+
+inst 9c1317 analogLib:res
+  at 0 0 R0
+  name R0
+  r 2k
+
+wire p797v3 0 -60 0 -30
+wire xxpxay 0 30 0 60
+
+port 4xnrrh 0 60 R0 Y
+port 5a7szc 0 -60 R0 A
+== demo/buf4.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym 8c00b16877b7513c
+  vsch c562c5c19e191a55
+  vcdf 4e8ac34b11252ac0
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"in<3:0>\" \"out<3:0>\"))))"
+
+pin in[3:0] in -40 0
+  vplabel none
+pin out[3:0] out 40 0
+  vplabel none
+
+impl schematic schematic
+
+rect -20 -20 20 20
+
+inst gs58w6 ./buf
+  at 0 0 R0
+  name I0[3:0]
+
+wire 0zyyrf 40 0 80 0
+  bus true
+  vwidth 3
+wire epnzab -80 0 -40 0
+  bus true
+  vwidth 3
+
+label yjnhep -60 0 R0 in[3:0]
+  voff 0 -3
+
+port 3hza6w -80 0 R0 in[3:0]
+port mg4dke 80 0 R180 out[3:0]
+== demo/tb_buf4.shbench
+schemify 1 shbench
+  vsch 4e1ad95a22950565
+
+inst maz0aa ./buf4
+  at 0 0 R0
+  name I1
+inst qx379m analogLib:res
+  at 120 40 R0
+  name R9
+  r 10meg
+
+wire 9kdcgt 120 -10 120 10
+wire amsrtf 40 0 80 0
+  bus true
+  vwidth 3
+wire v6mrk0 -80 0 -40 0
+  bus true
+  vwidth 3
+
+label 05h9fz -60 0 R0 d[3:0]
+label 8k8map 120 -10 R0 q[0]
+label faj5kc 120 70 R0 0
+  vinst I5
+label fm55j9 60 0 R0 q[3:0]
+== schemify.project
+schemify 1 project
+
+lib analogLib path analogLib
+lib demo path demo

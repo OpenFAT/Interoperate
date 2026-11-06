@@ -46,6 +46,12 @@ enum Unit {
     Micro,
 }
 
+/// D14's unit rule: a plain default of 1e-3 or more is micrometres (sky130 `L=0.15`).
+#[cfg(feature = "cli")]
+pub(crate) fn is_micro(default: &str) -> bool {
+    unit_of(default) == Unit::Micro
+}
+
 fn unit_of(default: &str) -> Unit {
     let t = default.trim();
     let suffixed = t.ends_with(|c: char| c.is_ascii_alphabetic());

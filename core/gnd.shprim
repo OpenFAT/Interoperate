@@ -1,0 +1,24 @@
+schemify 1 shprim
+  doc "Ground: a net-label shorthand, not a device. Placing it names the net at p after lab (global); the importer and the editor write a label record instead of an instance"
+  prefix G
+  category label
+
+pin p inout 0 0
+
+param lab 0
+  kind string
+  doc "global net name"
+
+impl spice spice
+  ignore true
+
+line 0 0 0 10
+line -7.5 10 7.5 10
+  width 2
+line -5 13.75 5 13.75
+  width 2
+line -2.5 17.5 2.5 17.5
+  width 2
+
+stext 10 6 R0 {lab}
+  size 0.14

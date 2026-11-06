@@ -1,0 +1,201 @@
+top rclive_tb.shbench for Ngspice
+== analogLib/cap.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/cap"
+  vibox -40 -40 40 40
+  vsym e876d010f92213f6
+
+pin PLUS inout 0 0
+  vplabel 0 0 R0 centerLeft stick 10000
+pin MINUS inout 0 60
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param c ""
+  kind string
+param m ""
+  kind string
+
+impl spice spice
+  format spice "C{name} {PLUS} {MINUS} {c}{m != \"\" ? \" m=\" + m : \"\"}"
+  format spectre "{name} ({PLUS} {MINUS}) cap"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== analogLib/res.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/res"
+  vibox -40 -40 40 40
+  vsym 3d126e49cd581b2c
+
+pin PLUS inout 0 0
+  vplabel 0 0 R0 centerLeft stick 10000
+pin MINUS inout 0 60
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param r 1k
+  unit Ohm
+  doc Resistance
+param m 1
+  doc Multiplier
+
+impl spice spice
+  format spice "R{name} {PLUS} {MINUS} {r} m={m}"
+  format spectre "{name} ({PLUS} {MINUS}) res"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== analogLib/vpulse.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/vpulse"
+  vibox -40 -40 40 40
+  vsym d5f9fa34d75fe11a
+
+pin PLUS inout 0 0
+  vplabel 0 0 R0 centerLeft stick 10000
+pin MINUS inout 0 60
+  vplabel 0 0 R0 centerLeft stick 10000
+
+param v1 ""
+  kind string
+param v2 ""
+  kind string
+param td ""
+  kind string
+param tr ""
+  kind string
+param tf ""
+  kind string
+param pw ""
+  kind string
+param per ""
+  kind string
+param vdc ""
+  kind string
+param acm ""
+  kind string
+param acp ""
+  kind string
+
+impl spice spice
+  format spice "V{name} {PLUS} {MINUS} pulse({v1} {v2} {td} {tr} {tf} {pw} {per})"
+  format spectre "{name} ({PLUS} {MINUS}) vpulse"
+
+rect -20 -20 20 20
+
+stext 0 -30 R0 {name}
+  size 1
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== rcfilter.shcomp
+schemify 1 shcomp
+  doc "RC low-pass section: R from in to out, C from out to gnd (live Virtuoso kit fixture)"
+  prefix X
+  vsym a8a2064e8dda732f
+  vsch f446799ed13dc48f
+  vcdf abd87641e9723a8a
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"param\" \"R\" \"string\" \"1k\" \"R\" \"resistance\" (\"parseAsNumber\" \"parseAsCEL\") () \"\")"
+  vcdfrec "(\"param\" \"C\" \"string\" \"1u\" \"C\" \"capacitance\" (\"parseAsNumber\" \"parseAsCEL\") () \"\")"
+  vcdfrec "(\"siminfo\" \"auCdl\" ((\"instParameters\" (\"R\" \"C\")) (\"namePrefix\" \"X\") (\"netlistProcedure\" \"ansCdlSubcktCall\") (\"termOrder\" (\"in\" \"out\" \"gnd\"))))"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"instParameters\" (\"R\" \"C\")) (\"termOrder\" (\"in\" \"out\" \"gnd\"))))"
+
+pin in in -40 0
+pin out out 40 0
+pin gnd inout 0 40
+
+param R 1k
+  unit Ohm
+param C 1u
+  unit F
+
+impl sch schematic
+
+rect -20 -20 20 20
+
+line -40 0 -20 0
+line 20 0 40 0
+line 0 20 0 40
+
+stext -20 -28 R0 {name}
+  size 0.2
+stext -14 -5 R0 rc
+  size 0.18
+
+inst c00001 core:cap
+  at 0 90 R0
+  name C1
+  value C
+inst r00001 core:res
+  at 0 0 R0
+  name R1
+  value R
+
+wire w00001 -60 -30 0 -30
+wire w00002 0 30 0 60
+wire w00003 0 30 60 30
+wire w00004 0 120 0 150
+
+port p00001 -60 -30 R0 in
+port p00002 60 30 R180 out
+port p00003 0 150 R270 gnd
+== rclive_tb.shbench
+schemify 1 shbench
+  doc "RC step response for the live Virtuoso kit: OCEAN must give tau = R*C and v(out) at 1 ms = 1 - 1/e"
+  vmaesdb tran "<?xml version=\"1.0\"?>\n<setupdb version=\"6\">maesdb\n\t<active>Active Setup\n\t\t<corners>\n\t\t\t<corner enabled=\"1\">_default</corner>\n\t\t</corners>\n\t\t<tests>\n\t\t\t<test>tran\n\t\t\t\t<tool>ADE</tool>\n\t\t\t\t<tooloptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>rclive_tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rclive</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>path\n\t\t\t\t\t\t<value>$AXL_SETUPDB_DIR</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>state\n\t\t\t\t\t\t<value>active</value>\n\t\t\t\t\t</option>\n\t\t\t\t</tooloptions>\n\t\t\t\t<origoptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>rclive_tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rclive</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t</origoptions>\n\t\t\t</test>\n\t\t</tests>\n\t\t<vars>\n\t\t\t<var>C\n\t\t\t\t<value>1u</value>\n\t\t\t</var>\n\t\t\t<var>R\n\t\t\t\t<value>1k</value>\n\t\t\t</var>\n\t\t</vars>\n\t\t<specs>\n\t\t\t<spec>tran.v1m\n\t\t\t\t<testname>tran</testname>\n\t\t\t\t<resname>v1m</resname>\n\t\t\t\t<specType>range</specType>\n\t\t\t\t<min>0.5</min>\n\t\t\t\t<max>0.8</max>\n\t\t\t\t<target></target>\n\t\t\t\t<tol></tol>\n\t\t\t</spec>\n\t\t</specs>\n\t</active>\n</setupdb>\n"
+  vmaestate tran "\t<Test Name=\"tran\">\n\t\t<mock>((\"sfya_rclive\" \"rclive_tb\" \"schematic\" \"spectre\") ((\"tran\" \"1\" ((\"stop\" \"5m\")))) ((\"tau\" \"point\" nil \"cross(VT(\\\"/out\\\") 0.6321205588285577 1 \\\"either\\\")\") (\"v1m\" \"point\" nil \"value(VT(\\\"/out\\\") 1m)\")) ((\"modelFiles\" nil)) nil)</mock>\n\t\t<field Name=\"outputList\" Type=\"skillList\">\n\t\t\t<field Name=\"outputList_0\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"tau\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t\t<field Name=\"outputList_1\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"v1m\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t</field>\n\t</Test>\n"
+  vmaerec 8d1d9d6a48507912 maestro tran
+  vmaerec af343a8f1278a570 var C ""
+  vmaerec b73ab88f0086d47f var R ""
+  vmaerec cb8f4f2fb92d163c analysis tran
+  vmaerec c0f9fbfd8b9e6c50 output tau
+  vmaerec 87f44c15f32338bb output v1m
+  vmaerec 5621c2cec989b553 spec v1m gt
+  vmaerec 3ee6662af9a4291b spec v1m lt
+  vsch 7fc94d9f7f3e8870
+  vmaefile active.state text "<?xml version=\"1.0\"?>\n<statedb version=\"5\">active\n\t<Test Name=\"tran\">\n\t\t<mock>((\"sfya_rclive\" \"rclive_tb\" \"schematic\" \"spectre\") ((\"tran\" \"1\" ((\"stop\" \"5m\")))) ((\"tau\" \"point\" nil \"cross(VT(\\\"/out\\\") 0.6321205588285577 1 \\\"either\\\")\") (\"v1m\" \"point\" nil \"value(VT(\\\"/out\\\") 1m)\")) ((\"modelFiles\" nil)) nil)</mock>\n\t\t<field Name=\"outputList\" Type=\"skillList\">\n\t\t\t<field Name=\"outputList_0\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"tau\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t\t<field Name=\"outputList_1\" Type=\"defstruct\">sevOutputStruct\n\t\t\t\t<field Name=\"name\" Type=\"string\">\"v1m\"</field>\n\t\t\t\t<field Name=\"plot\" Type=\"symbol\">t</field>\n\t\t\t</field>\n\t\t</field>\n\t</Test>\n</statedb>\n"
+  vmaefile maestro.sdb text "<?xml version=\"1.0\"?>\n<setupdb version=\"6\">maestro\n\t<active>Active Setup\n\t\t<corners>\n\t\t\t<corner enabled=\"1\">_default</corner>\n\t\t</corners>\n\t\t<tests>\n\t\t\t<test>tran\n\t\t\t\t<tool>ADE</tool>\n\t\t\t\t<tooloptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>rclive_tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rclive</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>path\n\t\t\t\t\t\t<value>$AXL_SETUPDB_DIR</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>state\n\t\t\t\t\t\t<value>active</value>\n\t\t\t\t\t</option>\n\t\t\t\t</tooloptions>\n\t\t\t\t<origoptions>\n\t\t\t\t\t<option>cell\n\t\t\t\t\t\t<value>rclive_tb</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>lib\n\t\t\t\t\t\t<value>sfya_rclive</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>sim\n\t\t\t\t\t\t<value>spectre</value>\n\t\t\t\t\t</option>\n\t\t\t\t\t<option>view\n\t\t\t\t\t\t<value>schematic</value>\n\t\t\t\t\t</option>\n\t\t\t\t</origoptions>\n\t\t\t</test>\n\t\t</tests>\n\t\t<vars>\n\t\t\t<var>C\n\t\t\t\t<value>1u</value>\n\t\t\t</var>\n\t\t\t<var>R\n\t\t\t\t<value>1k</value>\n\t\t\t</var>\n\t\t</vars>\n\t\t<specs>\n\t\t\t<spec>tran.v1m\n\t\t\t\t<testname>tran</testname>\n\t\t\t\t<resname>v1m</resname>\n\t\t\t\t<specType>range</specType>\n\t\t\t\t<min>0.5</min>\n\t\t\t\t<max>0.8</max>\n\t\t\t\t<target></target>\n\t\t\t\t<tol></tol>\n\t\t\t</spec>\n\t\t</specs>\n\t</active>\n</setupdb>\n"
+  vmaefiles 5cf3d0d708f8722e
+
+inst v00001 core:vsource
+  at -120 30 R0
+  name V1
+  value "PULSE(0 1 0 1n 1n 10m 20m)"
+inst x00001 ./rcfilter
+  at 0 0 R0
+  name X1
+  R R
+  C C
+
+wire w00001 -120 0 -40 0
+wire w00002 -120 60 -120 80
+wire w00003 0 40 0 80
+wire w00004 -120 80 0 80
+wire w00005 40 0 80 0
+
+label n00001 80 0 R0 out
+label n00002 -80 0 R0 in
+label n00003 -60 80 R0 0
+
+var R 1k
+  unit Ohm
+var C 1u
+  unit F
+
+output tau "cross(v(out), 0.6321205588285577)"
+output v1m "at(v(out), 1m)"
+
+spec v1m
+  min 0.5
+  max 0.8
+
+code tran spice
+  | .tran 1u 5m
+== schemify.project
+schemify 1 project
+
+lib analogLib path analogLib

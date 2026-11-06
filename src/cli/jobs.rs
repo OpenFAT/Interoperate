@@ -21,6 +21,7 @@ pub(super) const JOB_USAGE: &str = "\
 usage: schemify-interop virtuoso-export <project-dir> <cell-file|dir>... -o <file.sfyx> [--core-cells] [--lib L=V]...
        schemify-interop virtuoso-import <project-dir> <file.sfyx> [--analoglib] [--lib L=V]...
        schemify-interop xschem-export <project-dir> <cell-file|dir>... -o <out-dir>
+       schemify-interop xschem-import <lib-dir>... [--root <dir>]... [--models <file>[:<section>]]... [--spiceinit <file>] [--tech <file>] [--cdf <dump>] [--xschemrc <file>]... [--no-core] -o <out-dir>
        schemify-interop install-skill <dir>
        schemify-interop pdk-derived <project-dir> <char.sfyx>
        schemify-interop virtuoso-refresh <project-dir> --scratch <lib> -o <dir> | --apply <dir>
@@ -28,6 +29,10 @@ usage: schemify-interop virtuoso-export <project-dir> <cell-file|dir>... -o <fil
        schemify-interop pdk-map --scan <dir> (--dump <cdfnames.sfyx> | --host <ssh name> --vlib <lib>...) [--lib <name>] -o <interop.map>
        schemify-interop pdk-map --remote-script --vlib <lib>...
        schemify-interop pdk-models --root <dir> --entry <relpath>... --from <d> --to <d> -o <outdir>   (d: spice|hspice|spectre|vacask|xyce)
+       schemify-interop maestro-results <project-dir> <dump.sfyx> <bench.shbench>
+       schemify-interop layout-export <project-dir> <bundle-dir>
+       schemify-interop layout-import <project-dir> <lib>/<cell>[/<view>] -o <bundle-dir>
+       schemify-interop ciel <args>...
 (cell files, .sfyx paths and output paths are relative to <project-dir>; a directory names every
 cell file under it)";
 

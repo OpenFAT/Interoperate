@@ -1,0 +1,45 @@
+top lib/top.shbench for Ngspice
+== lib/sub.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem lib/sub.sym"
+  xfp f90843bc5b3815d4
+
+pin A in -40 0
+pin Z out 40 0
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -40 0 40 0
+  layer 4
+
+inst 7j6bnb core:res
+  at 0 0 R0
+  name R1
+  value 2k
+
+port hfz9bh 0 30 R0 Z
+port sttxhh 0 -30 R0 A
+== lib/top.shbench
+schemify 1 shbench
+  provenance "xschem lib/top.sch"
+  xfp a0bcbb68f497a0d0
+
+inst hg13j4 ./sub
+  at 0 0 R0
+  name x1
+inst m498c8 core:res
+  at 100 0 R0
+  name R9
+  value 5k
+
+label 6sskm3 -40 0 R0 IN
+label h6525k 40 0 R0 OUT
+label kzw58s 100 30 R0 IN
+label srg5dv 100 -30 R0 OUT
+== schemify.project
+schemify 1 project
+
+lib lib path lib

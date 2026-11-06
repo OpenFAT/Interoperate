@@ -6,6 +6,8 @@ use super::*;
 /// The CDF rows of [`SIGNATURES`].
 pub(super) const ROWS: &[(&str, &str)] = &[
     ("cdfGetBaseCellCDF", "d"),
+    // cdfuser ch. 8: a library's base CDF (none in the mock's libraries).
+    ("cdfGetBaseLibCDF", "d"),
     (
         "cdfCreateBaseCellCDF",
         "d ?doneProc ?formInitProc ?fieldWidth ?fieldHeight ?buttonFieldWidth ?promptWidth",
@@ -316,6 +318,7 @@ impl MockDb {
             |k: &str| -> Option<V> { kw.iter().find(|(n, _)| n == k).map(|(_, v)| v.clone()) };
         Ok(match name {
             "cdfGetBaseCellCDF" => self.a(o(0), "sfyBaseCdf"),
+            "cdfGetBaseLibCDF" => self.a(o(0), "sfyBaseCdf"),
             "cdfCreateBaseCellCDF" => {
                 let c = o(0);
                 if self.ty(c) != "ddCell" || self.a(c, "sfyBaseCdf").truthy() {

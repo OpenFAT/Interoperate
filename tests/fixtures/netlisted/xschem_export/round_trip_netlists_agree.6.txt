@@ -1,0 +1,220 @@
+top root/ota.shcomp for Ngspice
+== dev/nfet_01v8.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem dev/nfet_01v8.sym"
+  xfp 6e3134164cc88266
+
+pin d inout 20 -30
+pin g in -20 0
+pin s inout 20 30
+pin b inout 0 0
+  inherit VSS
+
+param W 1u
+param L 0.15u
+param nf 1
+
+impl spice spice
+  format spice "X{name} {d} {g} {s} {b} sky130_fd_pr__nfet_01v8 W='({W})/1u' L='({L})/1u' nf={nf}"
+
+line 20 -30 20 -15
+  layer 4
+line 20 15 20 30
+  layer 4
+line 4 -15 20 -15
+  layer 4
+line 4 15 20 15
+  layer 4
+line 4 -15 4 15
+  layer 4
+line 0 -10 0 10
+  layer 4
+line -20 0 0 0
+  layer 4
+line 4 0 20 0
+  layer 4
+
+poly 12 15 16 12 16 18
+  layer 4
+  closed true
+
+stext 25 -30 R0 {name}
+  size 0.2
+  layer 3
+stext 25 1 R0 W=
+  size 0.18
+  layer 3
+stext 25 13 R0 L=
+  size 0.18
+  layer 3
+== dev/pfet_01v8.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem dev/pfet_01v8.sym"
+  xfp fae43640099435e9
+
+pin d inout 20 30
+pin g in -20 0
+pin s inout 20 -30
+pin b inout 0 0
+  inherit VDD
+
+param W 1u
+param L 0.15u
+param nf 1
+
+impl spice spice
+  format spice "X{name} {d} {g} {s} {b} sky130_fd_pr__pfet_01v8 W='({W})/1u' L='({L})/1u' nf={nf}"
+
+line 20 -30 20 -15
+  layer 4
+line 20 15 20 30
+  layer 4
+line 4 -15 20 -15
+  layer 4
+line 4 15 20 15
+  layer 4
+line 4 -15 4 15
+  layer 4
+line 0 -10 0 10
+  layer 4
+line -20 0 -7 0
+  layer 4
+line 4 0 20 0
+  layer 4
+
+poly 8 -15 12 -18 12 -12
+  layer 4
+  closed true
+
+circle -4 0 3
+  layer 4
+
+stext 25 -30 R0 {name}
+  size 0.2
+  layer 3
+stext 25 1 R0 W=
+  size 0.18
+  layer 3
+stext 25 13 R0 L=
+  size 0.18
+  layer 3
+== root/ota.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/ota.sym"
+  xfp a9d232977b2f4d5c
+
+pin inp in -60 -20
+pin inn in -60 20
+pin out out 60 0
+pin vbias in 0 40
+pin VDD inout 0 -40
+pin VSS inout 20 40
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -60 -20 -40 -20
+  layer 4
+line -60 20 -40 20
+  layer 4
+line 40 0 60 0
+  layer 4
+line 0 -40 0 -20
+  layer 4
+line 0 20 0 40
+  layer 4
+line 20 10 20 40
+  layer 4
+
+poly -40 -40 40 0 -40 40
+  layer 4
+  closed true
+
+stext -34 -27 R0 +
+  size 0.2
+  layer 3
+stext -34 13 R0 -
+  size 0.2
+  layer 3
+stext -40 -56 R0 {name}
+  size 0.25
+  layer 3
+
+inst 222m6w dev:nfet_01v8
+  at 60 300 R0
+  name M1
+  inherit b VSS
+  W 3.8813910462992726e-6
+  L 0.5u
+inst 5banfb dev:pfet_01v8
+  at 300 200 R0
+  name M4
+  inherit b VDD
+  W 8.84865072531957e-6
+  L 1u
+inst h90k59 dev:nfet_01v8
+  at 180 420 R0
+  name M5
+  inherit b VSS
+  W 3.023519651188211e-6
+  L 1u
+inst ywsbw6 dev:nfet_01v8
+  at 300 300 R0
+  name M2
+  inherit b VSS
+  W 3.8813910462992726e-6
+  L 0.5u
+inst zk2adv dev:pfet_01v8
+  at 60 200 R0
+  name M3
+  inherit b VDD
+  W 8.84865072531957e-6
+  L 1u
+
+wire 081vg8 200 140 320 140
+wire 0qxf6y 120 420 160 420
+wire 57bwh5 270 200 280 200
+wire 5q4473 80 140 200 140
+wire 5wzs3n 80 140 80 170
+wire 6zf5j4 80 360 200 360
+wire ag1ndg 320 250 320 270
+wire c748zy 200 360 200 390
+wire czj6fa 40 200 40 245
+wire ep9rrm 80 245 80 270
+wire fckxm3 40 245 80 245
+wire ft62gv 80 330 80 360
+wire h4ab5k 270 200 270 245
+wire kqhpjh 80 230 80 245
+wire maqwr1 80 245 270 245
+wire pymsna 320 250 400 250
+wire r3ad9g 200 360 320 360
+wire rc8tyf 320 330 320 360
+wire rrz2x7 240 300 280 300
+wire sj827v 0 300 40 300
+wire t6kt7s 200 120 200 140
+wire tagnrw 320 140 320 170
+wire v2feg5 320 230 320 250
+wire vhmfjx 200 450 200 480
+
+label 9w6cm0 200 360 R0 tail
+
+port 6bnnjk 0 300 R0 inp
+port bbdynk 240 300 R0 inn
+port f7p6c6 120 420 R0 vbias
+port n49b7g 200 480 R0 VSS
+port pvr7mq 400 250 R180 out
+port r7fsvn 200 120 R0 VDD
+
+text 3am1jx 0 60 R0 "Five-transistor OTA: every W comes from a gm/Id target on the docs page"
+  size 0.3
+== schemify.project
+schemify 1 project
+
+lib dev path dev
+lib root path root

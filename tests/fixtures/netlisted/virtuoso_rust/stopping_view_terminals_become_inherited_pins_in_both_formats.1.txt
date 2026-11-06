@@ -1,0 +1,89 @@
+top demo/amp.shbench for Spectre
+== demo/amp.shbench
+schemify 1 shbench
+  vsch 94717ddd97ca7e87
+
+inst e5eqk2 demopdk:nch3_demo
+  at 200 0 R0
+  name M1
+  bn D
+inst qk5fb8 demopdk:nch3_demo
+  at 0 0 R0
+  name M0
+inst xhz9jm demopdk:res3_demo
+  at 100 0 R0
+  name R0
+
+wire 08qfhs 210 -60 210 -40
+wire 2ex4an 10 40 10 60
+wire 8yvrke 10 -60 10 -40
+wire bcn7zy 150 0 170 0
+wire bysbab 100 -50 100 -30
+wire kr87hn -50 0 -30 0
+wire w4ec9v 210 40 210 60
+wire ztbszc 100 30 100 50
+
+label 6f1ya3 210 60 R0 x
+label jwkka8 -50 0 R0 g
+label kzfr61 10 -60 R0 d
+label qcn3hx 100 50 R0 s
+label th9hm2 210 -60 R0 d
+label vczxc6 150 0 R0 g
+label vp1pjb 100 -50 R0 d
+label w40wje 10 60 R0 s
+== demopdk/nch3_demo.shprim
+schemify 1 shprim
+  provenance "virtuoso demopdk/nch3_demo"
+  vibox none
+  vsym ee10708a572f0669
+
+pin D inout 10 -40
+  vplabel none
+pin G in -30 0
+  vplabel none
+pin S inout 10 40
+  vplabel none
+pin bsub inout 0 0
+  inherit vss
+
+param model demo_nch
+  kind string
+  doc Model
+param w 300n
+  unit m
+  doc Width
+param l 30n
+  unit m
+  doc Length
+param bn S
+  kind string
+  doc "Bulk node"
+
+impl spice spice
+  format spectre "{name} ({D} {G} {S} {bsub}) {model} w={w}"
+  format cdl "M{name} {D} {G} {S} {bn == \"B\" ? bsub : bn == \"D\" ? D : bn == \"G\" ? G : bn == \"S\" ? S : bn} NDEMO w={w}"
+== demopdk/res3_demo.shprim
+schemify 1 shprim
+  provenance "virtuoso demopdk/res3_demo"
+  vibox none
+  vsym 31c405ff8a572a48
+
+pin in inout 0 -30
+  vplabel none
+pin out inout 0 30
+  vplabel none
+pin rsub inout 0 0
+  inherit vss
+
+param r 2k
+  unit Ohm
+  doc R
+
+impl spice spice
+  format spectre "{name} ({in} {out} {rsub}) resistor r={r}"
+  format cdl "R{name} {in} {out} r={r} $[RDEMO]"
+== schemify.project
+schemify 1 project
+
+lib demo path demo
+lib demopdk path demopdk

@@ -1,0 +1,354 @@
+top bus_tb.shbench for Ngspice
+== buffer.shcomp
+schemify 1 shcomp
+  doc "unity-gain buffer around the OTA"
+
+pin IN in -40 0
+pin OUT out 40 0
+pin IB in 0 40
+
+param size 1
+
+impl sch schematic
+
+inst 0x0001 ./opamp
+  at 0 0 R0
+  name X1
+  wn 2*size
+  wp 4*size
+
+# Feedback by name: the inverting input carries the output label.
+label 0n0001 -40 20 R0 OUT
+
+port 0p0001 -40 -20 R0 IN
+port 0p0002 40 0 R0 OUT
+port 0p0003 0 40 R0 IB
+== bus_tb.shbench
+schemify 1 shbench
+  doc "4-bit inverter array on buses"
+
+inst 0x0001 ./inv
+  at 0 0 R0
+  name X[3:0]
+  wn 0.5
+
+wire 0w0001 -100 0 -40 0
+  bus true
+wire 0w0002 40 0 100 0
+  bus true
+
+label 0n0001 -100 0 R0 din[3:0]
+label 0n0002 100 0 R0 dout[0:3]
+== cap.shprim
+schemify 1 shprim
+  doc "capacitor"
+  prefix C
+
+pin P inout 0 -20
+pin N inout 0 20
+
+param C 1p
+  unit F
+  min 0
+
+impl spice spice
+  format spice "C{name} {P} {N} {C}"
+== inv.shcomp
+schemify 1 shcomp
+  doc "CMOS inverter"
+  category logic
+
+pin A in -40 0
+pin Y out 40 0
+
+param wn 1
+param wp 2
+param l 0.15
+
+impl sch schematic
+
+line -40 0 -20 0
+line 20 0 40 0
+
+inst 0mn001 ./nmos
+  at 0 60 R0
+  name MN
+  W wn
+  L l
+inst 0mp001 ./pmos
+  at 0 -60 R0
+  name MP
+  W wp
+  L l
+
+# Drains joined by a vertical wire; the output wire T-joins it.
+wire 0w0001 20 -30 20 30
+wire 0w0002 20 0 60 0
+# Gates joined; the input wire T-joins it.
+wire 0w0003 -20 -60 -20 60
+wire 0w0004 -60 0 -20 0
+
+label 0n0001 20 -90 R0 vdd!
+label 0n0002 20 -60 R0 vdd!
+label 0n0003 20 90 R0 0
+label 0n0004 20 60 R0 0
+
+port 0p0001 -60 0 R0 A
+port 0p0002 60 0 R0 Y
+== inv_tb.shbench
+schemify 1 shbench
+  doc "inverter transient"
+  corner tt
+
+inst 0x0001 ./inv
+  at 0 0 R0
+  name X1
+  wn 0.5
+inst 0x0002 ./vsource
+  at -200 0 R0
+  name VDD
+  dc vdd
+inst 0x0003 ./vsource
+  at -100 0 R0
+  name VIN
+  dc vdd/2
+inst 0x0004 ./cap
+  at 100 0 R0
+  name CL
+  C 10f
+
+wire 0w0001 40 0 100 0
+wire 0w0002 100 -20 100 0
+
+label 0n0001 -200 -30 R0 vdd!
+label 0n0002 -200 30 R0 0
+label 0n0003 -100 -30 R0 in
+label 0n0004 -100 30 R0 0
+label 0n0005 -40 0 R0 in
+label 0n0006 40 0 R0 out
+label 0n0007 100 20 R0 0
+
+var vdd 1.8
+  unit V
+
+corner ff
+  lib models.lib ff
+  set vdd 1.95
+  temp -40
+corner tt
+  lib models.lib tt
+  temp 27
+
+code tran spice
+  | .tran 1p 1n
+== nmos.shprim
+schemify 1 shprim
+  doc "generic NMOS"
+  category nmos
+  prefix M
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B inout 20 0
+
+param W 1
+  unit um
+  min 0.42
+  grid 0.01
+param L 0.15
+  unit um
+  min 0.15
+  grid 0.01
+param nf 1
+  kind int
+  min 1
+param model nfet
+  kind choice
+  choices nfet nfet_lvt
+param ad 0
+  computed W*0.29
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W={W}u L={L}u nf={nf} ad={ad}p"
+  format cdl "M{name} {D} {G} {S} {B} {model} W={W}u L={L}u"
+== opamp.shcomp
+schemify 1 shcomp
+  doc "two-stage Miller OTA, NMOS input pair"
+  category amplifier
+
+pin INP in -40 -20
+pin INN in -40 20
+pin OUT out 40 0
+pin IBIAS in 0 40
+
+param wn 2
+param wp 4
+param l 0.5
+param cc 1p
+
+impl sch schematic
+
+# Devices at x = 0, 100, ..., all R0. NMOS pins: D (x+20,-30) G (x-20,0) S (x+20,30)
+# B (x+20,0); PMOS: S (x+20,-30) G (x-20,0) D (x+20,30) B (x+20,0).
+inst 0m0001 ./nmos
+  at 0 0 R0
+  name M1
+  W wn
+  L l
+inst 0m0002 ./nmos
+  at 100 0 R0
+  name M2
+  W wn
+  L l
+inst 0m0003 ./pmos
+  at 200 0 R0
+  name M3
+  W wp
+  L l
+inst 0m0004 ./pmos
+  at 300 0 R0
+  name M4
+  W wp
+  L l
+inst 0m0005 ./nmos
+  at 400 0 R0
+  name M5
+  W wn*2
+  L l
+inst 0m0006 ./pmos
+  at 500 0 R0
+  name M6
+  W wp*4
+  L l
+inst 0m0007 ./nmos
+  at 600 0 R0
+  name M7
+  W wn*2
+  L l
+inst 0m0008 ./nmos
+  at 700 0 R0
+  name M8
+  W wn
+  L l
+inst 0c0001 ./cap
+  at 800 0 R0
+  name CC
+  C cc
+
+# Tail: the pair's sources share a wire.
+wire 0w0001 20 30 120 30
+
+label 0n0001 20 -30 R0 n1
+label 0n0002 20 0 R0 0
+label 0n0003 120 -30 R0 n2
+label 0n0004 120 0 R0 0
+label 0n0005 20 30 R0 tail
+label 0n0006 220 -30 R0 vdd!
+label 0n0007 180 0 R0 n1
+label 0n0008 220 30 R0 n1
+label 0n0009 220 0 R0 vdd!
+label 0n0010 320 -30 R0 vdd!
+label 0n0011 280 0 R0 n1
+label 0n0012 320 30 R0 n2
+label 0n0013 320 0 R0 vdd!
+label 0n0014 420 -30 R0 tail
+label 0n0015 380 0 R0 IBIAS
+label 0n0016 420 30 R0 0
+label 0n0017 420 0 R0 0
+label 0n0018 520 -30 R0 vdd!
+label 0n0019 480 0 R0 n2
+label 0n0020 520 0 R0 vdd!
+label 0n0021 620 -30 R0 OUT
+label 0n0022 580 0 R0 IBIAS
+label 0n0023 620 30 R0 0
+label 0n0024 620 0 R0 0
+label 0n0025 680 0 R0 IBIAS
+label 0n0026 720 30 R0 0
+label 0n0027 720 0 R0 0
+label 0n0028 800 -20 R0 n2
+label 0n0029 800 20 R0 OUT
+
+port 0p0001 -20 0 R0 INP
+port 0p0002 80 0 R0 INN
+port 0p0003 520 30 R0 OUT
+port 0p0004 720 -30 R0 IBIAS
+== opamp_tb.shbench
+schemify 1 shbench
+  doc "three buffers, two sizes: two buffer and two opamp definitions"
+  corner tt
+
+inst 0b0001 ./buffer
+  at 0 0 R0
+  name B1
+inst 0b0002 ./buffer
+  at 0 200 R0
+  name B2
+  size 2
+inst 0b0003 ./buffer
+  at 0 400 R0
+  name B3
+  size 1
+inst 0v0001 ./vsource
+  at -300 0 R0
+  name VDD
+  dc 1.8
+inst 0v0002 ./vsource
+  at -200 0 R0
+  name VIN
+  dc 0.9
+
+label 0n0001 -300 -30 R0 vdd!
+label 0n0002 -300 30 R0 0
+label 0n0003 -200 -30 R0 in
+label 0n0004 -200 30 R0 0
+label 0n0005 -40 0 R0 in
+label 0n0006 -40 200 R0 in
+label 0n0007 -40 400 R0 in
+label 0n0008 40 0 R0 o1
+label 0n0009 40 200 R0 o2
+label 0n0010 40 400 R0 o3
+label 0n0011 0 40 R0 ib
+label 0n0012 0 240 R0 ib
+label 0n0013 0 440 R0 ib
+
+corner tt
+  temp 27
+== pmos.shprim
+schemify 1 shprim
+  doc "generic PMOS"
+  category pmos
+  prefix M
+
+pin S inout 20 -30
+pin G in -20 0
+pin D inout 20 30
+pin B inout 20 0
+
+param W 2
+  unit um
+  min 0.42
+  grid 0.01
+param L 0.15
+  unit um
+  min 0.15
+  grid 0.01
+param model pfet
+  kind choice
+  choices pfet pfet_lvt
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W={W}u L={L}u"
+== vsource.shprim
+schemify 1 shprim
+  doc "DC voltage source"
+  prefix V
+
+pin P inout 0 -30
+pin N inout 0 30
+
+param dc 0
+  unit V
+
+impl spice spice
+  format spice "V{name} {P} {N} dc {dc}"

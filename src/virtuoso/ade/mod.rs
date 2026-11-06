@@ -29,7 +29,7 @@
 // (values are short text). Lifetime: one call. Access: each kind is written once, in §9
 // order, after sorting. Benches are independent (parallel by bench; one bench here).
 
-use schemify_expr::{Mode, Program, Scratch, Value as XValue, write_num};
+use crate::expr::{Mode, Program, Scratch, Value as XValue, write_num};
 use schemify_format::{Document, FileKind, RecordKind};
 
 use super::ael::{self, AelName, Name};
@@ -39,6 +39,7 @@ use crate::sfyx::{Error, Record, Value, i, pairs, s, text};
 
 mod disabled;
 mod export;
+mod forms;
 mod import;
 pub mod mae_xml;
 mod ocean;
@@ -51,6 +52,7 @@ mod tests;
 pub mod viewfiles;
 
 pub use export::*;
+use forms::*;
 pub use import::*;
 use mae_xml::Setup;
 use ocean::*;
@@ -103,14 +105,27 @@ struct Test {
     var_enable: Vec<(String, bool)>,
     /// `(name, enabled)`: an output's Plot check box, Maestro's enable (`outenable`).
     out_enable: Vec<(String, bool)>,
+    /// `(name, value)`: the test's simulator options but `temp` (`simoption`; a dump holds
+    /// every one, form defaults included).
+    sim_opts: Vec<(String, String)>,
+    /// `(corner, runs)`: whether this test runs the corner (`cornerrun`; Maestro's
+    /// per-corner disabled tests).
+    corner_runs: Vec<(String, bool)>,
+    /// `(lib, cell)`: the test's design when it is not the maestro view's cell
+    /// (`testdesign`).
+    design: Option<(String, String)>,
+    /// `(class, text)`: a setting the dumper read that no record carries (`maenote`); the
+    /// import reports it `needs_review:<class>`.
+    notes: Vec<(String, String)>,
 }
 
 impl Test {
-    /// The records of the test in §9 order: `maestro`; global `var`s by name; `testvar`s
-    /// by name; `testenable`; `varenable`s by name; `analysis` by name; the test's `model`s in order; per corner
-    /// (by name) `corner`, its `model`s in order and its `var`s by name; `parameter`s by
+    /// The records of the test in §9 order: `maestro`; `testdesign`; global `var`s by
+    /// name; `testvar`s by name; `testenable`; `varenable`s by name; `simoption`s by name;
+    /// `analysis` by name; the test's `model`s in order; per corner (by name) `corner`, its
+    /// `model`s in order and its `var`s by name; `cornerrun`s by corner; `parameter`s by
     /// (scope, path); `output`s by name; `spec`s by (output, op); `outenable`s by name;
-    /// `defn`s by file.
+    /// `defn`s by file; `maenote`s in order.
     fn records(&self) -> Vec<Record> {
         let by_name = |a: &(String, String, String), b: &(String, String, String)| {
             (&a.0, &a.2).cmp(&(&b.0, &b.2))
@@ -141,6 +156,11 @@ impl Test {
                 s(&self.sim),
             ],
         )];
+        out.extend(
+            self.design
+                .iter()
+                .map(|(l, c)| Record::new("testdesign", vec![s(l), s(c)])),
+        );
         out.extend(vars.iter().filter(|v| v.2.is_empty()).map(var));
         let mut own = self.own.clone();
         own.sort();
@@ -160,6 +180,13 @@ impl Test {
                 .collect::<Vec<_>>()
         };
         out.extend(flags(&self.var_enable, "varenable"));
+        let mut sim_opts = self.sim_opts.clone();
+        sim_opts.sort();
+        out.extend(
+            sim_opts
+                .iter()
+                .map(|(n, v)| Record::new("simoption", vec![s(n), s(v)])),
+        );
         for (n, en, opts) in &analyses {
             let kv = pairs(opts.iter().map(|(k, v)| (k.as_str(), v.as_str())));
             out.push(Record::new("analysis", vec![s(n), i(i32::from(*en)), kv]));
@@ -170,6 +197,7 @@ impl Test {
             out.extend(self.models.iter().filter(|m| &m.0 == c).map(model));
             out.extend(vars.iter().filter(|v| &v.2 == c).map(var));
         }
+        out.extend(flags(&self.corner_runs, "cornerrun"));
         let mut params = self.params.clone();
         params.sort_by(|a, b| (&a.2, &a.0).cmp(&(&b.2, &b.0)));
         out.extend(
@@ -187,6 +215,11 @@ impl Test {
         for (f, t) in &defns {
             out.push(Record::new("defn", vec![s(f), text(t)]));
         }
+        out.extend(
+            self.notes
+                .iter()
+                .map(|(c, t)| Record::new("maenote", vec![s(c), s(t)])),
+        );
         let n = self.vars.len()
             + self.analyses.len()
             + self.corners.len()
@@ -198,7 +231,11 @@ impl Test {
             + usize::from(self.enable.is_some())
             + self.params.len()
             + self.var_enable.len()
-            + self.out_enable.len();
+            + self.out_enable.len()
+            + self.sim_opts.len()
+            + self.corner_runs.len()
+            + usize::from(self.design.is_some())
+            + self.notes.len();
         assert_eq!(out.len(), n + 1, "every row is one record");
         out
     }

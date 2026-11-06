@@ -442,15 +442,17 @@ impl NameParser<'_> {
     }
 }
 
-/// Reads a Virtuoso net name into Schemify syntax (§3.3): `gnd!` → global `GND`; simple
+/// Reads a Virtuoso net name into Schemify syntax (§3.3): `gnd!` → `0`, Schemify's ground
+/// in every dialect (a global `GND` was ngspice's alias only: Spectre netlisted it as a
+/// floating `global GND`, live gaps round 2); simple
 /// buses and repeats map term by term (`d<3:0>` → `d[3:0]`, `<*2>a` → `2*a`); anything using
 /// steps, suffix repeats or grouping expands to an explicit bundle, runs of consecutive bits
 /// written as ranges; text outside the grammar stays verbatim with `review`.
 pub fn net_from_virtuoso(s: &str) -> Net {
     if s == "gnd!" {
         return Net {
-            text: "GND".into(),
-            global: true,
+            text: "0".into(),
+            global: false,
             review: false,
         };
     }
@@ -676,8 +678,8 @@ mod tests {
         assert_eq!(
             net_from_virtuoso("gnd!"),
             Net {
-                text: "GND".into(),
-                global: true,
+                text: "0".into(),
+                global: false,
                 review: false
             }
         );

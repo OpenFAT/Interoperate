@@ -1,0 +1,662 @@
+top sfyprobe_s/e1.shbench for Spectre
+== analogLib/nmos.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/nmos"
+  vibox 0 -30 40 30
+  vsym 528d20dc12eeb482
+
+pin D inout 40 -30
+  vplabel none
+  vpfig 8 8
+pin G inout 0 0
+  vplabel none
+  vpfig 8 8
+pin S inout 40 30
+  vplabel none
+  vpfig 8 8
+
+param model ""
+  kind string
+  doc "Model name"
+param w ""
+  kind string
+  unit m
+  doc Width
+param l ""
+  kind string
+  unit m
+  doc Length
+param as ""
+  kind string
+  doc "Source diffusion area"
+param ad ""
+  kind string
+  doc "Drain diffusion area"
+param ps ""
+  kind string
+  unit m
+  doc "Source diffusion periphery"
+param pd ""
+  kind string
+  unit m
+  doc "Drain diffusion periphery"
+param nrd ""
+  kind string
+  doc "Drain diffusion res squares"
+param nrs ""
+  kind string
+  doc "Source diffusion res squares"
+param ld ""
+  kind string
+  unit m
+  doc "Drain diffusion length"
+param ls ""
+  kind string
+  unit m
+  doc "Source diffusion length"
+param m ""
+  kind string
+  doc Multiplier
+param trise ""
+  kind string
+  doc "Temp rise from ambient"
+param geo ""
+  kind string
+  doc "Source/drain selector"
+param rdc ""
+  kind string
+  unit Ohm
+  doc "Additional drain resistance"
+param rsc ""
+  kind string
+  unit Ohm
+  doc "Additional source resistance"
+param sa ""
+  kind string
+  doc "Dist. OD & poly(one side)"
+param sb ""
+  kind string
+  doc "Dist. OD & poly(other side)"
+param sd ""
+  kind string
+  doc "Dist. betn neighbour fingers"
+param region ""
+  kind choice
+  choices "" off triode sat subth
+  doc "Estimated operating region"
+param degradation ""
+  kind choice
+  choices "" no yes
+  doc "Hot-electron degradation"
+param off false
+  kind bool
+  doc "Device initially off"
+param Vds ""
+  kind string
+  unit V
+  doc "Drain source initial voltage"
+param Vgs ""
+  kind string
+  unit V
+  doc "Gate source initial voltage"
+param Vbs ""
+  kind string
+  unit V
+  doc "Bulk source initial voltage"
+param dtemp ""
+  kind string
+  doc "Temperature difference"
+param bn S
+  kind string
+  doc "Bulk node connection"
+
+impl spice spice
+  format spectre "{name} ({D} {G} {S}) {model}{w != \"\" ? \" w=\" + w : \"\"}{l != \"\" ? \" l=\" + l : \"\"}{as != \"\" ? \" as=\" + as : \"\"}{ad != \"\" ? \" ad=\" + ad : \"\"}{ps != \"\" ? \" ps=\" + ps : \"\"}{pd != \"\" ? \" pd=\" + pd : \"\"}{nrd != \"\" ? \" nrd=\" + nrd : \"\"}{nrs != \"\" ? \" nrs=\" + nrs : \"\"}{ld != \"\" ? \" ld=\" + ld : \"\"}{ls != \"\" ? \" ls=\" + ls : \"\"}{m != \"\" ? \" m=\" + m : \"\"}{trise != \"\" ? \" trise=\" + trise : \"\"}{region != \"\" ? \" region=\" + region : \"\"}{degradation != \"\" ? \" degradation=\" + degradation : \"\"}{geo != \"\" ? \" geo=\" + geo : \"\"}{rdc != \"\" ? \" rdc=\" + rdc : \"\"}{rsc != \"\" ? \" rsc=\" + rsc : \"\"}{sa != \"\" ? \" sa=\" + sa : \"\"}{sb != \"\" ? \" sb=\" + sb : \"\"}{sd != \"\" ? \" sd=\" + sd : \"\"}"
+  format cdl "M{name} {D} {G} {S} {bn == \"D\" ? D : bn == \"G\" ? G : bn == \"S\" ? S : bn} NM{m != \"\" ? \" m=\" + m : \"\"}{l != \"\" ? \" L=\" + l : \"\"}{w != \"\" ? \" W=\" + w : \"\"}"
+
+line 0 0 15 0
+line 15 -15 15 15
+line 20 15 20 -15
+
+poly 20 15 40 15 40 30
+poly 20 -15 40 -15 40 -30
+poly 30 10 40 15 30 20
+
+stext 45 25 R0 w={w}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(3) w={w}
+stext 45 10 R0 l={l}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(2) l={l}
+stext 45 -5 R0 {model}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(1) {model}
+stext 45 -20 R0 {name}
+  size 0.8
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== analogLib/res.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/res"
+  vibox -20 0 20 60
+  vsym 4b98ec95fbc6a6d5
+
+pin PLUS inout 0 0
+  vplabel none
+  vpfig 8 8
+pin MINUS inout 0 60
+  vplabel none
+  vpfig 8 8
+
+param model ""
+  kind string
+  doc "Model name"
+param r 1k
+  unit Ohm
+  doc Resistance
+param l ""
+  kind string
+  unit m
+  doc Length
+param w ""
+  kind string
+  unit m
+  doc Width
+param m ""
+  kind string
+  doc Multiplier
+param scale ""
+  kind string
+  doc "Scale factor"
+param trise ""
+  kind string
+  doc "Temp rise from ambient"
+param tc1 ""
+  kind string
+  doc "Temperature coefficient 1"
+param tc2 ""
+  kind string
+  doc "Temperature coefficient 2"
+param resform ""
+  kind string
+  doc "Resistance Form"
+param isnoisy ""
+  kind choice
+  choices "" yes no
+  doc "Generate noise?"
+param c ""
+  kind string
+  unit F
+  doc Capacitance
+param tc1r ""
+  kind string
+  doc "Alias for Lin. temp. co."
+param tc2r ""
+  kind string
+  doc "Alias for Quad temp. co."
+param tc1c ""
+  kind string
+  doc "Lin temp co of lin cap"
+param tc2c ""
+  kind string
+  doc "Quad temp co of lin cap"
+param scaler ""
+  kind string
+  doc "Resistance Scaling Factor"
+param scalec ""
+  kind string
+  doc "Capacitance Scaling Factor"
+param ac ""
+  kind string
+  unit Ohm
+  doc "AC resistance"
+param dtemp ""
+  kind string
+  doc "Temperature difference"
+param hrc ""
+  kind string
+  unit F
+  doc "Capacitance connected"
+
+impl spice spice
+  format spice "R{name} {PLUS} {MINUS} {r}{m != \"\" ? \" m=\" + m : \"\"}"
+  format spectre "{name} ({PLUS} {MINUS}) {model} r={r}{l != \"\" ? \" l=\" + l : \"\"}{w != \"\" ? \" w=\" + w : \"\"}{resform != \"\" ? \" resform=\" + resform : \"\"}{m != \"\" ? \" m=\" + m : \"\"}{scale != \"\" ? \" scale=\" + scale : \"\"}{trise != \"\" ? \" trise=\" + trise : \"\"}{tc1 != \"\" ? \" tc1=\" + tc1 : \"\"}{tc2 != \"\" ? \" tc2=\" + tc2 : \"\"}{isnoisy != \"\" ? \" isnoisy=\" + isnoisy : \"\"}{c != \"\" ? \" c=\" + c : \"\"}{tc1r != \"\" ? \" tc1r=\" + tc1r : \"\"}{tc2r != \"\" ? \" tc2r=\" + tc2r : \"\"}{tc1c != \"\" ? \" tc1c=\" + tc1c : \"\"}{tc2c != \"\" ? \" tc2c=\" + tc2c : \"\"}{scaler != \"\" ? \" scaler=\" + scaler : \"\"}{scalec != \"\" ? \" scalec=\" + scalec : \"\"}{ac != \"\" ? \" rac=\" + ac : \"\"}{dtemp != \"\" ? \" dtemp=\" + dtemp : \"\"}"
+  format cdl "R{name} {PLUS} {MINUS} R={r} $[RP]"
+
+poly 0 60 0 48 -10 45 10 39 -10 33 10 27 -10 21 10 15 0 12 0 0
+
+stext 15 55 R0 tc2={tc2}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(3) tc2={tc2}
+stext 15 40 R0 tc1={tc1}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(2) tc1={tc1}
+stext 15 25 R0 r={r}
+  size 0.8
+  vlabel annotate drawing lowerLeft stick IL cdsParam(1) r={r}
+stext 15 10 R0 {name}
+  size 0.8
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== basic/cds_thru.shprim
+schemify 1 shprim
+  provenance "virtuoso basic/cds_thru"
+  vibox 0 -20 120 20
+  vsym 5cc0d16612387295
+
+pin src inout 0 0
+  vplabel 21 0 R0 centerLeft stick 8000
+  vpfig 8 8
+pin dst inout 120 0
+  vplabel -24 0 R0 centerRight stick 8000
+  vpfig 8 8
+
+param vdc 0
+  unit V
+  doc "DC voltage"
+param r 100m
+  unit Ohm
+  doc Resistance
+
+impl spice spice
+  format spice "V{name} {src} {dst} 0"
+  format spectre "{name} ({src} {dst}) iprobe"
+  format cdl "R{name} {src} {dst} R={r} $[SH]"
+
+line 0 0 20 0
+
+rect 20 -20 100 20
+
+line 120 0 100 0
+
+stext 60 15 R0 {cell}
+  size 0.8
+  hcenter
+  vcenter
+  vlabel device label centerCenter stick NLP [@partName] {cell}
+stext 100 -15 R0 {name}
+  size 0.8
+  vcenter
+  vlabel instance label centerRight stick NLP [@instanceName] {name}
+== schemify.project
+schemify 1 project
+
+lib analogLib path analogLib
+lib basic path basic
+lib sfyprobe_s path sfyprobe_s
+== sfyprobe_s/alt.shbench
+schemify 1 shbench
+  vsch 8b4d0fe3f98e5d48
+
+inst 9re6tc analogLib:res
+  at 640 0 R0
+  name RX
+  vview symbol_xform
+inst fs5j3t ./sub
+  at 0 -320 R0
+  name S1
+  vview symbol_alt
+inst pfkkaj ./sub
+  at 0 0 R0
+  name S0
+
+wire 4hjzqw 40 -320 80 -320
+wire 583gkv 80 0 120 0
+wire 8h3rq8 -80 0 -40 0
+wire fj50mx 640 60 680 60
+wire nzvjt4 -40 -320 0 -320
+wire pgsh8r 640 0 680 0
+
+label 1jdehg 80 -320 R0 b1
+  vjoin true
+label 22q53m 680 0 R0 xp
+label 3hhek8 -40 -320 R0 a1
+  vjoin true
+label 5pwpsd 80 -320 R0 b1
+label 7w09h8 40 -320 R0 b1
+  vjoin true
+label 9qzm8e 0 -320 R0 a1
+label na8jxx 680 60 R0 xm
+label qa0412 120 0 R0 b0
+label swh413 -80 -320 R0 a1
+  vjoin true
+label y13vyn -40 0 R0 a0
+== sfyprobe_s/conn.shbench
+schemify 1 shbench
+  vsch bf1e0b9e8ea837d7
+
+inst 9war51 analogLib:res
+  at 1920 0 R0
+  name R7
+inst fpqeqt analogLib:res
+  at 1284 60 R0
+  name R6
+inst fx47ey analogLib:res
+  at 2240 0 R0
+  name R8
+inst pjj8a0 analogLib:res
+  at 320 0 R0
+  name R2
+inst wzmhyr analogLib:res
+  at 0 0 R0
+  name R1
+inst xmhhwx analogLib:res
+  at 640 60 R0
+  name R4
+inst xvk5p2 analogLib:res
+  at 1280 0 R0
+  name R5
+inst z50jz9 analogLib:res
+  at 640 0 R0
+  name R3
+
+wire 241jta 320 58 400 58
+wire 29weqv 0 62 2 62
+  vjoin true
+wire 3a33rr 240 58 320 58
+wire 6680s8 1836 -4 1916 -4
+wire 6kb0z7 0 60 0 62
+  vjoin true
+wire 72qrkt 2240 60 2240 140
+wire 88ayxb 640 -80 640 0
+wire a9e0wd -4 0 0 0
+  vjoin true
+wire a9fc2j 2240 -80 2240 0
+wire b7f0eh 1920 -4 1920 0
+  vjoin true
+wire cr7qzs 1280 0 1320 0
+wire dgeet2 1280 60 1284 60
+  vjoin true
+wire hs70ez 320 0 400 0
+wire mv0r2v 0 -320 0 -160
+wire n09ggh -160 -240 160 -240
+wire n0s9jq 640 120 680 120
+wire n40x2k 1284 120 1324 120
+wire pxmb1t 320 58 320 60
+  vjoin true
+wire vgmbwt 1836 60 1915 60
+wire w8gm31 2240 -80 2320 -80
+wire x3kyna 2160 -80 2240 -80
+wire x9kxac 1916 -4 1920 -4
+  vjoin true
+wire yq67n9 240 0 320 0
+wire ytektf 2 62 2 140
+wire z5btem -84 0 -4 0
+
+label 0vhat5 2320 -80 R0 n_tee
+label 0x36p0 1324 120 R0 n6m
+label 1n6hr3 2240 100 R0 n_float
+label 2gqwjb 1320 0 R0 n5p
+label 320sdx -84 0 R0 n_edge
+label a4em9t 640 -80 R0 vdd!
+  vinst V9
+  vlib sfyprobe_s
+  vcell myvdd
+label axgwp9 160 -240 R0 n_ch
+label dhcep6 320 0 R0 n_mid
+  voff 80 0
+label emns1s 1836 60 R0 n_out
+label gg9y4a 1836 -4 R0 n_corner
+label jf6xhf 320 58 R0 n_off
+  voff 80 0
+label q8xq1m 2 140 R0 n_in
+label vq23hj 680 120 R0 n4m
+label z189cs 0 -320 R0 n_cv
+== sfyprobe_s/e1.shbench
+schemify 1 shbench
+  vsch 3339db2405fa64c0
+
+inst ckj7fk analogLib:nmos
+  at 0 0 R0
+  name M0
+inst kaev52 analogLib:res
+  at 320 0 R0
+  name R0
+
+wire 1cz8fa 320 60 360 60
+wire pm04f3 0 0 40 0
+wire qqqqcw 40 -30 80 -30
+wire t25c2z 320 0 360 0
+wire w33vrn 40 30 80 30
+
+label 03pr6s 80 -30 R0 nD
+label 5qe7c4 80 30 R0 nS
+label hj1vf5 360 60 R0 nS
+label jbq0n3 360 0 R0 nD
+label pfnprh 40 0 R0 nG
+== sfyprobe_s/ms.shbench
+schemify 1 shbench
+  vsch 63e6e2836d8d33d2
+
+inst 9eaynh ./ms@sheet002
+  at 480 0 R0
+  name SH2
+  rev ""
+  sheetSize Asize
+  title "No title."
+  vprop maxSheets int 2 sheetNumber int 2
+inst qk9akc ./ms@sheet001
+  at 0 0 R0
+  name SH1
+  rev ""
+  sheetSize Asize
+  title "No title."
+  vprop maxSheets int 2 sheetNumber int 1
+
+text hdedx9 20 -20 R0 "Index Schematic"
+  size 8
+  vlabel text drawing lowerLeft stick normal
+== sfyprobe_s/ms@sheet001.shcomp
+schemify 1 shcomp
+  vibox 0 0 440 360
+  vsym 88824dd22260d4d8
+  vsch d154b030ce2ba750
+  vcdf 81b9ecc650c04d45
+
+param rev ""
+  kind string
+param sheetNumber ""
+  kind string
+param sheetSize ""
+  kind string
+param title ""
+  kind string
+param title1 ""
+  kind string
+
+impl schematic schematic
+
+rect 0 0 440 360
+
+stext 40 300 R0 Rev:
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick normal Rev: Rev:
+stext 40 240 R0 {sheetSize}
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@sheetSize] {sheetSize}
+stext 40 170 R0 {title1}
+  size 2.3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@title1] {title1}
+stext 40 120 R0 {title}
+  size 2.3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@title] {title}
+stext 160 300 R0 {rev}
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@rev] {rev}
+stext 220 60 R0 {sheetNumber}
+  size 4
+  hcenter
+  vcenter
+  vlabel text drawing centerCenter stick NLP [@sheetNumber] {sheetNumber}
+
+inst eb0gx2 analogLib:res
+  at 0 0 R0
+  name R0
+== sfyprobe_s/ms@sheet002.shcomp
+schemify 1 shcomp
+  vibox 0 0 440 360
+  vsym 88824dd22260d4d8
+  vsch cbf29ce484222325
+  vcdf 81b9ecc650c04d45
+
+param rev ""
+  kind string
+param sheetNumber ""
+  kind string
+param sheetSize ""
+  kind string
+param title ""
+  kind string
+param title1 ""
+  kind string
+
+impl schematic schematic
+
+rect 0 0 440 360
+
+stext 40 300 R0 Rev:
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick normal Rev: Rev:
+stext 40 240 R0 {sheetSize}
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@sheetSize] {sheetSize}
+stext 40 170 R0 {title1}
+  size 2.3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@title1] {title1}
+stext 40 120 R0 {title}
+  size 2.3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@title] {title}
+stext 160 300 R0 {rev}
+  size 3
+  vcenter
+  vlabel text drawing centerLeft stick NLP [@rev] {rev}
+stext 220 60 R0 {sheetNumber}
+  size 4
+  hcenter
+  vcenter
+  vlabel text drawing centerCenter stick NLP [@sheetNumber] {sheetNumber}
+== sfyprobe_s/ord.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym 1c6881f817a04526
+  vsch 341e41e9ddbf5943
+  vcdf e7cbcc72b1ac003a
+
+pin a inout 0 0
+  vplabel none
+pin m inout 80 0
+  vplabel none
+pin z inout -80 0
+  vplabel none
+
+impl schematic schematic
+
+rect -80 -40 80 40
+
+inst 5tfcrj analogLib:res
+  at 0 0 R0
+  name RS0
+
+wire 571av4 0 0 40 0
+wire j1m4rh -160 320 -80 320
+wire pxzk12 0 60 40 60
+
+label 6b0njp -80 320 R0 a
+label hvzcsz 40 60 R0 m
+label v7g6m1 40 0 R0 z
+
+port 46s1xm -320 160 R0 m
+port hrj2gf -320 -160 R0 z
+port sdj2np -160 320 R0 a
+== sfyprobe_s/ordtop.shbench
+schemify 1 shbench
+  vsch 541f4b1a06e4c1aa
+
+inst q6s1by ./ord
+  at 0 0 R0
+  name X0
+
+wire dj67r6 -80 0 -40 0
+wire g70r2r 0 0 40 0
+wire w6yxgf 80 0 120 0
+
+label j4sh83 40 0 R0 na
+label xccm4p 120 0 R0 nm
+label ynhfj9 -40 0 R0 nz
+== sfyprobe_s/pc.shbench
+schemify 1 shbench
+  vsch f492b9262eb52abc
+
+inst jsxy9p analogLib:res
+  at 0 0 R0
+  name R0
+inst nankw9 analogLib:res
+  at 320 0 R0
+  name R1
+inst nckpbk basic:cds_thru
+  at 160 160 R0
+  name T0
+
+wire 0gkc0n 280 160 320 160
+wire 4kst5d 0 60 40 60
+wire 795z0h 0 0 40 0
+wire chyqb9 320 0 360 0
+wire ezztn4 160 160 200 160
+wire zr0pf4 320 60 360 60
+
+label 881pen 320 160 R0 y
+label be8yr9 40 0 R0 x0
+label kq4mty 200 160 R0 x
+label m4rexv 360 60 R0 y0
+label s28cre 360 0 R0 y
+label ta94n5 40 60 R0 x
+== sfyprobe_s/skip.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym eaf2b738c8ca26bb
+  vsch 3ec1e53374165367
+  vcdf 527656d608b18129
+
+pin A inout -80 0
+  vplabel none
+
+impl schematic schematic
+
+rect -80 -40 80 40
+
+port z3tvsj -160 0 R0 A
+== sfyprobe_s/sub.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym a7126238a7a5b385
+  vsch fbb3218b058b5b7e
+  vcdf 9bdb4f5a6e547133
+
+pin A inout -80 0
+  vplabel none
+pin B inout 80 0
+  vplabel none
+
+impl schematic schematic
+
+rect -80 -40 80 40
+
+inst 7fwaxv analogLib:res
+  at 0 0 R0
+  name RS0
+
+wire jn6rp8 0 60 40 60
+wire pd28fc 0 0 40 0
+
+label a1dhh5 40 0 R0 A
+label h1jqdf 40 60 R0 B
+
+port 1yccfw -320 160 R0 B
+port fyamza -320 -160 R0 A

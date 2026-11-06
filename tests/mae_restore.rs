@@ -232,6 +232,10 @@ fn view_now(i: &mut Interp<MockDb>) -> (String, String) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn the_probe_setup_survives_dump_schemify_and_load() {
     let (Some(xml), Some(state)) = (
         fixture("maestro/mae_export.sdb"),
@@ -422,6 +426,10 @@ fn through_virtuoso() -> (Interp<MockDb>, Files) {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn only_what_schemify_changed_is_applied_and_the_rest_is_restored() {
     let (mut i, mut files) = through_virtuoso();
     // Edit one var in Schemify.

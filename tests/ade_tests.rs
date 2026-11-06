@@ -142,6 +142,10 @@ fn through_schemify() -> Option<(Interp<MockDb>, String, Files, String)> {
 /// The probe's three tests come in as `test` records of one bench: T2's own `C`, T3
 /// disabled, the parameter globally and in corner hot, corner cold disabled.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn the_probe_tests_become_test_records() {
     let Some((i, _, files, path)) = through_schemify() else {
         return;
@@ -173,6 +177,10 @@ fn the_probe_tests_become_test_records() {
 /// Unchanged, the bench goes back as the tests' `maestro` records only, and the load
 /// leaves the setup as it was (weights, the tolerance spec, run options and all).
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn an_unchanged_probe_bench_round_trips_equal_after_normalize() {
     let Some((mut i, xml, files, path)) = through_schemify() else {
         return;
@@ -201,6 +209,10 @@ fn an_unchanged_probe_bench_round_trips_equal_after_normalize() {
 /// variable, and changes nothing else of the setup: the global `C` and the other tests
 /// stay.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn an_edit_of_one_test_changes_that_test_only() {
     let Some((mut i, xml, mut files, path)) = through_schemify() else {
         return;
@@ -222,6 +234,10 @@ fn an_edit_of_one_test_changes_that_test_only() {
 /// Enabling T3 and changing hot's parameter in Schemify: a `testenable` and one corner
 /// `parameter` record, applied in place.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn enable_and_parameter_edits_go_back_as_their_records() {
     let Some((mut i, xml, mut files, path)) = through_schemify() else {
         return;
@@ -257,6 +273,10 @@ fn enable_and_parameter_edits_go_back_as_their_records() {
 /// A global a test omits (`dependentTest omitted="1"`) becomes the test's `omit`, and is
 /// reported when Schemify changes it (it has no record).
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn an_omitted_global_becomes_omit() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -302,6 +322,10 @@ fn sfyx_text(s: &str) -> String {
 /// A cross-test output (`calcVal`) and a dependent one come in as `result()` (reported:
 /// runs refuse it until they schedule tests) and go back as Maestro wrote them.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn cross_test_outputs_cross_as_result() {
     let head = "(\"sfyx\" 1 \"t\")\n(\"lib\" \"schemify\")\n(\"cell\" \"tb\" \"design\")\n(\"cv\" \"schematic\" \"schematic\" 160)\n";
     let text = format!(
@@ -348,6 +372,10 @@ fn cross_test_outputs_cross_as_result() {
 /// A bench of two tests made in Schemify loads as two Maestro tests: the second disabled
 /// with its own `vdd`, the parameter globally and in corner tt (no fixtures needed).
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn a_schemify_bench_of_two_tests_loads_as_two_maestro_tests() {
     let bench = "schemify 1 shbench\n\nvar vdd 1.8\n\ncorner tt\n  temp 27\n  param X1/w 3u\n\n\
                  output vmax ymax(v(out))\n\ntest sim\n  code sim\n  output vmax\n\

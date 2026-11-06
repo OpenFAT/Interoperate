@@ -41,7 +41,19 @@ fn rec_key(r: &Record) -> Option<Vec<String>> {
 
 fn rec_digest(r: &Record) -> String {
     let mut s = String::new();
-    crate::sfyx::write_record(&Record::new(&r.tag, r.fields.clone()), &mut s);
+    let mut fields = r.fields.clone();
+    // An analysis is its fields as a set, form defaults left out: the Spectre block writes
+    // the choosers back in its own order (forms.rs).
+    if let (true, Ok(kind), Some(Value::List(opts))) =
+        (r.tag == "analysis", r.str(0), fields.get_mut(2))
+    {
+        opts.retain(|o| match o.items() {
+            [Value::Str(k), Value::Str(v)] => !v.is_empty() && !super::is_form_default(kind, k, v),
+            _ => true,
+        });
+        opts.sort_by_key(|o| format!("{o:?}"));
+    }
+    crate::sfyx::write_record(&Record::new(&r.tag, fields), &mut s);
     crate::merge::digest(&s)
 }
 

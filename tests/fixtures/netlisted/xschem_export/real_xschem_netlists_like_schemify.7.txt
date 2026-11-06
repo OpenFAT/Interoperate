@@ -1,0 +1,32 @@
+** sch_path: <tmp>/xschem_export/elab-inv_tb/export/root/inv_tb.sch
+**.subckt inv_tb
+X1 in out inv wn=0.5 wp=2 l=0.15
+VVDD vdd! 0 dc 'vdd'
+VVIN in 0 dc 'vdd/2'
+CCL out 0 10f
+**** begin user architecture code
+
+.param vdd=1.8
+
+
+.lib models.lib tt
+.temp 27
+
+
+.tran 1p 1n
+
+**** end user architecture code
+**.ends
+
+* expanding   symbol:  root/inv.sym # of pins=2
+** sym_path: <tmp>/xschem_export/elab-inv_tb/export/root/inv.sym
+** sch_path: <tmp>/xschem_export/elab-inv_tb/export/root/inv.sch
+.subckt inv A Y  wn=1 wp=2 l=0.15
+*.ipin A
+*.opin Y
+MMN Y A 0 0 nfet W='(wn)*1u' L='(l)*1u' nf=1 ad='((wn)*0.29)*1p'
+MMP Y A vdd! vdd! pfet W='(wp)*1u' L='(l)*1u'
+.ends
+
+.GLOBAL vdd!
+.end

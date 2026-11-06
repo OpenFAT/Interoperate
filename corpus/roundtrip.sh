@@ -27,12 +27,10 @@ if [[ -z "${XSCHEM:-}" ]]; then
   XSCHEM="$(nix build --no-link --print-out-paths "github:NixOS/nixpkgs/$nixpkgs_rev#xschem")/bin/xschem"
   PATH="$(nix build --no-link --print-out-paths "github:NixOS/nixpkgs/$nixpkgs_rev#tcl^out")/bin:$PATH"
 fi
-rev="$(sed -n 's/^schemify-spicecmp = .*rev = "\([0-9a-f]*\)".*/\1/p' "$repo/Cargo.toml")"
-cargo install -q --locked --git https://github.com/OpenFAT/Schemify --rev "$rev" schemify-spicecmp \
-  --root "$cache/tools" || exit 2
+# spicecmp (Schemify's tools/spicecmp) is not in Schemify's public SDK: SPICECMP names a build.
+cmp="${SPICECMP:?set SPICECMP to a spicecmp binary (Schemify tools/spicecmp, not public)}"
 cargo build -q --release --manifest-path "$repo/Cargo.toml" --features cli --bin schemify-interop || exit 2
 bin="${CARGO_TARGET_DIR:-$repo/target}/release/schemify-interop"
-cmp="$cache/tools/bin/spicecmp"
 
 work="$rt/roundtrip"
 mkdir -p "$work"

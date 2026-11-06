@@ -1,3 +1,5 @@
-needs_review:callback	demopdk/nmos_demo	param w: callback not carried
+dropped:display-only	demopdk/nmos_demo	param guard: a CDF button (form-only)
+needs_review:callback	demopdk	demoWidthCB: callbacks of 1 params in 1 cells not carried (e.g. nmos_demo param w: demoWidthCB())
 needs_review:cdl-approximate	demopdk/nmos_demo	auCdl format from simInfo
 needs_review:cdl-approximate	demopdk/res_demo	auCdl format from simInfo
+needs_review:format	demopdk/nmos_demo	simInfo not carried: spectre termMapping

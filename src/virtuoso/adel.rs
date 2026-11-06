@@ -525,8 +525,10 @@ pub(crate) fn bench_path(
 }
 
 /// The bench records a Maestro test is written from.
-const SETUP: [RecordKind; 11] = [
+const SETUP: &[RecordKind] = &[
+    #[cfg(feature = "cadence-records")]
     RecordKind::Test,
+    #[cfg(feature = "cadence-records")]
     RecordKind::BenchParam,
     RecordKind::Var,
     RecordKind::Corner,

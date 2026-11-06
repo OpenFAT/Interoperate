@@ -95,20 +95,13 @@ fn fresh(ctx: &Ctx<'_>, notes: &mut Notes) -> Fresh {
     if pending.iter().any(|p| !p.is_empty()) {
         remaster(ctx, &mut docs, &pending, notes);
     }
+    check_connectivity(ctx, &docs, notes);
     Fresh { docs }
 }
 
-/// The Schemify-side re-mastering pass (§6.4): loads the fresh documents (with the
-/// project's files and the core library), pulls wires back from the analogLib mirror
-/// pins, labels them, and moves each pending instance onto its core cell with stubs and
-/// labels at the core pins.
-fn remaster(
-    ctx: &Ctx<'_>,
-    docs: &mut [Option<(Document<'static>, Option<String>, bool)>],
-    pending: &[Vec<Pending>],
-    notes: &mut Notes,
-) {
-    use crate::design::{geom, load_closed, sym_pins};
+/// The project as an import leaves it: the existing files, every fresh document and a
+/// manifest naming every library they land in (what `load_closed` resolves against).
+fn fresh_files(ctx: &Ctx<'_>, docs: &[Option<(Document<'static>, Option<String>, bool)>]) -> Files {
     let mut files: Files = ctx.existing.clone();
     for (k, d) in docs.iter().enumerate() {
         if let Some((doc, _, _)) = d {
@@ -135,6 +128,143 @@ fn remaster(
         "schemify.project".into(),
         schemify_format::write(&manifest).into_bytes(),
     );
+    files
+}
+
+/// The connectivity oracle (S1): every schematic whose dump carries Virtuoso's own
+/// instance terminal → net table (`tnet`) is elaborated here (`nets::extract`) and the two
+/// partitions of instance pins compared; each difference is a `needs_review:connectivity`
+/// row, so a geometric rule the import models differently from Virtuoso is never silent.
+// ponytail: bus and iterated terminals (`<`, `,` in a name) and pins renamed by the
+// analogLib re-mastering are not compared; a per-bit table when a dump needs them.
+fn check_connectivity(
+    ctx: &Ctx<'_>,
+    docs: &[Option<(Document<'static>, Option<String>, bool)>],
+    notes: &mut Notes,
+) {
+    use crate::design::{geom, load_closed, sym_pins};
+    use std::collections::BTreeMap as Map;
+    let todo: Vec<usize> = (0..docs.len())
+        .filter(|&k| docs[k].is_some())
+        .filter(|&k| {
+            ctx.dump.cells[k]
+                .cv("schematic")
+                .is_some_and(|s| !s.tnets.is_empty())
+        })
+        .collect();
+    if todo.is_empty() {
+        return;
+    }
+    let files = fresh_files(ctx, docs);
+    let plain = |s: &str| !s.contains(['<', ',']);
+    for k in todo {
+        let sv = ctx.dump.cells[k].cv("schematic").expect("filtered");
+        let path = ctx.targets[k].path();
+        let d = match load_closed(&files, &[path.as_str()]) {
+            Ok(d) => d,
+            Err(p) => {
+                notes.review(
+                    "connectivity",
+                    &path,
+                    format!("not compared with Virtuoso's: {}", p.join("; ")),
+                );
+                continue;
+            }
+        };
+        let ci = d.find(&path).expect("loaded");
+        let g = geom(&d, ci);
+        let n = crate::nets::extract(&d, ci, &g);
+        // (instance.pin, Schemify net, Virtuoso net or None: unconnected there). A Schemify
+        // net is its name: labels of one name are one net (elab §9.2).
+        let mut rows: Vec<(String, &str, Option<&str>)> = Vec::new();
+        for inst in sv.insts.iter().filter(|i| plain(&i.name)) {
+            let name = profile::inst_from_virtuoso(&inst.name);
+            let Some(gi) = g.inst_name.iter().position(|x| *x == name) else {
+                continue; // a global label or a noconn now
+            };
+            let pins = sym_pins(&d.cells[g.inst_master[gi] as usize]);
+            let tn: Vec<&Conn> = sv.tnets.iter().filter(|t| t.r == inst.r).collect();
+            if tn
+                .iter()
+                .any(|t| !pins.name.contains(&net_from_virtuoso(&t.term).text))
+            {
+                continue; // re-mastered onto other pin names
+            }
+            for (p, pn) in pins.name.iter().enumerate() {
+                let node = n.inst_pin[gi][p];
+                if node == crate::nets::NO_NODE || pins.alias[p].is_some() {
+                    continue;
+                }
+                let v = tn.iter().find(|t| net_from_virtuoso(&t.term).text == *pn);
+                if v.is_some_and(|t| !plain(&t.term) || !plain(&t.net)) {
+                    continue;
+                }
+                rows.push((
+                    format!("{}.{pn}", inst.name),
+                    n.net_name[n.node_net[node as usize] as usize].as_str(),
+                    v.map(|t| t.net.as_str()),
+                ));
+            }
+        }
+        let mut by_v: Map<&str, Vec<usize>> = Map::new();
+        let mut by_s: Map<&str, Vec<usize>> = Map::new();
+        for (i, r) in rows.iter().enumerate() {
+            if let Some(v) = r.2 {
+                by_v.entry(v).or_default().push(i);
+            }
+            by_s.entry(r.1).or_default().push(i);
+        }
+        let pins_of = |ix: &[usize]| ix.iter().map(|&i| rows[i].0.as_str()).collect::<Vec<_>>();
+        for (v, ix) in &by_v {
+            let mut nets: Vec<&str> = ix.iter().map(|&i| rows[i].1).collect();
+            nets.sort_unstable();
+            nets.dedup();
+            if nets.len() > 1 {
+                notes.review(
+                    "connectivity",
+                    &path,
+                    format!(
+                        "Virtuoso's net {v} ({}) is {} nets here",
+                        pins_of(ix).join(" "),
+                        nets.len()
+                    ),
+                );
+            }
+        }
+        for (s, ix) in &by_s {
+            let mut vs: Vec<Option<&str>> = ix.iter().map(|&i| rows[i].2).collect();
+            vs.sort_unstable();
+            vs.dedup();
+            if ix.len() > 1 && (vs.len() > 1 || vs[0].is_none()) {
+                notes.review(
+                    "connectivity",
+                    &path,
+                    format!(
+                        "net {} joins pins Virtuoso keeps apart: {}",
+                        s,
+                        ix.iter()
+                            .map(|&i| format!("{} ({})", rows[i].0, rows[i].2.unwrap_or("open")))
+                            .collect::<Vec<_>>()
+                            .join(" ")
+                    ),
+                );
+            }
+        }
+    }
+}
+
+/// The Schemify-side re-mastering pass (§6.4): loads the fresh documents (with the
+/// project's files and the core library), pulls wires back from the analogLib mirror
+/// pins, labels them, and moves each pending instance onto its core cell with stubs and
+/// labels at the core pins.
+fn remaster(
+    ctx: &Ctx<'_>,
+    docs: &mut [Option<(Document<'static>, Option<String>, bool)>],
+    pending: &[Vec<Pending>],
+    notes: &mut Notes,
+) {
+    use crate::design::{geom, load_closed, sym_pins};
+    let files = fresh_files(ctx, docs);
     for (k, todo) in pending.iter().enumerate() {
         if todo.is_empty() {
             continue;
@@ -158,7 +288,7 @@ fn remaster(
                 continue;
             };
             let core = format!("{}.shprim", devices::DEVICES[p.device].core);
-            let new_pins = schemify_doc::core_library()
+            let new_pins = crate::core::core_library()
                 .iter()
                 .find(|(nm, _)| *nm == core)
                 .and_then(|(_, b)| Ctx::iface_of_text(b))
@@ -219,6 +349,36 @@ fn remaster(
     }
 }
 
+/// Rows for what a dump names but does not carry: views other than the cellviews and text
+/// views it holds (gaps2 S4), a library's CDF and its libInit.il (S10).
+fn report_left_out(d: &Dump, notes: &mut Notes) {
+    for c in &d.cells {
+        for (v, file) in &c.skipviews {
+            notes.review(
+                "format",
+                &format!("{}/{}", c.lib, c.name),
+                format!("view {v} ({file}) is not in the dump: not imported"),
+            );
+        }
+    }
+    for (lib, n, init) in &d.libcdfs {
+        if *n > 0 {
+            notes.review(
+                "callback",
+                lib,
+                format!("the library CDF ({n} params) is not carried"),
+            );
+        }
+        if *init {
+            notes.review(
+                "callback",
+                lib,
+                "libInit.il is not carried: a library without it lacks its procedures",
+            );
+        }
+    }
+}
+
 /// See [`super::import_targets`].
 pub fn targets(sfyx: &str) -> Result<Vec<String>, Vec<String>> {
     let recs = sfyx::read(sfyx).map_err(|e| vec![e.to_string()])?;
@@ -255,8 +415,10 @@ pub fn import(
             format!("`{}` on line {}", r.tag, r.line),
         );
     }
+    report_left_out(&d, &mut notes);
     let ctx = Ctx::new(&d, existing, map, opts, &mut notes);
     let fr = fresh(&ctx, &mut notes);
+    group_kit_callbacks(&mut notes);
     let mut files: Vec<(String, Vec<u8>)> = Vec::new();
     let mut new_libs: BTreeMap<String, String> = BTreeMap::new();
     let manifest = existing
@@ -288,6 +450,16 @@ pub fn import(
             &cell,
             &mut notes,
         );
+        let dc = &ctx.dump.cells[k];
+        let out = match map
+            .by_virtuoso(&dc.lib, &dc.name)
+            .and_then(|r| Some((r, r.spice.as_deref()?)))
+        {
+            Some((row, spice)) if out.kind() == FileKind::Shprim => {
+                map_spice_wins(&out, spice, row.line, &cell, &mut notes)
+            }
+            _ => out,
+        };
         let out = with_fingerprints(&out, &doc, ctx.dump.cells[k].cdf.as_ref());
         let text = schemify_format::write(&out);
         if let Some(old) = existing.get(&path)
@@ -312,6 +484,52 @@ pub fn import(
         "one file per path"
     );
     Ok(Import { files, notes })
+}
+
+/// A mirror whose map row names a `spice` template (§8.2): the row wins for the format it
+/// names, the mirror keeps the rest (its spectre/cdl formats, a local `format xyce`). The
+/// local file's own `format spice`, when it differs, is replaced with a note; §8.1's "the
+/// local format spice wins" holds for mirrors without such a row.
+fn map_spice_wins(
+    doc: &Document<'static>,
+    spice: &str,
+    line: u32,
+    cell: &str,
+    notes: &mut Notes,
+) -> Document<'static> {
+    let mut out = Document::new(doc.kind());
+    copy_header(&mut out, doc, &[]);
+    let mut done = false;
+    for r in 1..doc.record_count() {
+        if doc.record_kind(r) != RecordKind::Impl || done {
+            out.copy_record(doc, r);
+            continue;
+        }
+        done = true; // a mirror has one impl
+        out.begin_record(RecordKind::Impl);
+        doc.fields(r).for_each(|f| out.push_field(f));
+        out.push_attr("format");
+        out.push_value("spice");
+        out.push_value(spice);
+        for a in doc.attrs(r) {
+            if doc.attr_key(a) == "format" && doc.attr_value(a, 0) == Some("spice") {
+                let old = doc.attr_value(a, 1).unwrap_or("");
+                if old != spice {
+                    notes.review(
+                        "format",
+                        cell,
+                        format!(
+                            "format spice from interop.map line {line} replaces the local {old:?}"
+                        ),
+                    );
+                }
+                continue;
+            }
+            crate::design::copy_attr(&mut out, doc, a);
+        }
+    }
+    assert_eq!(out.record_count(), doc.record_count());
+    out
 }
 
 /// `doc` (the merged file) with header attributes `vsym`/`vsch` set to the fingerprints of

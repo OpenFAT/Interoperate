@@ -265,8 +265,12 @@ fn export_dumps_the_expected_objects() {
         ),
         "{t}"
     );
+    // A user cellview property is counted as skipped (S6); Virtuoso's own stamps are not.
     assert!(
-        !t.contains("author") && !t.contains("lastSchematicExtraction") && !t.contains("instance#")
+        t.contains("(\"skipped\" \"cvprop author\" 1)")
+            && !t.contains("lastSchematicExtraction")
+            && !t.contains("instance#"),
+        "{t}"
     );
     assert!(
         t.contains("\"spin\" ")
@@ -350,10 +354,17 @@ fn imported_goldens_dump_back_identically() {
             &mut i,
             &format!(r#"(SfyExport "/t/out.sfyx" "scratch" (list "{cell}"))"#),
         );
+        // What the dumper skipped (S6) is what no load restores: not compared.
+        let kept = |t: &str| -> String {
+            t.lines()
+                .filter(|l| !l.starts_with("(\"skipped\""))
+                .map(|l| format!("{l}\n"))
+                .collect()
+        };
         let back = file(&i, "/t/out.sfyx");
         assert_eq!(
-            back,
-            golden_text.replace("\"work\"", "\"scratch\""),
+            kept(&back),
+            kept(&golden_text.replace("\"work\"", "\"scratch\"")),
             "{name} round trip"
         );
     }
@@ -641,7 +652,7 @@ fn conn_records_draw_a_labelled_stub_at_the_real_pin() {
     assert!(t.contains("(\"wire\" 2 (-50000 0 -40000 0) 0)"), "{t}");
     assert!(t.contains("\"out\" -50000 0"), "{t}");
     assert!(t.contains("\"gnd!\" 50000 0"), "{t}");
-    assert!(t.contains("\"schemifyStub\" \"string\" \"1\""), "{t}");
+    assert!(t.contains("\"schemifyStub\" \"string\" \"conn\""), "{t}");
 }
 
 #[test]
@@ -866,7 +877,7 @@ fn a_skill_error_costs_one_cellview_and_the_log_still_closes() {
     // Export: the same backstop ends the log with the message.
     run(
         &mut i,
-        "(procedure (SfyDumpTextViews port lib cell) (error \"bang\"))",
+        "(procedure (SfyDumpTextViews port lib cell dumped) (error \"bang\"))",
     );
     let ok = run(&mut i, DUMPS[0].1);
     let log = file(&i, "/t/inv.sfyx.log");
@@ -910,4 +921,95 @@ fn a_negative_arc_and_a_symbol_pin_instance_load_and_dump_back() {
     ] {
         assert!(back.contains(rec), "{rec} not in\n{back}");
     }
+}
+
+/// A primitive whose bulk lives only in its spectre stopping view (gaps2 S8, P1; the shape
+/// of analogLib nmos, live ICADVM20.1 p_probe): the dump gives the symbol that terminal
+/// as a pinless term with its net expression, and auCdl's `progn(bn)` reads back as the
+/// list it was, not a symbol of that name.
+#[test]
+fn a_stopping_view_terminal_dumps_and_progn_reads_back_as_a_list() {
+    let mut i = fixtures();
+    run(
+        &mut i,
+        r#"(let ((cv nil) (net nil) (term nil) (cdf nil))
+             (SfyFixSymbol "pdk" "n3" (list (list "D" "inputOutput" 0 40)
+                                         (list "G" "input" -40 0) (list "S" "inputOutput" 0 -40)))
+             (setq cv (SfyFixOpen "pdk" "n3" "spectre" "schematicSymbol"))
+             (foreach n (list "D" "G" "S" "B")
+               (setq net (dbMakeNet cv n))
+               (setq term (dbCreateTerm net n "inputOutput"))
+               (when (equal n "B") (dbCreateTermNetExpr term "[@bsub:%:vss!]")))
+             (SfyFixSave cv)
+             (setq cdf (SfyFixCdf "pdk" "n3"))
+             (cdfCreateParam cdf ?name "bn" ?type "string" ?defValue "S" ?prompt "Bulk")
+             (setSGq cdf (list nil 'spectre (list nil 'termOrder '(D G S B))
+                               'auCdl (list nil 'termOrder '(D G S (progn bn))))
+               simInfo)
+             (cdfSaveCDF cdf))"#,
+    );
+    run(&mut i, DUMPS[5].1);
+    let t = file(&i, "/t/pdk.sfyx");
+    let n3 = t.split("(\"cell\" \"n3\"").nth(1).unwrap();
+    let n3 = n3.split("(\"cell\"").next().unwrap();
+    assert!(
+        n3.contains("(\"term\" \"B\" \"inputOutput\" \"[@bsub:%:vss!]\")"),
+        "{n3}"
+    );
+    assert_eq!(n3.matches("(\"term\"").count(), 4, "{n3}");
+    assert!(!n3.contains("(\"pinfig\" 4 \"B\""), "{n3}");
+    // (auCdl (nil termOrder (D G S (progn bn)))): the fourth entry the list (progn bn). The
+    // dump spells it as %L prints it, `progn(bn)` on ICADVM20.1, which its linereadstring
+    // reads (p_terms live check); the mock's reader takes only the prefix form.
+    let bulk = run(
+        &mut i,
+        r#"(let ((b (nth 3 (caddr (cadr (SfySimInfoValue
+                   '("siminfo" "auCdl" (("termOrder" ("D" "G" "S" "(progn bn)"))))))))))
+             (and (listp b) (eq (car b) 'progn) (eq (cadr b) 'bn)))"#,
+    );
+    assert!(bulk.truthy());
+}
+
+/// gaps2 P12: a `conn` on a terminal the symbol draws no pin for, inherited in the master's
+/// spectre view (`B`, `[@bsub:%:vss!]`), named by the terminal or by its property, sets the
+/// instance's netSet override instead of being refused.
+#[test]
+fn a_conn_on_an_inherited_terminal_sets_its_netset_override() {
+    let mut i = skill::virtuoso(&["analogLib", "basic", "pdk", "scratch"]);
+    i.load(BUILD).unwrap();
+    run(
+        &mut i,
+        r#"(let ((cv nil) (net nil) (term nil))
+             (SfyFixSymbol "pdk" "n3" (list (list "D" "inputOutput" 0 40)
+                                         (list "G" "input" -40 0) (list "S" "inputOutput" 0 -40)))
+             (setq cv (SfyFixOpen "pdk" "n3" "spectre" "schematicSymbol"))
+             (foreach n (list "D" "G" "S" "B")
+               (setq net (dbMakeNet cv n))
+               (setq term (dbCreateTerm net n "inputOutput"))
+               (when (equal n "B") (dbCreateTermNetExpr term "[@bsub:%:vss!]")))
+             (SfyFixSave cv))"#,
+    );
+    let text = "(\"sfyx\" 1 \"t\")\n(\"lib\" \"work\")\n(\"cell\" \"m\" \"design\")\n\
+                (\"cv\" \"schematic\" \"schematic\" 160)\n\
+                (\"inst\" 1 \"M0\" \"pdk\" \"n3\" \"symbol\" 0 0 \"R0\")\n\
+                (\"inst\" 2 \"M1\" \"pdk\" \"n3\" \"symbol\" 200 0 \"R0\")\n\
+                (\"conn\" 1 \"B\" \"VBB\")\n(\"conn\" 2 \"bsub\" \"VBB\")\n\
+                (\"conn\" 2 \"X\" \"VBB\")\n(\"end\")\n";
+    i.files.insert("/t/c.sfyx".into(), text.into());
+    run(&mut i, r#"(SfyImport "/t/c.sfyx" ?lib "scratch")"#);
+    let log = file(&i, "/t/c.sfyx.log");
+    assert!(log.contains("conn: no pin X on M1"), "{log}");
+    run(
+        &mut i,
+        r#"(SfyExport "/t/c2.sfyx" "scratch" (list "m") ?ref nil)"#,
+    );
+    let t = file(&i, "/t/c2.sfyx");
+    assert!(
+        t.contains("(\"prop\" 1 \"bsub\" \"netSet\" \"VBB\")"),
+        "{t}"
+    );
+    assert!(
+        t.contains("(\"prop\" 2 \"bsub\" \"netSet\" \"VBB\")"),
+        "{t}"
+    );
 }

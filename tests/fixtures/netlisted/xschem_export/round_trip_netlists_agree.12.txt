@@ -1,0 +1,296 @@
+top root/opamp_tb.shbench for Ngspice
+== root/buffer.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/buffer.sym"
+  xfp faa9f2870d5fa243
+
+pin IN in -40 0
+pin OUT out 40 0
+pin IB in 0 40
+
+param size 1
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+rect -30 -20 30 30
+  layer 4
+  fill false
+
+stext -30 -35 R0 {cell}
+  size 0.2
+  layer 3
+
+inst zsxx7z ./opamp
+  at 0 0 R0
+  name X1
+  wn 2*size
+  wp 4*size
+
+label 6xg72f -40 20 R0 OUT
+
+port 13jnva -40 -20 R0 IN
+port ayw2jq 0 40 R0 IB
+port jwy6c8 40 0 R0 OUT
+== root/cap.shprim
+schemify 1 shprim
+  prefix C
+  category primitive
+  provenance "xschem root/cap.sym"
+  xfp d2b0a6b4d81521ca
+
+pin P inout 0 -20
+pin N inout 0 20
+
+param C 1p
+
+impl spice spice
+  format spice "C{name} {P} {N} {C}"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/nmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/nmos.sym"
+  xfp 61d3fe40784dc67a
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B inout 20 0
+
+param W 1
+param L 0.15
+param nf 1
+param model nfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u' nf={nf} ad='(({W})*0.29)*1p'"
+  format cdl "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/opamp.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/opamp.sym"
+  xfp 690c75eea44fe07a
+
+pin INP in -40 -20
+pin INN in -40 20
+pin OUT out 40 0
+pin IBIAS in 0 40
+
+param wn 2
+param wp 4
+param l 0.5
+param cc 1p
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+rect -30 -20 30 30
+  layer 4
+  fill false
+
+stext -30 -35 R0 {cell}
+  size 0.2
+  layer 3
+
+inst 2y3znj ./cap
+  at 800 0 R0
+  name CC
+  C cc
+inst 2z694j ./pmos
+  at 500 0 R0
+  name M6
+  W wp*4
+  L l
+inst 61dc8x ./nmos
+  at 400 0 R0
+  name M5
+  W wn*2
+  L l
+inst 6g9k9s ./nmos
+  at 0 0 R0
+  name M1
+  W wn
+  L l
+inst 79bvbk ./nmos
+  at 700 0 R0
+  name M8
+  W wn
+  L l
+inst a1nje3 ./pmos
+  at 300 0 R0
+  name M4
+  W wp
+  L l
+inst f5vtg8 ./nmos
+  at 100 0 R0
+  name M2
+  W wn
+  L l
+inst nv59fq ./pmos
+  at 200 0 R0
+  name M3
+  W wp
+  L l
+inst w31jfj ./nmos
+  at 600 0 R0
+  name M7
+  W wn*2
+  L l
+
+wire rnetmq 20 30 120 30
+
+label 05j688 620 30 R0 0
+label 135h5d 520 0 R0 vdd!
+  global true
+label 3bg1tz 800 -20 R0 n2
+label 68c8av 380 0 R0 IBIAS
+label 69fc8t 220 0 R0 vdd!
+  global true
+label 6rajd6 20 0 R0 0
+label 76w8nj 620 -30 R0 OUT
+label 7axxzr 180 0 R0 n1
+label 86mwq8 320 30 R0 n2
+label 8ewztr 320 -30 R0 vdd!
+  global true
+label 9ddzwc 520 -30 R0 vdd!
+  global true
+label a9jq3j 480 0 R0 n2
+label am7qsq 420 -30 R0 tail
+label b515kv 420 30 R0 0
+label c30jsp 20 30 R0 tail
+label e7wwc8 20 -30 R0 n1
+label h7sd8s 420 0 R0 0
+label hdex8b 800 20 R0 OUT
+label kb117k 120 0 R0 0
+label ky3d6e 620 0 R0 0
+label nnyz7z 720 0 R0 0
+label pwg9wv 320 0 R0 vdd!
+  global true
+label rxvddr 220 30 R0 n1
+label sk0v80 120 -30 R0 n2
+label tary46 720 30 R0 0
+label v0m9ym 280 0 R0 n1
+label x6ah8y 680 0 R0 IBIAS
+label z31tj2 220 -30 R0 vdd!
+  global true
+label zd276g 580 0 R0 IBIAS
+
+port 238bwq 520 30 R0 OUT
+port 2nrwzz -20 0 R0 INP
+port byvzv9 720 -30 R0 IBIAS
+port gp8jpx 80 0 R0 INN
+== root/opamp_tb.shbench
+schemify 1 shbench
+  provenance "xschem root/opamp_tb.sch"
+  xfp 5d671bf4f6f8fc1e
+
+inst 9k4asj ./buffer
+  at 0 200 R0
+  name XB2
+  size 2
+inst b6wkzc ./vsource
+  at -200 0 R0
+  name VIN
+  dc 0.9
+inst fm1yz6 ./vsource
+  at -300 0 R0
+  name VDD
+  dc 1.8
+inst h7s5g9 ./buffer
+  at 0 0 R0
+  name XB1
+inst nr3455 ./buffer
+  at 0 400 R0
+  name XB3
+
+label 0abs1g -40 400 R0 in
+label 12ehpp 0 40 R0 ib
+label 3n07y7 -300 -30 R0 vdd!
+  global true
+label 8xv6xp -300 30 R0 0
+label 91evct -40 200 R0 in
+label 92w241 40 200 R0 o2
+label hg7f8t -200 30 R0 0
+label hrsw1a -40 0 R0 in
+label k580mr 0 240 R0 ib
+label k93kbg -200 -30 R0 in
+label kx4snq 40 400 R0 o3
+label my0x1f 40 0 R0 o1
+label w94ssh 0 440 R0 ib
+
+code corner spice
+  | .temp 27
+== root/pmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/pmos.sym"
+  xfp 6856cdf866bba1a2
+
+pin D inout 20 30
+pin G in -20 0
+pin S inout 20 -30
+pin B inout 20 0
+
+param W 2
+param L 0.15
+param model pfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/vsource.shprim
+schemify 1 shprim
+  prefix V
+  category primitive
+  provenance "xschem root/vsource.sym"
+  xfp bc7afef549666fbf
+
+pin P inout 0 -30
+pin N inout 0 30
+
+param dc 0
+
+impl spice spice
+  format spice "V{name} {P} {N} dc {dc}"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== schemify.project
+schemify 1 project
+
+lib root path root

@@ -53,6 +53,7 @@ pub mod cli;
 pub mod core;
 pub mod decimal;
 pub mod design;
+pub mod expr;
 pub mod job;
 pub mod klayout;
 mod limits;

@@ -219,6 +219,9 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
     if g.coin() {
         lines.push(".noise v(out) V1 dec 10 1 1meg".into());
     }
+    if g.coin() {
+        lines.push(".options reltol=1e-5 gmin=1e-14".into());
+    }
     if with_param {
         lines.push(".param k=2".into());
     }
@@ -235,7 +238,7 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
     t.push_str(
         "output vmax \"ymax(v(out))\"\noutput gain \"(ymax(v(out)) - ymin(v(out))) / vdd\"\n",
     );
-    t.push_str("output tr \"delay(v(in), 0.9, v(out), 0.9)\"\n");
+    t.push_str("output tr \"ymax(fft(v(out)))\"\n");
     t.push_str("spec vmax\n  min 1\n  max 1.7\nspec gain\n  max 2\nspec tr\n  max 1n\n");
     exact.extend([
         "output vmax".into(),
@@ -272,6 +275,10 @@ fn gen_bench(seed: u64, with_param: bool) -> Bench {
 // ---------------------------------------------------------------------------------------
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn generated_benches_round_trip_through_maestro_records() {
     for seed in 0..32 {
         let with_param = seed % 8 == 7;
@@ -403,8 +410,8 @@ fn records_follow_the_spec_9_table() {
         r#"("var" "temperature" "50" "")"#,
         r#"("var" "vdd" "1.8" "")"#,
         r#"("analysis" "ac" 1 (("start" "1") ("stop" "1G") ("incrType" "Logarithmic") ("stepTypeLog" "Points Per Decade") ("dec" "10")))"#,
-        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/V1") ("param" "dc") ("start" "0") ("stop" "1.8") ("step" "0.1") ("saveOppoint" "t")))"#,
-        r#"("analysis" "noise" 1 (("start" "1k") ("stop" "1M") ("incrType" "Linear") ("stepTypeLin" "Number of Steps") ("lin" "5") ("oprobe" "/out") ("iprobe" "/V1")))"#,
+        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/V1") ("param" "dc") ("start" "0") ("stop" "1.8") ("incrType" "Linear") ("stepTypeLin" "Step Size") ("step" "0.1") ("saveOppoint" "t")))"#,
+        r#"("analysis" "noise" 1 (("start" "1k") ("stop" "1M") ("incrType" "Linear") ("stepTypeLin" "Number of Steps") ("lin" "4") ("outType" "voltage") ("p" "/out") ("n" "/gnd!") ("iprobe" "/V1")))"#,
         r#"("analysis" "tran" 1 (("stop" "1u") ("start" "0") ("maxstep" "2n")))"#,
         r#"("model" "" "$PDK/t.lib" "tt")"#,
         r#"("corner" "ff" 1)"#,
@@ -438,7 +445,7 @@ fn a_deck_block_with_title_and_negative_dc_maps_line_by_line() {
         .collect();
     let want = [
         r#"("maestro" "netlist" "schemify" "tb" "schematic" "spectre")"#,
-        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/Vsw") ("param" "dc") ("start" "-0.2") ("stop" "0.2") ("step" "0.1m")))"#,
+        r#"("analysis" "dc" 1 (("sweep" "Component Parameter") ("dev" "/Vsw") ("param" "dc") ("start" "-0.2") ("stop" "0.2") ("incrType" "Linear") ("stepTypeLin" "Step Size") ("step" "0.1m")))"#,
         r#"("model" "" "$PDK/models.lib" "tt")"#,
     ];
     assert_eq!(got, want.map(|s| format!("{s}\n")));
@@ -496,8 +503,12 @@ fn fixtures() -> PathBuf {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn maestro_dumps_import_to_their_golden_benches() {
-    for name in ["spice", "native"] {
+    for name in ["spice", "native", "gaps2"] {
         let text = std::fs::read_to_string(fixtures().join(format!("{name}.sfyx"))).unwrap();
         let (got, notes) = import(&text, &Files::new());
         let out = format!("{got}\n--- report\n{}", notes.text());
@@ -764,6 +775,10 @@ fn the_exported_model_list_replaces_the_session_defaults() {
 /// both sides: dumped apart from the global, imported as the test's `set`, loaded as a
 /// test variable, so the other test of the view keeps seeing the global.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn test_variables_override_globals_in_their_test_only() {
     let (text, _) = export(&project(&canonical(&gen_bench(5, false).text)));
     // The same test twice under two names, in one maestro view.
@@ -837,6 +852,63 @@ fn test_variables_override_globals_in_their_test_only() {
     assert!(own("sim2").is_empty());
 }
 
+/// Gaps round 2 (lane A): simulator options, the corners a test runs and a test bound to
+/// another cell go through the loader and the dumper on the mock maestro and come back.
+#[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
+fn sim_options_corner_runs_and_designs_cross_the_mock() {
+    let bench = "schemify 1 shbench\n\nvar vdd 1.8\n\ncorner c1\n  temp 27\ncorner c2\n  temp 85\n\n\
+                 test sim\n  code sim\n  corner c1\ntest t2\n  code sim\n  design ./other\n\n\
+                 code sim spice\n  | .tran 1n 1u\n  | .options reltol=1e-5 gmin=1e-14\n";
+    let (text, notes) = export(&project(bench));
+    for want in [
+        r#"("simoption" "gmin" "1e-14")"#,
+        r#"("simoption" "reltol" "1e-5")"#,
+        r#"("cornerrun" "c2" 0)"#,
+        r#"("testdesign" "schemify" "other")"#,
+    ] {
+        assert!(text.contains(want), "{want}\n{text}\n{}", notes.text());
+    }
+    let mut i = interp();
+    i.files.insert("/t/in.sfyx".into(), text);
+    assert!(
+        run(&mut i, r#"(SfyImport "/t/in.sfyx")"#).truthy(),
+        "{}",
+        i.log
+    );
+    let key = ("schemify".to_owned(), "tb".to_owned());
+    let su = &i.host.mae.saved[&key];
+    let t2 = su.tests.iter().find(|t| t.name == "t2").expect("t2");
+    assert_eq!(t2.design.1, "other", "t2's design cell");
+    let sim = su.tests.iter().find(|t| t.name == "sim").expect("sim");
+    assert!(
+        sim.sim
+            .iter()
+            .any(|(n, v)| n == "reltol" && v.as_str() == Some("1e-5"))
+    );
+    let c2 = su.corners.iter().find(|c| c.name == "c2").expect("c2");
+    assert_eq!(c2.disabled_tests, ["sim"]);
+    assert!(
+        run(
+            &mut i,
+            r#"(SfyExport "/t/out.sfyx" "schemify" (list "tb"))"#
+        )
+        .truthy()
+    );
+    let dump = i.files["/t/out.sfyx"].clone();
+    let (got, _) = import(&dump, &Files::new());
+    for want in [
+        "test sim\n  code sim\n  corner c1\n",
+        "  design ./other\n",
+        "  | .options reltol=1e-5 gmin=1e-14\n",
+    ] {
+        assert!(got.contains(want), "{want}\n{got}");
+    }
+}
+
 #[test]
 fn an_unnamed_maestro_output_is_skipped_not_fatal() {
     let (text, _) = export(&project(&canonical(&gen_bench(5, false).text)));
@@ -858,14 +930,26 @@ fn an_unnamed_maestro_output_is_skipped_not_fatal() {
     );
     let log = i.files["/t/out.sfyx.log"].clone();
     assert!(ok.truthy(), "{log}");
+    let dump = i.files["/t/out.sfyx"].clone();
     assert!(
-        log.contains("skipped: maestro sim output without a name"),
-        "{log}"
+        dump.contains(
+            r#"("maenote" "output" "an output without a name (nil \"/out\") is not dumped")"#
+        ),
+        "{dump}"
     );
-    // The dump still imports.
+    // The dump still imports, and the report names the output (a maenote).
     let mut man = Files::new();
     man.insert("schemify.project".into(), b"schemify 1 project\n".to_vec());
-    import(&i.files["/t/out.sfyx"].clone(), &man);
+    let (_, notes) = import(&dump, &man);
+    assert!(
+        notes
+            .rows
+            .iter()
+            .any(|n| n.class == "needs_review:output"
+                && n.detail.contains("an output without a name")),
+        "{}",
+        notes.text()
+    );
 }
 
 #[test]

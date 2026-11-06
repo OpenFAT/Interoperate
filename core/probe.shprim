@@ -1,0 +1,19 @@
+schemify 1 shprim
+  doc "Voltage probe: emits a SPICE .save for the net at p"
+  prefix P
+  category probe
+
+pin p in 0 0
+
+param attrs ""
+  kind string
+  doc "extra .save arguments, emitted before v(net)"
+
+impl spice spice
+  format spice ".save {attrs} v( {p} )"
+  format spectre ""
+
+line 0 0 8.232 -8.232
+
+circle 10 -10 2.5
+  width 2

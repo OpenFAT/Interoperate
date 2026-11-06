@@ -16,7 +16,10 @@ On the machine that runs Virtuoso:
 - Virtuoso on `PATH`, and a `cds.lib` that defines `analogLib` and `basic`. Your usual project directory has one.
 - This repository with its submodules, and the Rust toolchain (`rustup`, installable in your
   home directory without root). The kit's host steps are a Rust test of this crate. The first
-  run compiles it, which takes a few minutes.
+  run compiles it, which takes a few minutes. It builds with `--locked` and the toolchain of
+  `rust-toolchain.toml`: if it stops with "cannot update the lock file", a `.cargo/config.toml`
+  in the checkout or a directory above it patches a dependency (`[patch]` to a local copy).
+  Remove that patch or keep the checkout outside its directory.
 - Optional, each enables more checks: `si` (netlists), `ocean` and `spectre` (simulation). The
   kit finds them on `PATH` and reports SKIP for what it could not run.
 
@@ -152,3 +155,18 @@ writes it. `checks/run.sh <check>` runs one on the Virtuoso host under the share
 the lane's own scratch library `sfyprobe_<lane>`, created for the run and deleted after it;
 its header has the setup and the exit codes. A lane with a driver runs it from here with
 `SFY_HOST=<host> checks/l<N>_drive.sh` (`SFY_HOST`, the host's ssh name, is required).
+`checks/x_drive.sh` (lane X) runs xschem → Schemify → Virtuoso with interop.map
+re-mastering onto a made-up sky130-shaped kit cell, si's spectre netlist against Schemify's,
+and the way back to a real xschem netlist (in `~/sfytest/checks-x`, its own work directory).
+
+The gaps-round-2 checks (lanes A, S, P, X), each with its own work directory on the host
+(`~/sfytest/checks-<lane>`):
+
+| Check | Does |
+|---|---|
+| `a_drive.sh` → `a_ade.il` | A Schemify bench (noise, dc, ac lin, simulator options, settle and max outputs) loaded into Maestro, netlisted by ADE and run in Spectre, its OCEAN script run; then a Maestro view of one test per analysis kind (with a temperature list, corner groups, spec kinds, a test on another cell and one on hspiceD) dumped, imported, and each test netlisted by Schemify and run in Spectre. |
+| `a_probe.il`, `a_ocn.sh`, `a_res.il` | ADE facts: `maeGetAnalysis` and ADE's own netlist of every analysis kind a GUI sets (`a_forms.py` turns the defaults into `forms.tsv`); OCEAN's noise/dc/ac lin keywords and the `settlingTime` pieces; the results of dc, noise, stb, pss+pac and sp tests as OCEAN reads them. |
+| `s_drive.sh` → `s_more.il`, `s_schematic.il` | Schematic cases (pin figures, views, supply symbols, multi-sheet, CDF attributes, PCell symbols, constraints, unsaved edits) drawn, dumped and si-netlisted; `tests/virtuoso_gaps.rs` grades the dump against Virtuoso's connectivity. |
+| `p_drive.sh` → `p_terms.il`, `p_si.sh`, `p_refresh.il` | PDK inherited bulk terminals and diode/MOS CDL against si (`live_p_terms`), and derived values after a resize against the callbacks (`live_p_refresh`). Needs a PDK (`SFYCHECK_PLIB`, `SFYCHECK_ENV`). |
+| `p_probe.il`, `p_kit.il`, `p_map.il`, `p_char.il`, `p_leak.il`, `p_simopt.il` | PDK facts: stopping-view terminals and termOrder, the whole kit dumped for the import's counts, a pin mapped onto an inherited terminal, characterization of non-MOS devices, the cell-CDF leak, simulator options against `spectre.opts`. |
+| `x_drive.sh` → `x_xs2v.il` | The xschem path above. |

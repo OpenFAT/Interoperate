@@ -118,11 +118,11 @@ pub(super) fn schematic_out(
             .iter()
             .find(|x| map::mirror_of(x).is_some_and(|(l, cl)| (l.as_str(), cl.as_str()) == target))
             .map(|x| {
+                // Its inherited pins are drawn nowhere: the loader connects them (netSet).
                 let sp = sym_pins(x);
-                sp.name
-                    .iter()
-                    .zip(&sp.at)
-                    .map(|(nm, at)| (vname(nm), *at))
+                (0..sp.name.len())
+                    .filter(|&i| sp.inherit[i].is_none())
+                    .map(|i| (vname(&sp.name[i]), sp.at[i]))
                     .collect::<Vec<_>>()
             })
             // analogLib's pins, as measured (devices::alib_pins).
@@ -168,7 +168,8 @@ pub(super) fn schematic_out(
     // (wire ref, segment) of every wire label can glue to.
     let mut segs: Vec<(u32, [i32; 4])> = Vec::new();
     for w in 0..g.wire.len() {
-        if edits.wire_dead.binary_search(&w).is_ok() {
+        // A stub import drew inside a pin figure (`vjoin`, S1): Virtuoso joins there itself.
+        if edits.wire_dead.binary_search(&w).is_ok() || c.attr(g.wire_rec[w], "vjoin").is_some() {
             continue;
         }
         let mut seg = g.wire[w];
@@ -270,22 +271,38 @@ pub(super) fn schematic_out(
                 _ => (key, val),
             };
             match key {
-                "at" | "name" | "ignore" => continue,
+                "at" | "name" | "ignore" | "vview" => continue,
+                // xschem's per-element value list (`xschem_out::XSPROP`): no Virtuoso form.
+                crate::xschem_out::XSPROP => {
+                    notes.review(
+                        "expression",
+                        &c.path,
+                        format!(
+                            "{}.{val}: an xschem per-element value list, not sent",
+                            g.inst_name[k]
+                        ),
+                    );
+                    continue;
+                }
                 // A property Schemify has no param for, as Virtuoso had it; an override of
                 // the same name wins.
                 "vprop" => {
-                    let (Some(ty), Some(v)) = (c.doc.attr_value(a, 1), c.doc.attr_value(a, 2))
-                    else {
-                        continue;
-                    };
-                    if c.attr(rec, val).is_none() {
-                        cv.props.push(Prop::new(r, val, ty, v));
+                    let vals: Vec<&str> = c.doc.attr_values(a).collect();
+                    for t in vals.chunks_exact(3) {
+                        if c.attr(rec, t[0]).is_none() {
+                            cv.props.push(Prop::new(r, t[0], t[1], t[2]));
+                        }
                     }
                     continue;
                 }
+                // Eleven values per textDisplay, all on one line (a second line of one key
+                // is E024).
                 "vtd" => {
-                    if let Some(t) = text_display(c, a, r, at) {
-                        cv.tds.push(t);
+                    let vals: Vec<&str> = c.doc.attr_values(a).collect();
+                    for t in vals.chunks_exact(11) {
+                        if let Some(t) = text_display(t, r, at) {
+                            cv.tds.push(t);
+                        }
                     }
                     continue;
                 }
@@ -296,7 +313,7 @@ pub(super) fn schematic_out(
                     // inherited-connection override (G13).
                     cv.props.push(Prop::new(
                         r,
-                        &vname(pin),
+                        &inherit_prop(master, pin),
                         "netSet",
                         net_to_virtuoso(net, false).0,
                     ));
@@ -425,7 +442,10 @@ pub(super) fn schematic_out(
             name,
             lib: plan.lib[mi].clone(),
             cell,
-            view: plan.view[mi].clone(),
+            // The view it was placed through in Virtuoso (`vview`, S3).
+            view: c
+                .attr(rec, "vview")
+                .map_or_else(|| plan.view[mi].clone(), str::to_owned),
             xy: at,
             orient: profile::orient_to_virtuoso(g.inst_orient[k]).into(),
         });
@@ -445,7 +465,9 @@ pub(super) fn schematic_out(
         .collect();
     // (id, anchor, net, global, orientation, the label record)
     type LabelOut<'a> = (Option<&'a str>, [i32; 2], String, bool, Orient, Option<u32>);
+    // A label import added to join a view's pins (`vjoin`, S3) is not Virtuoso's.
     let mut all_labels: Vec<LabelOut> = (0..g.label_at.len())
+        .filter(|&k| c.attr(g.label_rec[k], "vjoin").is_none())
         .map(|k| {
             let o = c.orient(g.label_rec[k], 3);
             (
@@ -476,13 +498,16 @@ pub(super) fn schematic_out(
         // The Virtuoso instance name and library of the global symbol it came from.
         let vinst = rec.and_then(|r| c.attr(r, "vinst"));
         let vlib = rec.and_then(|r| c.attr(r, "vlib")).unwrap_or("analogLib");
+        let vcell = rec.and_then(|r| c.attr(r, "vcell"));
         let r = ids.take();
         let (text, review) = net_to_virtuoso(&net, global);
         if review {
             notes.review("name", &c.path, format!("net `{net}` kept verbatim"));
         }
         let back = net_from_virtuoso(&text);
-        if (back.text.as_str(), back.global) != (net.as_str(), global) {
+        // A supply symbol of another name (`vcell`) is known by this property on re-import,
+        // where the dump holds no cell of its own to tell it is one (S11).
+        if (back.text.as_str(), back.global) != (net.as_str(), global) || vcell.is_some() {
             cv.props
                 .push(Prop::string(r, "schemifyNet", read::net_prop(&net, global)));
         }
@@ -492,9 +517,12 @@ pub(super) fn schematic_out(
         // Only a label that came from such a symbol, or one on no wire (which would
         // otherwise need a stub), becomes the symbol; a wire label stays a wire label.
         let on_wire = segs.iter().any(|(_, s)| nets::on_segment(at, *s));
+        // A supply symbol of another name (`vcell`, S11) is drawn as itself.
         if let Some(sym) = text
             .strip_suffix('!')
             .filter(|b| devices::GLOBAL_SYMBOLS.contains(b))
+            .or(vcell.filter(|_| text.ends_with('!')))
+            .map(|b| vcell.unwrap_or(b))
             .filter(|_| vinst.is_some() || !on_wire)
         {
             if let Some(id) = id {
@@ -741,8 +769,8 @@ fn derived_digest(c: &Cell, rec: u32, master: &Cell) -> Option<String> {
 
 /// The textDisplay of instance ref `r` at `at` that attribute `a` (`vtd <assoc> <name>
 /// <layer> <purpose> <dx> <dy> <orient> <justify> <font> <height> <flags>`) keeps.
-fn text_display(c: &Cell, a: u32, r: u32, at: [i32; 2]) -> Option<TextDisplay> {
-    let v = |k: usize| c.doc.attr_value(a, k);
+fn text_display(v: &[&str], r: u32, at: [i32; 2]) -> Option<TextDisplay> {
+    let v = |k: usize| v.get(k).copied();
     let int = |k: usize| v(k)?.parse::<i32>().ok();
     let f: Vec<bool> = v(10)?.chars().map(|x| x == '1').collect();
     Some(TextDisplay {

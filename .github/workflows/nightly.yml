@@ -1,5 +1,7 @@
-# Nightly tier: the xschem differential ratchet on the full corpus with the ngspice second
-# oracle, fuzzing, and the suite against Schemify `main` (core drift shows up within a day).
+# Nightly tier: the xschem import over the full corpus, fuzzing, and the suite against
+# Schemify's public SDK `main` (SDK drift shows up within a day). The netlist differential and
+# the export round trip need a netlister and spicecmp, which Schemify's public interface
+# does not have (README "Development").
 name: nightly
 
 on:
@@ -21,19 +23,14 @@ env:
   RUST_TOOLCHAIN: "1.95.0" # = ci.yml
 
 jobs:
-  # Goldens from a pinned xschem (nix), our netlists of every bench, spicecmp comparison;
-  # fails when the agree counts drop below corpus/RATCHET.md. Then the second oracle:
-  # ngspice results of our netlists and xschem's agree (sky130 models from volare).
+  # Goldens from a pinned xschem (nix), then every bench imported and checked
+  # (`check_output`, NETLIST=none: Schemify's shipped command line has no netlister).
   corpus:
     if: ${{ !inputs.only || inputs.only == 'corpus' }}
     runs-on: ubuntu-latest
     timeout-minutes: 180
     env:
       CACHE: ${{ github.workspace }}/corpus/.cache
-      # open_pdks build that volare serves (release sky130-<commit>, 2025-08); its
-      # libs.tech/combined is what xschem_sky130's SKYWATER_MODELS points at.
-      SKY130_OPEN_PDKS: c6d73a35f524070e85faff4a6a9eef49553ebc2b
-      VOLARE_VERSION: "0.20.6"
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
@@ -48,53 +45,15 @@ jobs:
       - name: goldens report
         if: always()
         run: cat corpus/.cache/golden/REPORT.txt
-      # Schemify's comparator self-checks on these real goldens (its corpus moved here):
-      # spicecmp's ignored metamorphic tests read the goldens through SCHEMIFY_GOLDEN.
-      - uses: actions/checkout@v5
-        with:
-          repository: OpenFAT/Schemify
-          ref: main
-          path: .schemify
-      - name: comparator self-checks on real goldens (Schemify main)
-        working-directory: .schemify
-        run: >-
-          SCHEMIFY_GOLDEN=$CACHE/golden
-          cargo test --release -p schemify-spicecmp -- --include-ignored
-      - name: differential vs xschem
-        run: >-
-          SCHEMIFY_CORPUS=$CACHE
-          cargo test --release --test xschem_differential -- --nocapture
-      - name: ratchet (RATCHET.md)
-        run: corpus/ratchet.sh corpus/.cache/netlist-out/TABLE.md
-      # golden.sh points PDK_ROOT at $CACHE/pdk with only the xschem libraries; the model
-      # files open_pdks generates come from volare's prebuilt release, linked in beside them.
-      - name: sky130 models (volare)
-        if: ${{ !cancelled() }}
-        env:
-          GITHUB_TOKEN: ${{ github.token }}
-        run: |
-          pipx install "volare==$VOLARE_VERSION"
-          volare enable --pdk sky130 --pdk-root "$CACHE/volare" \
-            -l sky130_fd_pr -l sky130_fd_sc_hd "$SKY130_OPEN_PDKS"
-          for d in libs.tech/combined libs.tech/ngspice libs.ref; do
-            ln -sfn "$CACHE/volare/sky130A/$d" "$CACHE/pdk/sky130A/$d"
-          done
-          ls "$CACHE/pdk/sky130A/libs.tech/combined/sky130.lib.spice"
-      - name: second oracle (ngspice results of ours vs xschem's netlists)
-        if: ${{ !cancelled() }}
-        run: |
-          ngspice="$(nix build --no-link --print-out-paths \
-            "github:NixOS/nixpkgs/$(jq -r .nodes.nixpkgs.locked.rev flake.lock)#ngspice")"
-          PATH="$ngspice/bin:$PATH" SCHEMIFY_CORPUS=$CACHE \
-            cargo test --release --test xschem_differential -- --ignored ngspice_results_agree --nocapture
+      - name: import every bench (corpus/import_all.sh)
+        run: NETLIST=none corpus/import_all.sh "$RUNNER_TEMP/rt"
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: corpus-results
           path: |
             corpus/.cache/golden/REPORT.txt
-            corpus/.cache/netlist-out/TABLE.md
-            corpus/.cache/netlist-out/RESULTS.txt
+            ${{ runner.temp }}/rt/benches.map
           if-no-files-found: ignore
 
   # cargo-fuzz on both harnesses, starting from the checked-in corpus. The corpus carries over
@@ -181,15 +140,15 @@ jobs:
           path: ${{ env.CORPUS }}
           if-no-files-found: error
 
-  # The suite and the guest against Schemify `main` instead of the pinned rev: a red run means
-  # the core moved under the plugin; bump the rev in Cargo.toml once it is fixed.
+  # The suite and the guest against the public SDK's `main` instead of the pinned rev: a red
+  # run means the SDK moved under the plugin; bump the rev in Cargo.toml once it is fixed.
   schemify-main:
     if: ${{ !inputs.only || inputs.only == 'schemify-main' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v5
       - uses: cachix/install-nix-action@v31
-      - name: point the Schemify crates at main
+      - name: point the Schemify SDK crates at main
         run: |
           sed -i 's|rev = "[0-9a-f]*"|branch = "main"|' Cargo.toml
           nix develop -c cargo update $(grep -o '^schemify-[a-z]*' Cargo.toml | sed 's/^/-p /')

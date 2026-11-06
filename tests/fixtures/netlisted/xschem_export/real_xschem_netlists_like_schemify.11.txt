@@ -1,0 +1,46 @@
+** sch_path: <tmp>/xschem_export/elab-opamp_tb/export/root/opamp_tb.sch
+**.subckt opamp_tb
+XB1 in o1 ib buffer size=1
+XB2 in o2 ib buffer size=2
+XB3 in o3 ib buffer size=1
+VVDD vdd! 0 dc 1.8
+VVIN in 0 dc 0.9
+**** begin user architecture code
+
+.temp 27
+
+**** end user architecture code
+**.ends
+
+* expanding   symbol:  root/buffer.sym # of pins=3
+** sym_path: <tmp>/xschem_export/elab-opamp_tb/export/root/buffer.sym
+** sch_path: <tmp>/xschem_export/elab-opamp_tb/export/root/buffer.sch
+.subckt buffer IN OUT IB  size=1
+*.ipin IN
+*.opin OUT
+*.ipin IB
+X1 IN OUT OUT IB opamp wn='2*size' wp='4*size' l=0.5 cc=1p
+.ends
+
+
+* expanding   symbol:  root/opamp.sym # of pins=4
+** sym_path: <tmp>/xschem_export/elab-opamp_tb/export/root/opamp.sym
+** sch_path: <tmp>/xschem_export/elab-opamp_tb/export/root/opamp.sch
+.subckt opamp INP INN OUT IBIAS  wn=2 wp=4 l=0.5 cc=1p
+*.ipin INP
+*.ipin INN
+*.opin OUT
+*.ipin IBIAS
+MM1 n1 INP tail 0 nfet W='(wn)*1u' L='(l)*1u' nf=1 ad='((wn)*0.29)*1p'
+MM2 n2 INN tail 0 nfet W='(wn)*1u' L='(l)*1u' nf=1 ad='((wn)*0.29)*1p'
+MM3 n1 n1 vdd! vdd! pfet W='(wp)*1u' L='(l)*1u'
+MM4 n2 n1 vdd! vdd! pfet W='(wp)*1u' L='(l)*1u'
+MM5 tail IBIAS 0 0 nfet W='(wn*2)*1u' L='(l)*1u' nf=1 ad='((wn*2)*0.29)*1p'
+MM6 OUT n2 vdd! vdd! pfet W='(wp*4)*1u' L='(l)*1u'
+MM7 OUT IBIAS 0 0 nfet W='(wn*2)*1u' L='(l)*1u' nf=1 ad='((wn*2)*0.29)*1p'
+MM8 IBIAS IBIAS 0 0 nfet W='(wn)*1u' L='(l)*1u' nf=1 ad='((wn)*0.29)*1p'
+CCC n2 OUT 'cc'
+.ends
+
+.GLOBAL vdd!
+.end

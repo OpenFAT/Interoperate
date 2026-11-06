@@ -1,0 +1,69 @@
+top root/tb.shbench for Ngspice
+== root/tb.shbench
+schemify 1 shbench
+  provenance "xschem root/tb.sch"
+  xfp 362cf311062fb786
+
+inst d5d493 core:nmos4
+  at 600 0 MR0
+  name M3
+  model nch
+  l 0.5u
+inst djz6at core:ind
+  at 1000 0 MR270
+  name L5
+  value 3n
+inst h123f1 core:npn
+  at 400 0 MR90
+  name Q2
+  model qmod
+inst j2yqx6 core:res
+  at 1200 0 R180
+  name R6
+  value 10k
+inst jzc32a core:nmos4
+  at 800 0 R270
+  name M4
+  model nch
+  l 0.5u
+inst nmsaab core:cap
+  at 200 0 MR0
+  name C1
+  value 2p
+  m 2
+inst wd97eg core:isource
+  at 0 0 R90
+  name I0
+  value 1m
+
+wire 0n8rrn 1200 -30 1230 -40
+wire 42vskc 1030 0 1060 -10
+wire bh7wnm 200 30 230 20
+wire rxpd9m 1200 30 1230 20
+
+label 1rtv25 -30 0 R0 0
+label 1stza7 200 -30 R0 b
+label 567842 370 -20 R0 b
+label 5cz2z3 1060 -10 R0 0
+label 66agfv 1230 20 R0 a
+label 8nfq6v 30 0 R0 b
+label be7pxe 800 20 R0 b
+label cgvc1b 830 -20 R0 a
+label cwsnw4 400 20 R0 a
+label dj5sab 770 -20 R0 b
+label dw6pjb 1230 -40 R0 0
+label hr0e0f 580 30 R0 0
+label jt5g3a 580 0 R0 0
+label k6w65v 430 -20 R0 b
+label kqndtc 970 0 R0 b
+label q7phy0 230 20 R0 c
+label rqhtrw 620 0 R0 0
+label x92dwh 800 -20 R0 c
+label z5sxb2 580 -30 R0 0
+
+code op spice
+  | .op
+== schemify.project
+schemify 1 project
+
+lib root path root

@@ -375,8 +375,16 @@ fn design_records(text: &str, from: &[&str], to: &str) -> Result<Vec<String>, St
     for (at, r) in located(&recs) {
         let keep = at.design || at.maestro;
         if !keep
-            || matches!(r.tag.as_str(), "sfyx" | "end" | "lib")
+            // What the dumper skipped (S6), and the views and library CDF it only names
+            // (skipview, libcdf: report rows, never loaded), are what no load restores.
+            || matches!(r.tag.as_str(), "sfyx" | "end" | "lib" | "skipped" | "skipview" | "libcdf")
             || (r.tag == "prop" && r.str(1).is_ok_and(|n| n.starts_with("schemify")))
+            // A text view import does not carry (a verilogams view: "text view … not
+            // imported", read/symbol.rs) comes back from no export.
+            || (r.tag == "textview"
+                && !r
+                    .str(0)
+                    .is_ok_and(|v| matches!(v, "veriloga" | "functional" | "verilog")))
         {
             continue;
         }
@@ -389,6 +397,43 @@ fn design_records(text: &str, from: &[&str], to: &str) -> Result<Vec<String>, St
         out.push(line_of(&Record::new(&r.tag, fields)));
     }
     Ok(out)
+}
+
+/// Virtuoso's form-layout attributes of a base CDF the loader creates (live ICADVM20.1:
+/// cdfCreateBaseCellCDF sets them), which a hand-written fixture does not name.
+const NEW_CDF_ATTRS: [(&str, &str); 4] = [
+    ("buttonFieldWidth", "340"),
+    ("fieldHeight", "35"),
+    ("fieldWidth", "350"),
+    ("promptWidth", "175"),
+];
+
+/// `got` without what the host adds to a fixture loaded and dumped: Virtuoso's own
+/// connectivity table (`tnet`, computed over the host's masters, whose pins need not lie
+/// where the fixture's made-up ones do) unless the fixture has one, and a new base CDF's
+/// default form attributes the fixture does not set.
+fn host_only(want: &[String], got: Vec<String>) -> Vec<String> {
+    let has = |tag: &str, key: Option<&str>| {
+        want.iter().any(|l| {
+            record_of(l)
+                .is_some_and(|r| r.tag == tag && key.is_none_or(|k| r.str(0).is_ok_and(|x| x == k)))
+        })
+    };
+    let fixture_tnet = has("tnet", None);
+    got.into_iter()
+        .filter(|l| {
+            let Some(r) = record_of(l) else { return true };
+            match r.tag.as_str() {
+                "tnet" => fixture_tnet,
+                "cdfattr" => !NEW_CDF_ATTRS.iter().any(|(k, v)| {
+                    r.str(0).is_ok_and(|x| x == *k)
+                        && r.str(1).is_ok_and(|x| x == *v)
+                        && !has("cdfattr", Some(k))
+                }),
+                _ => true,
+            }
+        })
+        .collect()
 }
 
 /// The design cells of a dump, each with its records as [`design_records`] gives them
@@ -540,8 +585,10 @@ fn mark_pdk(proj: &Path, text: &str) -> Vec<String> {
 }
 
 /// The refresh edit (§8.3): in `files`, the first instance of a marked mirror cell with
-/// cached derived values gets its first number input doubled. Returns the files changed
-/// and (design file, instance name) of the edit; `None` when no instance qualifies.
+/// cached derived values gets its first number input doubled and its first whole-number
+/// input above zero (a finger count) one more (gaps2 P2: an nf resize, which the doubled
+/// width leaves room for). Returns the files changed and (design file, instance name) of
+/// the edit; `None` when no instance qualifies.
 fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, String)> {
     use schemify_format::{RecordKind, parse};
     for (path, bytes) in files
@@ -561,7 +608,21 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
                 .find_attr(0, "vinputs")
                 .map(|a| (0..).map_while(|i| m.attr_value(a, i)).collect())
                 .unwrap_or_default();
-            // The first number input with a constant value: doubled.
+            // The first number input with a constant value: doubled; the first whole one
+            // after it: one more.
+            let value = |n: &str| -> Option<f64> {
+                let pr = (1..m.record_count())
+                    .find(|&q| m.record_kind(q) == RecordKind::Param && m.field(q, 0) == Some(n))?;
+                let kind = m.find_attr(pr, "kind").and_then(|a| m.attr_value(a, 0));
+                if kind.is_some_and(|k| k != "number" && k != "int") {
+                    return None;
+                }
+                let v = d
+                    .find_attr(r, n)
+                    .and_then(|a| d.attr_value(a, 0))
+                    .or_else(|| m.field(pr, 1))?;
+                interop::expr::parse_num(v.trim()).ok()
+            };
             let pick = vinputs.iter().find_map(|n| {
                 let pr = (1..m.record_count())
                     .find(|&q| m.record_kind(q) == RecordKind::Param && m.field(q, 0) == Some(n))?;
@@ -577,6 +638,11 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
                     interop::virtuoso::characterize::canonical_value(&format!("({v})*2"), false)?;
                 Some(((*n).to_owned(), x))
             })?;
+            let count = vinputs.iter().filter(|n| **n != pick.0).find_map(|n| {
+                let x = value(n)?;
+                (x >= 1.0 && x.fract() == 0.0 && x < 64.0)
+                    .then(|| ((*n).to_owned(), format!("{}", x as i64 + 1)))
+            });
             // The instance's block in the canonical text: its override replaced, or added
             // after its name line.
             let name = d
@@ -589,27 +655,29 @@ fn refresh_edit(files: &interop::design::Files) -> Option<(String, Vec<u8>, Stri
             let end = text[start + head.len()..]
                 .find("\n\n")
                 .map_or(text.len(), |e| start + head.len() + e + 1);
-            let block = &text[start..end];
-            let key = format!("  {} ", pick.0);
-            let new_line = format!("  {} {}\n", pick.0, pick.1);
-            let edited = match block.lines().position(|l| l.starts_with(&key)) {
-                Some(i) => block
-                    .lines()
-                    .enumerate()
-                    .map(|(j, l)| {
-                        if j == i {
-                            new_line.clone()
-                        } else {
-                            format!("{l}\n")
-                        }
-                    })
-                    .collect::<String>(),
-                None => block.replacen(
-                    &format!("  name {name}\n"),
-                    &format!("  name {name}\n{new_line}"),
-                    1,
-                ),
-            };
+            let mut edited = text[start..end].to_owned();
+            for (k, v) in std::iter::once(&pick).chain(count.as_ref()) {
+                let key = format!("  {k} ");
+                let new_line = format!("  {k} {v}\n");
+                edited = match edited.lines().position(|l| l.starts_with(&key)) {
+                    Some(i) => edited
+                        .lines()
+                        .enumerate()
+                        .map(|(j, l)| {
+                            if j == i {
+                                new_line.clone()
+                            } else {
+                                format!("{l}\n")
+                            }
+                        })
+                        .collect::<String>(),
+                    None => edited.replacen(
+                        &format!("  name {name}\n"),
+                        &format!("  name {name}\n{new_line}"),
+                        1,
+                    ),
+                };
+            }
             let out = format!("{}{edited}{}", &text[..start], &text[end..]);
             return Some((path.clone(), out.into_bytes(), name));
         }
@@ -637,19 +705,6 @@ fn cached_of(bytes: &[u8], name: &str) -> Vec<String> {
                 .collect::<Vec<_>>()
         })
         .collect()
-}
-
-/// CDL text without its `$[model]` tokens.
-fn without_cdl_models(cdl: &str) -> String {
-    let mut out = String::with_capacity(cdl.len());
-    let mut rest = cdl;
-    while let Some(k) = rest.find("$[") {
-        out.push_str(&rest[..k]);
-        rest = rest[k..].find(']').map_or("", |e| &rest[k + e + 1..]);
-    }
-    out.push_str(rest);
-    debug_assert!(!out.contains("$["));
-    out
 }
 
 /// The first difference of two record lists, or `None`.
@@ -1507,72 +1562,10 @@ fn check_exact_round_trip(r: &mut Report, work: &Path, name: &str, dir: &Path) {
     );
 }
 
-/// Elaborates `cell` of a project (its files plus the core library) for `dialect`.
-fn netlist_of(
-    files: &BTreeMap<String, Vec<u8>>,
-    cell: &str,
-    dialect: schemify_elab::Dialect,
-) -> Result<String, String> {
-    use schemify_doc::{Project, core_library};
-    use schemify_elab::{Request, elaborate, no_funcs};
-    let manifest = files.get("schemify.project").map(Vec::as_slice);
-    let mut p = Project::new(manifest, None, 7).map_err(|e| format!("{e:?}"))?;
-    let dirs = manifest
-        .map(|m| interop::design::manifest_libs(m).unwrap_or_default())
-        .unwrap_or_default();
-    let mut libs: BTreeMap<String, Vec<(&str, &[u8])>> = BTreeMap::new();
-    libs.insert("core".into(), core_library().to_vec());
-    for (path, bytes) in files.iter().filter(|f| is_cell(f.0)) {
-        let (dir, rel) = path.rsplit_once('/').unwrap_or(("", path));
-        let lib = dirs
-            .iter()
-            .find(|(_, d)| d.as_str() == dir)
-            .map_or(String::new(), |(l, _)| l.clone());
-        libs.entry(lib).or_default().push((rel, bytes));
-    }
-    for (lib, listing) in &libs {
-        p.index_library(lib, "live", listing)
-            .map_err(|e| format!("{e:?}"))?;
-    }
-    let mut handles = BTreeMap::new();
-    for (lib, listing) in &libs {
-        if lib == "core" {
-            continue;
-        }
-        for (rel, bytes) in listing {
-            let o = p
-                .open(lib, rel, bytes, None)
-                .map_err(|e| format!("{lib}/{rel}: {e:?}"))?;
-            let key = if lib.is_empty() {
-                (*rel).to_owned()
-            } else {
-                format!("{}/{rel}", dirs[lib])
-            };
-            handles.insert(key, o.handle);
-        }
-    }
-    let h = *handles
-        .get(cell)
-        .ok_or_else(|| format!("{cell} not found"))?;
-    let req = Request {
-        config: None,
-        corner: None,
-        overrides: &[],
-        env: &[],
-        dialect,
-    };
-    let e = elaborate(&p, h, &req, &mut no_funcs);
-    let blocking: Vec<String> = e
-        .violations
-        .rows
-        .iter()
-        .filter(|v| v.code.severity() == schemify_elab::Severity::Error)
-        .map(|v| format!("{} {}", v.code.as_str(), v.detail))
-        .collect();
-    if !blocking.is_empty() {
-        return Err(blocking.join("; "));
-    }
-    Ok(schemify_netlist::emit(&e, dialect).text)
+/// The `dialect` netlist's input of `cell` of a project against its snapshot
+/// (`common::frozen_input`), taken when the netlists before and after Virtuoso agreed.
+fn netlist_of(files: &BTreeMap<String, Vec<u8>>, cell: &str, dialect: &str) {
+    common::frozen_input(files, cell, dialect);
 }
 
 /// The analogLib-mode round trip of one fixture project: every bench (else every
@@ -1622,32 +1615,9 @@ fn check_alib_round_trip(r: &mut Report, work: &Path, name: &str, dir: &Path) {
     }
     let mut compared = 0;
     for t in tops {
-        let want = match netlist_of(&before, t, schemify_elab::Dialect::Ngspice) {
-            Ok(n) => n,
-            Err(e) => {
-                r.add(
-                    format!("{id}.{t}"),
-                    Grade::Info,
-                    format!("not netlistable without its plugins: {e}"),
-                );
-                continue;
-            }
-        };
-        match netlist_of(&after, t, schemify_elab::Dialect::Ngspice) {
-            Ok(got) => {
-                let cmp =
-                    schemify_spicecmp::compare(&want, &got, &schemify_spicecmp::Options::default());
-                if !cmp.is_equal() {
-                    return r.add(
-                        id,
-                        Grade::Fail,
-                        format!("{t}: the ngspice netlist changed: {:?}", cmp.diffs.first()),
-                    );
-                }
-                compared += 1;
-            }
-            Err(e) => return r.add(id, Grade::Fail, format!("{t} after Virtuoso: {e}")),
-        }
+        netlist_of(&before, t, "Ngspice");
+        netlist_of(&after, t, "Ngspice");
+        compared += 1;
     }
     r.add(
         id,
@@ -1726,7 +1696,7 @@ fn check_alib_pins(r: &mut Report, work: &Path) {
     }
     // Core pins, symbol frame.
     let mut core: BTreeMap<String, Vec<[i32; 2]>> = BTreeMap::new();
-    for (file, bytes) in schemify_doc::core_library() {
+    for (file, bytes) in interop::core::core_library() {
         let name = file.trim_end_matches(".shprim").to_owned();
         for l in String::from_utf8_lossy(bytes).lines() {
             let w: Vec<&str> = l.split_whitespace().collect();
@@ -1884,7 +1854,7 @@ fn verify(work: &Path, o: &Opts) -> Report {
         match (want, read(&out.join(format!("dump_{name}.sfyx")))) {
             (_, None) => r.add(id, Grade::Fail, "no dump"),
             (Err(e), _) => r.add(id, Grade::Fail, e),
-            (Ok(w), Some(t)) => match design_records(&t, &[], "") {
+            (Ok(w), Some(t)) => match design_records(&t, &[], "").map(|g| host_only(&w, g)) {
                 Err(e) => r.add(id, Grade::Fail, format!("the dump does not read: {e}")),
                 Ok(g) => match first_diff(&w, &g) {
                     None => r.add(
@@ -2210,34 +2180,13 @@ fn verify(work: &Path, o: &Opts) -> Report {
                 && sim == "auCdl"
                 && !net.trim().is_empty()
             {
-                // G7: our CDL of the same cell against Virtuoso's auCdl.
-                let files = read_tree(&project_dir(PROJECTS[4].1));
-                match netlist_of(&files, "rcfilter.shcomp", schemify_elab::Dialect::Cdl) {
-                    Ok(ours) => {
-                        // analogLib's auCdl names its LVS models (`$[RP]`, `$[CP]`); Schemify's
-                        // core devices follow xschem's LVS netlist, which has none (the corpus
-                        // ratchet), so the models are left out of the comparison.
-                        let c = schemify_spicecmp::compare(
-                            &ours,
-                            &without_cdl_models(&net),
-                            &schemify_spicecmp::Options::default(),
-                        );
-                        r.add(
-                            "netlist.cdl-matches-aucdl",
-                            if c.is_equal() {
-                                Grade::Pass
-                            } else {
-                                Grade::Warn
-                            },
-                            if c.is_equal() {
-                                "Schemify CDL = Virtuoso auCdl (apart from analogLib's $[model] names)".into()
-                            } else {
-                                format!("differs (settles GUESS G7): {:?}", c.diffs.first())
-                            },
-                        );
-                    }
-                    Err(e) => r.add("netlist.cdl-matches-aucdl", Grade::Warn, e),
-                }
+                // G7: our CDL of the same cell against Virtuoso's auCdl needs a netlister,
+                // which Schemify's public interface does not have.
+                r.add(
+                    "netlist.cdl-matches-aucdl",
+                    Grade::Skip,
+                    String::from("needs a Schemify development build to netlist rcfilter (CDL)"),
+                );
             }
         }
     }
@@ -2363,6 +2312,110 @@ fn live_step() {
             );
         }
         other => panic!("unknown step {other}"),
+    }
+}
+
+/// analogLib `port` (421 CDF params, live ICADVM20.1 dump) imports with Schemify's 256
+/// params per cell, the rest reported, and Schemify's project opens it (a load past the
+/// table capacity panicked).
+#[test]
+fn a_cell_past_the_param_table_imports_and_loads() {
+    let text = read(&fixtures().join("virtuoso/analoglib_port.sfyx")).unwrap();
+    let imp = interop::virtuoso::import(
+        &text,
+        &interop::design::Files::new(),
+        &interop::map::Mapping::default(),
+        &ImportOptions::default(),
+    )
+    .unwrap_or_else(|e| panic!("{e:?}"));
+    let (path, port) = imp
+        .files
+        .iter()
+        .find(|f| f.0.ends_with("port.shprim"))
+        .expect("port.shprim");
+    let shprim = String::from_utf8(port.clone()).unwrap();
+    assert_eq!(
+        shprim.lines().filter(|l| l.starts_with("param ")).count(),
+        256
+    );
+    assert!(
+        imp.notes.rows.iter().any(|n| n.class == "dropped:param"),
+        "{}",
+        imp.notes.text()
+    );
+    // It loads: a file of the format, in canonical form.
+    let d = schemify_format::parse(port).unwrap_or_else(|e| panic!("{path}: {e}"));
+    assert_eq!(
+        schemify_format::write(&d).as_bytes(),
+        port.as_slice(),
+        "{path}"
+    );
+}
+
+/// Lane A (gaps round 2): the Spectre netlists Schemify makes of a maestro dump imported
+/// into a fresh project (`<dump>.proj`): `SFY_A_DUMP` the `.sfyx` (absolute), `SFY_A_CELL`
+/// the bench file it gives, `SFY_A_OUT` a directory that gets `<test>.scs` per `test`
+/// record, the bench with only that test's code blocks (Schemify runs have no test
+/// dimension yet, run.md §2). Run by `live/checks/a_drive.sh`, which runs Spectre on them
+/// on the Virtuoso host.
+#[test]
+#[ignore = "run by live/checks/a_drive.sh"]
+fn a_dump_netlist() {
+    let var = |k: &str| std::env::var(k).unwrap_or_else(|_| panic!("{k}"));
+    let dump = PathBuf::from(var("SFY_A_DUMP"));
+    let (cell, out) = (var("SFY_A_CELL"), PathBuf::from(var("SFY_A_OUT")));
+    let proj = dump.with_extension("proj");
+    let _ = std::fs::remove_dir_all(&proj);
+    write(&proj.join("schemify.project"), "schemify 1 project\n");
+    let files = import_into(&proj, &dump, ImportOptions::default())
+        .unwrap_or_else(|e| panic!("import: {}", e.join("; ")));
+    for (p, b) in files {
+        write(&proj.join(p), b);
+    }
+    // Top-level records and their indented lines, by the record's first two words.
+    let bench = read(&proj.join(&cell)).expect("the bench");
+    let mut blocks: Vec<(String, String)> = Vec::new();
+    for l in bench.lines() {
+        match blocks.last_mut() {
+            Some(b) if l.starts_with(' ') => b.1.push_str(&format!("{l}\n")),
+            _ => {
+                let key: Vec<&str> = l.split_whitespace().take(2).collect();
+                blocks.push((key.join(" "), format!("{l}\n")));
+            }
+        }
+    }
+    let tests: Vec<(String, Vec<String>)> = blocks
+        .iter()
+        .filter(|b| b.0.starts_with("test "))
+        .map(|b| {
+            let codes =
+                b.1.lines()
+                    .filter_map(|l| l.trim().strip_prefix("code "))
+                    .flat_map(|c| c.split_whitespace().map(str::to_owned))
+                    .collect();
+            (b.0[5..].to_owned(), codes)
+        })
+        .collect();
+    assert!(!tests.is_empty(), "{cell}: no test records");
+    for (t, codes) in &tests {
+        let text: String = blocks
+            .iter()
+            .filter(|b| !b.0.starts_with("test "))
+            .filter(|b| {
+                b.0.strip_prefix("code ")
+                    .is_none_or(|c| codes.iter().any(|x| x == c))
+            })
+            .map(|b| b.1.as_str())
+            .collect();
+        let mut files = read_tree(&proj);
+        files.insert(cell.clone(), text.into_bytes());
+        // Netlisting it (`<t>.scs`) needs a Schemify development build: Schemify's public
+        // interface has no netlister.
+        write(&out.join(format!("{t}.shbench")), &files[&cell]);
+        write(
+            &out.join(format!("{t}.err")),
+            "no netlister in Schemify's public interface: netlist the .shbench beside this",
+        );
     }
 }
 

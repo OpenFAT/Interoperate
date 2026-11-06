@@ -7,6 +7,7 @@
 # Outputs, all under corpus/.cache/golden/:
 #   <name>.spice      SPICE netlist (xschem -s, default options)
 #   <name>.cdl        LVS netlist   (same, with Tcl `lvs_netlist=1`: lvs_format, top as .subckt)
+#   <name>.v          Verilog netlist (xschem -w), for the logic and Verilog co-sim benches only
 #   <name>.<mode>.log xschem stdout+stderr
 #   REPORT.txt        one line per (bench, mode) of this run: ok | FAIL <reason>
 # Exit status: 0 when every bench produced both netlists, 1 otherwise.
@@ -96,23 +97,25 @@ run_mode() { # name pdk file mode
   local name="$1" pdk="$2" file="$3" mode="$4" ext tcl=() cell log reason=""
   cell="$(basename "$file" .sch)"
   # lvs_netlist is xschem's documented Tcl option (Simulation > LVS menu).
+  local kind=-s out_ext=spice
   if [[ "$mode" == lvs ]]; then ext=cdl; tcl=(--tcl 'set lvs_netlist 1'); else ext=spice; fi
+  if [[ "$mode" == verilog ]]; then ext=v kind=-w out_ext=v; fi
   log="$out/$name.$ext.log"
   rm -rf "$work" && mkdir -p "$work"
   local status=0
-  (cd "$work" && HOME="$cache/home" timeout 120 "$XSCHEM" -x -r -s -o "$work" \
+  (cd "$work" && HOME="$cache/home" timeout 120 "$XSCHEM" -x -r "$kind" -o "$work" \
       --rcfile "$cache/rc/$pdk.rc" "${tcl[@]}" --script "$cache/rc/netlist.tcl" "$file" \
       </dev/null) >"$log" 2>&1 || status=$?
   local problems
   problems="$(sed '/^ERC-BEGIN$/,/^ERC-END$/d' "$log" | grep -iE "$error_re" || true)"
   if [[ $status -ne 0 ]]; then
     reason="xschem exit $status"
-  elif [[ ! -s "$work/$cell.spice" ]]; then
+  elif [[ ! -s "$work/$cell.$out_ext" ]]; then
     reason="no netlist written"
   elif [[ -n "$problems" ]]; then
     reason="$(head -1 <<<"$problems" | tr -s ' \t' ' ' | cut -c1-160)"
   fi
-  if [[ -s "$work/$cell.spice" ]]; then mv "$work/$cell.spice" "$out/$name.$ext"; fi
+  if [[ -s "$work/$cell.$out_ext" ]]; then mv "$work/$cell.$out_ext" "$out/$name.$ext"; fi
   if [[ -n "$reason" ]]; then
     printf '%-44s %-5s FAIL %s\n' "$name" "$mode" "$reason" >>"$report"
   else
@@ -130,6 +133,8 @@ while read -r name pdk rel; do
   fi
   run_mode "$name" "$pdk" "$file" spice
   run_mode "$name" "$pdk" "$file" lvs
+  # Verilog (inv_xschem row X15): the benches with verilog_format symbols.
+  if [[ "$name" =~ ^xs-(logic|cosim)- ]]; then run_mode "$name" "$pdk" "$file" verilog; fi
 done <"$here/benches.txt"
 rm -rf "$work"
 

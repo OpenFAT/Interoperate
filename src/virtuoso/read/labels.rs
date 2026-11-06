@@ -64,6 +64,32 @@ fn nlp_groups(t: &str) -> Option<Vec<&str>> {
     Some(out)
 }
 
+/// The fallbacks (`[@w:w=%:none]`'s `none`: what Virtuoso shows while the property has no
+/// value) of an NLP label's groups; the template keeps none of them.
+pub(super) fn nlp_fallbacks(text: &str) -> Vec<String> {
+    nlp_groups(text.trim())
+        .unwrap_or_default()
+        .iter()
+        .filter_map(|g| {
+            let inner = g.strip_prefix("[@")?.strip_suffix(']')?;
+            let mut esc = false;
+            let mut parts = vec![String::new()];
+            for ch in inner.chars() {
+                match ch {
+                    _ if esc => {
+                        parts.last_mut()?.push(ch);
+                        esc = false;
+                    }
+                    '\\' => esc = true,
+                    ':' => parts.push(String::new()),
+                    _ => parts.last_mut()?.push(ch),
+                }
+            }
+            (parts.len() == 3).then(|| parts[2].clone())
+        })
+        .collect()
+}
+
 /// NLP label text → Schemify template (§3.5 import), `None` when dropped.
 pub(super) fn nlp_in(text: &str, label_set: &str) -> Option<String> {
     let t = text.trim();
@@ -71,12 +97,15 @@ pub(super) fn nlp_in(text: &str, label_set: &str) -> Option<String> {
         .strip_prefix("cdsParam(")
         .and_then(|x| x.strip_suffix(')'))
     {
+        // The k-th word of paramLabelSet; a `-` word shows its value only (cdfuser ch. 5,
+        // "Show Value Only"), and still counts.
         let k: usize = n.trim().parse().ok()?;
-        let p = label_set
-            .split_whitespace()
-            .filter(|w| !w.starts_with('-'))
-            .nth(k.checked_sub(1)?)?;
-        return Some(format!("{p}={{{p}}}"));
+        let w = label_set.split_whitespace().nth(k.checked_sub(1)?)?;
+        return Some(match w.strip_prefix('-') {
+            Some(p) if !p.is_empty() => format!("{{{p}}}"),
+            Some(_) => return None,
+            None => format!("{w}={{{w}}}"),
+        });
     }
     if t == "cdsName()" {
         return Some("{name}".into());

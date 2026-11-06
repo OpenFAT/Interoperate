@@ -1,0 +1,15 @@
+
+// Library name: sfyprobe_s
+// Cell name: sub
+// View name: schematic
+subckt sub A B
+    RS0 (A B) resistor r=1K
+ends sub
+// End of subcircuit definition.
+
+// Library name: sfyprobe_s
+// Cell name: alt
+// View name: schematic
+S0 (a0 b0) sub
+S1 (a1 b1) sub
+RX (xp xm) resistor r=1K

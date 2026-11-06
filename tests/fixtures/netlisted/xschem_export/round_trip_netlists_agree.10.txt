@@ -1,0 +1,125 @@
+top root/bus_tb.shbench for Ngspice
+== root/bus_tb.shbench
+schemify 1 shbench
+  provenance "xschem root/bus_tb.sch"
+  xfp be0c2902214cc46f
+
+inst rb41rx ./inv
+  at 0 0 R0
+  name X[3:0]
+  wn 0.5
+
+wire d68kfn -100 0 -40 0
+  bus true
+wire m79s18 40 0 100 0
+  bus true
+
+label a4jfwv -100 0 R0 din[3:0]
+label szpz9e 100 0 R0 dout[0:3]
+== root/inv.shcomp
+schemify 1 shcomp
+  prefix x
+  category subcircuit
+  provenance "xschem root/inv.sym"
+  xfp a4f20ac7bedac797
+
+pin A in -40 0
+pin Y out 40 0
+
+param wn 1
+param wp 2
+param l 0.15
+
+impl schematic schematic
+  format spice "{name} {pins} {cell}"
+
+line -40 0 -20 0
+  layer 4
+line 20 0 40 0
+  layer 4
+
+inst dfp34e ./pmos
+  at 0 -60 R0
+  name MP
+  W wp
+  L l
+inst y287ds ./nmos
+  at 0 60 R0
+  name MN
+  W wn
+  L l
+
+wire cgxvbz -20 -60 -20 60
+wire cvcx5p -60 0 -20 0
+wire f7tqca 20 -30 20 30
+wire zq2q34 20 0 60 0
+
+label 1rt9q5 20 60 R0 0
+label 6a5y81 20 -60 R0 vdd!
+  global true
+label damm8g 20 90 R0 0
+label f2kfcv 20 -90 R0 vdd!
+  global true
+
+port 3cvwgn -60 0 R0 A
+port 642gv3 60 0 R0 Y
+== root/nmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/nmos.sym"
+  xfp 61d3fe40784dc67a
+
+pin D inout 20 -30
+pin G in -20 0
+pin S inout 20 30
+pin B inout 20 0
+
+param W 1
+param L 0.15
+param nf 1
+param model nfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u' nf={nf} ad='(({W})*0.29)*1p'"
+  format cdl "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== root/pmos.shprim
+schemify 1 shprim
+  prefix M
+  category primitive
+  provenance "xschem root/pmos.sym"
+  xfp 6856cdf866bba1a2
+
+pin D inout 20 30
+pin G in -20 0
+pin S inout 20 -30
+pin B inout 20 0
+
+param W 2
+param L 0.15
+param model pfet
+  kind string
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} W='({W})*1u' L='({L})*1u'"
+
+rect -20 -20 20 20
+  layer 4
+  fill false
+
+stext -20 -35 R0 {cell}
+  size 0.2
+  layer 3
+== schemify.project
+schemify 1 project
+
+lib root path root

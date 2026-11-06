@@ -22,7 +22,7 @@
 
 use std::path::{Component, Path, PathBuf};
 
-use schemify_expr::{Mode, Program, Scratch, Value};
+use crate::expr::{Mode, Program, Scratch, Value};
 
 use crate::{Span, push_span};
 

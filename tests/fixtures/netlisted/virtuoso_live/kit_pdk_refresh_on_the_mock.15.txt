@@ -1,0 +1,85 @@
+top rclive_tb.shbench for Ngspice
+== rcfilter.shcomp
+schemify 1 shcomp
+  doc "RC low-pass section: R from in to out, C from out to gnd (live Virtuoso kit fixture)"
+  prefix X
+
+pin in in -40 0
+pin out out 40 0
+pin gnd inout 0 40
+
+param R 1k
+  unit Ohm
+param C 1u
+  unit F
+
+impl sch schematic
+
+rect -20 -20 20 20
+
+line -40 0 -20 0
+line 20 0 40 0
+line 0 20 0 40
+
+stext -20 -28 R0 {name}
+  size 0.2
+stext -14 -5 R0 rc
+  size 0.18
+
+inst c00001 core:cap
+  at 0 90 R0
+  name C1
+  value C
+inst r00001 core:res
+  at 0 0 R0
+  name R1
+  value R
+
+wire w00001 -60 -30 0 -30
+wire w00002 0 30 0 60
+wire w00003 0 30 60 30
+wire w00004 0 120 0 150
+
+port p00001 -60 -30 R0 in
+port p00002 60 30 R180 out
+port p00003 0 150 R270 gnd
+== rclive_tb.shbench
+schemify 1 shbench
+  doc "RC step response for the live Virtuoso kit: OCEAN must give tau = R*C and v(out) at 1 ms = 1 - 1/e"
+
+inst v00001 core:vsource
+  at -120 30 R0
+  name V1
+  value "PULSE(0 1 0 1n 1n 10m 20m)"
+inst x00001 ./rcfilter
+  at 0 0 R0
+  name X1
+  R R
+  C C
+
+wire w00001 -120 0 -40 0
+wire w00002 -120 60 -120 80
+wire w00003 0 40 0 80
+wire w00004 -120 80 0 80
+wire w00005 40 0 80 0
+
+label n00001 80 0 R0 out
+label n00002 -80 0 R0 in
+label n00003 -60 80 R0 0
+
+var R 1k
+  unit Ohm
+var C 1u
+  unit F
+
+output tau "cross(v(out), 0.6321205588285577)"
+output v1m "at(v(out), 1m)"
+
+spec v1m
+  min 0.5
+  max 0.8
+
+code tran spice
+  | .tran 1u 5m
+== schemify.project
+schemify 1 project

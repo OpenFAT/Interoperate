@@ -20,6 +20,10 @@ pub(super) struct Target {
 }
 
 impl Target {
+    pub(super) fn path_of(&self, ext: &str) -> String {
+        cell_path(&self.dir, &self.stem, ext)
+    }
+
     pub(super) fn path(&self) -> String {
         cell_path(
             &self.dir,
@@ -138,6 +142,19 @@ impl<'a> Ctx<'a> {
             let i = ctx.iface_of_dump(k);
             ctx.ifaces.push(i);
         }
+        // Virtuoso names are case-sensitive; a case-insensitive file system (macOS, Windows)
+        // keeps one of two files whose paths differ only in case (S15).
+        let mut seen: BTreeMap<String, String> = BTreeMap::new();
+        for t in ctx.targets.iter().filter(|t| t.write) {
+            let p = t.path();
+            if let Some(q) = seen.insert(p.to_lowercase(), p.clone()) {
+                notes.review(
+                    "name",
+                    &p,
+                    format!("differs from {q} only in case: one file on a case-insensitive disk"),
+                );
+            }
+        }
         ctx
     }
 
@@ -163,15 +180,71 @@ impl<'a> Ctx<'a> {
         if t.slib == "core" || consumed(&c.lib, &c.name) {
             return t;
         }
-        let sym = c.cv("symbol").is_some();
+        // A kit cell a map row sends back to a Schemify cell of the same name (xschem's
+        // `sky130_fd_pr:nfet_01v8` ↔ the kit's `sky130_fd_pr/nfet_01v8`): its instances
+        // point at that cell (`master`), and a mirror would overwrite it. Without the
+        // cell in the project the mirror is written (with the row's `spice`, §8.2).
+        if !c.design
+            && self
+                .map
+                .by_virtuoso(&c.lib, &c.name)
+                .is_some_and(|r| r.cellref == format!("{}:{}", t.slib, t.stem))
+            && ["shcomp", "shprim"].iter().any(|ext| {
+                let p = cell_path(&t.dir, &t.stem, ext);
+                let mirror = format!("provenance \"virtuoso {}/{}\"", c.lib, c.name);
+                // The mirror itself is re-imported (and takes the row's `spice`).
+                self.existing
+                    .get(&p)
+                    .is_some_and(|b| !String::from_utf8_lossy(b).contains(&mirror))
+            })
+        {
+            return t;
+        }
+        // A cell of another library the project already holds as a component (an earlier
+        // import of that library, S2): its instances point there, no pinned leaf beside it.
+        if !c.design
+            && self
+                .existing
+                .contains_key(&cell_path(&t.dir, &t.stem, "shcomp"))
+        {
+            notes.add(
+                "remapped",
+                &format!("{}/{}", c.lib, c.name),
+                format!(
+                    "instances use {} (a reference cell here)",
+                    t.path_of("shcomp")
+                ),
+            );
+            return t;
+        }
+        if c.is_global_symbol() {
+            notes.add(
+                "remapped",
+                &format!("{}/{}", c.lib, c.name),
+                format!(
+                    "supply symbol ({}): its instances become global labels",
+                    c.symbol().map_or("", |s| s.terms[0].name.as_str())
+                ),
+            );
+            return t;
+        }
+        let sym = c.symbol().is_some();
         let sch = c.cv("schematic");
-        t.kind = if !c.design {
+        t.kind = if !c.design && c.symbol().is_some_and(|s| s.terms.is_empty()) {
+            // A kit's or Cadence's pinless symbol (a sheet border) is no device either.
+            notes.dropped(
+                "display-only",
+                &format!("{}/{}", c.lib, c.name),
+                "a symbol without pins is not imported".to_owned(),
+            );
+            None
+        } else if !c.design {
             Some(FileKind::Shprim)
         } else if self.benches.contains(&(c.lib.clone(), c.name.clone())) {
             Some(FileKind::Shbench)
         } else if sym && sch.is_some() {
             Some(FileKind::Shcomp)
-        } else if c.cv("symbol").is_some_and(|s| s.terms.is_empty()) {
+        } else if c.symbol().is_some_and(|s| s.terms.is_empty()) {
             // A symbol without terminals (a title block, a graphic) is no device.
             notes.dropped(
                 "display-only",
@@ -199,6 +272,15 @@ impl<'a> Ctx<'a> {
         t
     }
 
+    /// True when instances of `lib/cell` are global labels: analogLib's and basic's supply
+    /// symbols, and any dump cell [`DCell::is_global_symbol`] (S11).
+    pub(super) fn global_symbol(&self, lib: &str, cell: &str) -> bool {
+        devices::is_global_symbol(lib, cell)
+            || self
+                .find(lib, cell)
+                .is_some_and(|k| self.dump.cells[k].is_global_symbol())
+    }
+
     /// The dump index of `lib/cell`.
     pub(super) fn find(&self, lib: &str, cell: &str) -> Option<usize> {
         self.dump
@@ -210,12 +292,13 @@ impl<'a> Ctx<'a> {
     fn iface_of_dump(&self, k: usize) -> Option<Iface> {
         let c = &self.dump.cells[k];
         let mut i = Iface::default();
-        if let Some(sym) = c.cv("symbol") {
+        if let Some(sym) = c.symbol() {
             i.pins = pins_in(c, sym, &mut Notes::default());
             for p in &i.pins {
                 if p.inherit.is_some() {
-                    i.inherit_props
-                        .push((crate::virtuoso::write::vname(&p.name), p.name.clone()));
+                    let prop = inherit_prop(sym, &p.name)
+                        .unwrap_or_else(|| crate::virtuoso::write::vname(&p.name));
+                    i.inherit_props.push((prop, p.name.clone()));
                 }
             }
         }
@@ -285,8 +368,9 @@ impl<'a> Ctx<'a> {
                         alias: attr("alias"),
                     };
                     if row.inherit.is_some() {
-                        i.inherit_props
-                            .push((crate::virtuoso::write::vname(&row.name), row.name.clone()));
+                        let prop = attr("vinherit")
+                            .unwrap_or_else(|| crate::virtuoso::write::vname(&row.name));
+                        i.inherit_props.push((prop, row.name.clone()));
                     }
                     i.pins.push(row);
                 }
@@ -380,7 +464,7 @@ impl<'a> Ctx<'a> {
     fn project_iface(&self, slib: &str, stem: &str) -> Option<Iface> {
         if slib == "core" {
             let f = format!("{stem}.shprim");
-            return schemify_doc::core_library()
+            return crate::core::core_library()
                 .iter()
                 .find(|(n, _)| *n == f)
                 .and_then(|(_, b)| Ctx::iface_of_text(b));

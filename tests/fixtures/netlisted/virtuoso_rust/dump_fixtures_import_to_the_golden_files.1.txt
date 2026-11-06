@@ -1,0 +1,230 @@
+top demo/tb_inv.shbench for Ngspice
+== analogLib/nmos4.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/nmos4"
+  vibox -22 -32 25 32
+  vsym cb86c36be852280f
+
+pin D inout 20 -30
+  vplabel none
+pin G in -20 0
+  vplabel none
+pin S inout 20 30
+  vplabel none
+pin B inout 20 0
+  vplabel 4 0 R0 centerLeft stick 6000
+
+param model ""
+  kind string
+  doc "Model name"
+param w 1u
+  unit m
+  doc Width
+param l 180n
+  unit m
+  doc Length
+param m 1
+  doc Multiplier
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} w={w} l={l} m={m}"
+  format spectre "{name} ({D} {G} {S} {B}) {model} w={w} l={l} m={m}"
+  format cdl "M{name} {D} {G} {S} {B} {model} m={m} L={l} W={w}"
+
+line -20 0 0 0
+line 0 -15 0 15
+line 5 -15 5 15
+
+poly 5 -15 20 -15 20 -30
+poly 5 15 20 15 20 30
+
+line 5 0 20 0
+
+stext 25 8 R0 w={w}
+  size 0.6
+  vlabel annotate drawing lowerLeft stick IL cdsParam(1) w={w}
+stext 25 -8 R0 {name}
+  size 0.6
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== analogLib/pmos4.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/pmos4"
+  vibox -22 -32 25 32
+  vsym 99adbc7d22ee7ccc
+
+pin D inout 20 30
+  vplabel none
+pin G in -20 0
+  vplabel none
+pin S inout 20 -30
+  vplabel none
+pin B inout 20 0
+  vplabel none
+
+param model ""
+  kind string
+  doc "Model name"
+param w 1u
+  unit m
+  doc Width
+param l 180n
+  unit m
+  doc Length
+param m 1
+  doc Multiplier
+
+impl spice spice
+  format spice "M{name} {D} {G} {S} {B} {model} w={w} l={l} m={m}"
+  format spectre "{name} ({D} {G} {S} {B}) {model} w={w} l={l} m={m}"
+
+circle -3 0 3
+
+line -20 0 -6 0
+
+poly 5 -15 20 -15 20 -30
+poly 5 15 20 15 20 30
+
+stext 25 -8 R0 {name}
+  size 0.6
+  vlabel annotate drawing7 lowerLeft stick IL cdsName() {name}
+== analogLib/vdc.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/vdc"
+  vibox none
+  vsym 4069f7c95ac16f3c
+
+pin PLUS inout 0 -30
+  vplabel none
+pin MINUS inout 0 30
+  vplabel none
+
+param vdc ""
+  kind string
+  unit V
+  doc "DC voltage"
+param acm 0
+  unit V
+  doc "AC magnitude"
+param acp 0
+  unit deg
+  doc "AC phase"
+param srcType dc
+  kind string
+  doc "Source type"
+
+impl spice spice
+  format spice "V{name} {PLUS} {MINUS} dc {vdc} ac {acm} {acp}"
+  format spectre "{name} ({PLUS} {MINUS}) vsource{vdc != \"\" ? \" dc=\" + vdc : \"\"} mag={acm} phase={acp}{srcType != \"\" ? \" type=\" + srcType : \"\"}"
+
+circle 0 0 15
+
+line 0 -30 0 -15
+line 0 15 0 30
+
+stext 18 0 R0 vdc={vdc}
+  size 0.6
+  vlabel annotate drawing lowerLeft stick IL cdsParam(1) vdc={vdc}
+== demo/inv.shcomp
+schemify 1 shcomp
+  vibox -42 -32 42 22
+  vsym aab279831c8cf04a
+  vsch 45798dddecceda77
+  vcdf d6c8dc96356fe4c9
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\" \"Y\"))))"
+
+pin A in -40 0
+  vplabel 4 0 R0 centerLeft stick 6000
+pin Y out 40 0
+  vplabel -4 0 R0 centerRight stick 6000
+
+impl schematic schematic
+
+line -40 0 -20 0
+
+poly -20 -20 15 0 -20 20
+  closed true
+
+circle 18 0 3
+
+line 21 0 40 0
+
+stext -20 -30 R0 {name}
+  size 0.8
+  vlabel instance label lowerLeft stick NLP [@instanceName] {name}
+stext -20 30 R0 {cell}
+  size 0.8
+  vlabel device label upperLeft stick NLP [@partName] {cell}
+
+inst bzm0kc analogLib:pmos4
+  at 0 -40 R0
+  name M0
+  model pmos
+  w 2u
+  l 180n
+inst yw9rth analogLib:nmos4
+  at 0 40 R0
+  name M1
+  model nmos
+  w 1u
+
+wire 2082fx 20 40 40 40
+wire 5q0ejr 40 -70 40 -40
+wire 65faq1 20 -70 40 -70
+wire 6ye473 -20 -40 -20 40
+wire c8k666 20 -40 40 -40
+wire e7w35r 20 -90 20 -70
+wire hanj44 40 40 40 70
+wire m9mpm5 20 0 60 0
+wire necd1n 20 -10 20 10
+wire v5jqqv 20 70 20 90
+wire z7gf9e 20 70 40 70
+wire zz835z -60 0 -20 0
+
+label htaex2 20 -88 R270 vdd!
+  voff 1 0
+label peb7yn 20 90 R0 0
+  vinst I2
+
+port n1rj7r -60 0 R0 A
+port y7sr15 60 0 R0 Y
+
+text 47v4a9 -60 -120 R0 "CMOS inverter"
+  size 1
+  vlabel text drawing lowerLeft stick normal
+== demo/tb_inv.shbench
+schemify 1 shbench
+  vsch 49cc1f67ba76bae0
+
+inst 1p2r0r analogLib:vdc
+  at -120 40 R0
+  name V0
+  vdc 1.8
+inst w54bez analogLib:vdc
+  at -80 40 R0
+  name V1
+  vdc 900m
+inst zkgh4n ./inv
+  at 0 0 R0
+  name I0
+
+wire 2zr01d -120 -10 -120 10
+wire 9vhjhq 40 0 80 0
+wire yeffrx -80 0 -80 10
+wire zx3b16 -80 0 -40 0
+
+label 7wv0vq -120 70 R0 0
+  vinst I3
+label 8ss5gh -80 70 R0 0
+  vinst I4
+label cntqnv 60 0 R0 out
+  voff 0 -2
+label eqzgqp -60 0 R0 in
+  voff 0 -2
+label th4x8q -120 -10 R0 vdd!
+  voff 2 0
+== schemify.project
+schemify 1 project
+
+lib analogLib path analogLib
+lib demo path demo

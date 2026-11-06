@@ -1,0 +1,40 @@
+top root/tb.shbench for Ngspice
+== root/tb.shbench
+schemify 1 shbench
+  provenance "xschem root/tb.sch"
+  xfp 6c6a3d345c9c7975
+
+inst h123f1 core:nmos4
+  at 400 0 MR180
+  name M2
+  model nch
+  l 0.5u
+inst nmsaab core:cap
+  at 200 0 MR180
+  name C1
+  value 2p
+  m 2
+inst wd97eg core:isource
+  at 0 0 R90
+  name I0
+  value 1m
+
+wire d5d493 -30 0 0 -10
+wire djz6at 200 -30 230 -40
+wire jzc32a 200 30 230 20
+
+label 0n8rrn 420 30 R0 c
+label 1rtv25 420 -30 R0 b
+label 1stza7 420 0 R0 0
+label 42vskc 230 20 R0 0
+label 8nfq6v 380 0 R0 b
+label bh7wnm 0 -10 R0 c
+label j2yqx6 30 0 R0 0
+label rxpd9m 230 -40 R0 b
+
+code op spice
+  | .op
+== schemify.project
+schemify 1 project
+
+lib root path root

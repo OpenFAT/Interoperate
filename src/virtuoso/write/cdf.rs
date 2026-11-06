@@ -38,7 +38,7 @@ pub(super) fn cdf_out(c: &Cell, core: bool, notes: &mut Notes) -> Cdf {
     for k in 0..pins.name.len() {
         if let (Some(net), None) = (&pins.inherit[k], &pins.alias[k]) {
             cdf.params.push(CdfParam {
-                name: vname(&pins.name[k]),
+                name: inherit_prop(c, &pins.name[k]),
                 ty: "netSet".into(),
                 def: net_to_virtuoso(net, true).0,
                 prompt: pins.name[k].clone(),
@@ -152,13 +152,18 @@ pub(super) fn cdf_out(c: &Cell, core: bool, notes: &mut Notes) -> Cdf {
             match fmt("spectre").map(|t| spectre_siminfo(t, &pin_names, &params)) {
                 Some(Some(si)) => cdf.siminfo.push(si),
                 other => {
-                    if other.is_some() {
-                        notes.review(
-                            "format",
-                            &c.path,
-                            "format spectre is not `{name} ({pins}) master k={p}…`",
-                        );
-                    }
+                    // Without a spectre format (an xschem import's `format spice` + `cdl`)
+                    // Spectre netlists the cell by termOrder alone: no master, no params.
+                    notes.review(
+                        "format",
+                        &c.path,
+                        if other.is_some() {
+                            "format spectre is not `{name} ({pins}) master k={p}…`"
+                        } else {
+                            "no format spectre: Spectre netlists it with no master and no \
+                             params (a map row, §8.2, or a format spectre fixes it)"
+                        },
+                    );
                     cdf.siminfo.push(SimInfo {
                         sim: "spectre".into(),
                         fields: vec![("termOrder".into(), SimVal::List(order.clone()))],
@@ -303,7 +308,12 @@ fn param_out(c: &Cell, r: u32, notes: &mut Notes) -> CdfParam {
                 .into();
         }
         "choice" => {
-            p.ty = "cyclic".into();
+            p.ty = if c.attr(r, "vradio").is_some() {
+                "radio"
+            } else {
+                "cyclic"
+            }
+            .into();
             p.choices = c
                 .attr_values(r, "choices")
                 .into_iter()
@@ -336,7 +346,7 @@ pub(super) fn stashed_computed<'a>(
     master: &'a Cell,
     over: impl Fn(&str) -> Option<&'a str>,
 ) -> Vec<(String, String)> {
-    use schemify_expr::{Mode, Program, Scratch, Value};
+    use crate::expr::{Mode, Program, Scratch, Value};
     fn value<'a>(
         m: &'a Cell,
         over: &dyn Fn(&str) -> Option<&'a str>,
@@ -523,7 +533,15 @@ fn pin_list(items: &[(bool, String)], pins: &[String]) -> Option<Vec<String>> {
 
 /// Reverses the §6.3 spectre rule: `{name} ({pins…}) master k={c}…` → spectre simInfo.
 pub fn spectre_siminfo(t: &str, pins: &[String], params: &[(String, String)]) -> Option<SimInfo> {
-    let items = template_items(t)?;
+    // Spectre reads `X ( a b ) m` as `X (a b) m`; an xschem `spectre_format` must space its
+    // tokens (`@name ( @pinlist )`). ponytail: also respaces inside holes and strings.
+    let t = t
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .replace("( ", "(")
+        .replace(" )", ")");
+    let items = template_items(&t)?;
     let [(true, n), (false, open), rest @ ..] = items.as_slice() else {
         return None;
     };

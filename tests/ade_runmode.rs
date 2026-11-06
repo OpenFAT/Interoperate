@@ -150,6 +150,10 @@ fn diff(a: &str, b: &str) -> Vec<(String, String)> {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn the_probe_run_modes_become_montecarlo_and_optimize_records() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -200,6 +204,10 @@ fn the_probe_run_modes_become_montecarlo_and_optimize_records() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn an_unchanged_bench_sends_the_stored_setup_byte_for_byte() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -229,6 +237,10 @@ fn an_unchanged_bench_sends_the_stored_setup_byte_for_byte() {
 /// XML → records → XML: the run modes written from the records alone (into the setup
 /// without its `<runoptions>`) are the probe's, modulo `normalize`.
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn run_modes_written_from_the_records_are_the_probe_setup() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -264,6 +276,10 @@ fn run_modes_written_from_the_records_are_the_probe_setup() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn one_monte_carlo_option_changed_in_schemify_changes_that_option_only() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -307,6 +323,10 @@ fn one_monte_carlo_option_changed_in_schemify_changes_that_option_only() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn optimizer_edits_go_into_their_mode_and_specs() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;
@@ -383,6 +403,10 @@ fn optimizer_edits_go_into_their_mode_and_specs() {
 }
 
 #[test]
+#[cfg_attr(
+    not(feature = "cadence-records"),
+    ignore = "needs the bench test/param records of Schemify's cadence-records format"
+)]
 fn a_range_var_is_varied_and_its_step_goes_back_as_its_value() {
     let Some(xml) = fixture("maestro/mae_export.sdb") else {
         return;

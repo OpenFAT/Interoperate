@@ -1,0 +1,112 @@
+top demo/tb_ne.shbench for Ngspice
+== analogLib/res.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/res"
+  vibox none
+  vsym 1101032df2f5824a
+
+pin PLUS inout 0 -30
+  vplabel none
+pin MINUS inout 0 30
+  vplabel none
+
+param r 1k
+  unit Ohm
+  doc Resistance
+param m 1
+  doc Multiplier
+
+impl spice spice
+  format spice "R{name} {PLUS} {MINUS} {r} m={m}"
+  format spectre "{name} ({PLUS} {MINUS}) resistor r={r} m={m}"
+
+rect -6 -20 6 20
+== analogLib/vdc.shprim
+schemify 1 shprim
+  provenance "virtuoso analogLib/vdc"
+  vibox none
+  vsym b2e0aa0db7f823b7
+
+pin PLUS inout 0 -30
+  vplabel none
+pin MINUS inout 0 30
+  vplabel none
+
+param vdc ""
+  kind string
+  unit V
+  doc "DC voltage"
+param acm 0
+  unit V
+  doc "AC magnitude"
+param acp 0
+  unit deg
+  doc "AC phase"
+
+impl spice spice
+  format spice "V{name} {PLUS} {MINUS} dc {vdc} ac {acm} {acp}"
+  format spectre "{name} ({PLUS} {MINUS}) vsource{vdc != \"\" ? \" dc=\" + vdc : \"\"} mag={acm} phase={acp}"
+
+circle 0 0 15
+== demo/ne.shcomp
+schemify 1 shcomp
+  vibox none
+  vsym dbaf51c5ebf5ac30
+  vsch 529f1662c30fc612
+  vcdf 6b471fcf5fb59eec
+  vcdfrec "(\"cdf\" \"\")"
+  vcdfrec "(\"siminfo\" \"spectre\" ((\"termOrder\" (\"A\"))))"
+
+pin A in -40 0
+  vplabel none
+pin vdd inout 0 0
+  inherit vdd
+
+impl schematic schematic
+
+rect -20 -20 20 20
+
+inst nbwwat analogLib:res
+  at 0 0 R0
+  name R0
+
+wire kcf1wb 0 -50 0 -30
+wire ppt8fj 0 30 0 60
+
+label cc2c60 0 -48 R270 vdd
+  vexpr [@vdd:%:vdd!]
+  voff 2 0
+
+port pq533p 0 60 R270 A
+== demo/tb_ne.shbench
+schemify 1 shbench
+  vsch 86f45acaf11386aa
+
+inst 4hmqt8 ./ne
+  at 0 0 R0
+  name I0
+  inherit vdd VDDA
+inst 5zz3dj analogLib:vdc
+  at -80 40 R0
+  name V1
+  vdc 1
+inst bq7ctq analogLib:vdc
+  at -120 40 R0
+  name V0
+  vdc 3.3
+
+wire 45eq8r -120 -10 -120 10
+wire 6vawys -80 0 -40 0
+wire nvehcj -80 0 -80 10
+
+label 5yde3w -120 -10 R0 VDDA
+label 65rkdg -120 70 R0 0
+  vinst I1
+label 6n20v1 -80 70 R0 0
+  vinst I2
+label jaq0zs -60 0 R0 a
+== schemify.project
+schemify 1 project
+
+lib analogLib path analogLib
+lib demo path demo

@@ -123,9 +123,25 @@
                 (unless (SfyResIsWave w)
                   (setq kind "I")
                   (setq w (car (errset (i o)))))
-                (when (SfyResIsWave w)
-                  (SfyResWave port o w kind)
-                  (setq any t)))))
+                (cond
+                  ((SfyResIsWave w)
+                    (SfyResWave port o w kind)
+                    (setq any t))
+                  ;; The operating point: a node voltage, else a terminal current, as one
+                  ;; point (live: v("/out") answers 0.5 in dcOp, a terminal only to i()).
+                  ((and (equal r "dcOp")
+                        (or (SfyResIsNum (setq w (car (errset (v o)))))
+                            (and (setq kind "I") (SfyResIsNum (setq w (car (errset (i o)))))))
+                        (not (complexp w)))
+                    (fprintf port "# %s 1 points %s\n0 %.17g\n" o
+                      (if (SfyResIsNum (car (errset (v o)))) "V" "I") (float w))
+                    (setq any t))
+                  ;; Anything else with no waveform (operating-point parameters, noise
+                  ;; contributions and pac sidebands as families, stb margins), but the
+                  ;; netlist's own info results: named so the import reports it.
+                  ((not (member r (list "model" "instance" "output" "designParamVals"
+                                    "primitives" "subckts" "variables")))
+                    (fprintf port "# skipped %s %s\n" r o))))))
           (close port))))
     any))
 

@@ -1,0 +1,33 @@
+schemify 1 shprim
+  doc "Independent voltage source: SPICE V element; value is the SPICE source specification (dc 1 ac 1, pulse(...), ...)"
+  prefix V
+  category source
+
+pin p inout 0 -30
+pin n inout 0 30
+
+param value 0
+  kind string
+  doc "SPICE source specification"
+param savecurrent false
+  kind bool
+  doc "also emit .save i(<name>)"
+
+impl spice spice
+  format spice "{name} {p} {n} {value}{savecurrent ? \"\\n.save i(\" + name + \")\" : \"\"}"
+  format spectre "{name} ({p} {n}) vsource {spectre_source(value)}"
+
+line 0 -30 0 -7.5
+line 0 7.5 0 30
+
+circle 0 0 7.5
+  width 2
+
+line -2.5 -3.75 2.5 -3.75
+line 0 -6.25 0 -1.25
+line -2.5 3.75 2.5 3.75
+
+stext 12.5 -9 R0 {name}
+  size 0.14
+stext 12.5 0 R0 {value}
+  size 0.14
